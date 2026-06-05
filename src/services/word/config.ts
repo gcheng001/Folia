@@ -2,7 +2,7 @@ import type { BuiltInPresetId, CustomPresetId, CustomPresetRegistry, PresetConfi
 
 const legal = {
   name: '法律文书',
-  description: '仿宋正文、1.5倍行距，标准法律文书格式',
+  description: '仿宋四号正文、二号标题，1.5倍行距，法律文书格式',
   page: {
     width: 21,
     height: 29.7,
@@ -12,13 +12,13 @@ const legal = {
     margin_right: 3.18,
   },
   fonts: {
-    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 12 },
+    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 14 },
   },
   titles: {
-    level1: { size: 15, bold: true, align: 'center', space_before: 0, space_after: 12 },
-    level2: { size: 12, bold: true, align: 'left', space_before: 12, space_after: 6 },
-    level3: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 6 },
-    level4: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3 },
+    level1: { size: 22, bold: true, align: 'center', space_before: 0, space_after: 12, line_spacing: 1.5 },
+    level2: { size: 16, bold: true, align: 'left', indent: 2, space_before: 12, space_after: 6, line_spacing: 1.5 },
+    level3: { size: 14, bold: true, align: 'left', space_before: 6, space_after: 6, line_spacing: 1.5 },
+    level4: { size: 14, bold: true, align: 'left', space_before: 6, space_after: 3, line_spacing: 1.5 },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
   page_number: {

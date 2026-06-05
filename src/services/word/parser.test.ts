@@ -51,12 +51,12 @@ describe('parseLines', () => {
   it('converts paragraph first-line indent from character units to twips', async () => {
     const [paragraph] = await parseLines('普通段落', getPreset(DEFAULT_PRESET_ID));
 
-    expect(findDocxAttribute(paragraph, 'firstLine')).toBe(480);
+    expect(findDocxAttribute(paragraph, 'firstLine')).toBe(560);
   });
 
   it('applies configured point indentation to lists and quotes', async () => {
     const children = await parseLines(['- 列表项', '> 引用段落'].join('\n'), getPreset(DEFAULT_PRESET_ID));
 
-    expect(children.map((child) => findDocxAttribute(child, 'left'))).toEqual([480, 480]);
+    expect(children.map((child) => findDocxAttribute(child, 'left'))).toEqual([undefined, 480]);
   });
 });

@@ -53,7 +53,64 @@ function allXmlAttrs(xml: string, tag: string, attr: string): string[] {
   return [...xml.matchAll(new RegExp(`<${tag}\\b[^>]*${attr}="([^"]+)"`, 'g'))].map((match) => match[1]);
 }
 
+function xmlParagraphContaining(xml: string, text: string): string {
+  const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = xml.match(new RegExp(`<w:p\\b[\\s\\S]*?<w:t[^>]*>${escapedText}</w:t>[\\s\\S]*?</w:p>`));
+  if (!match) {
+    throw new Error(`Paragraph containing "${text}" not found`);
+  }
+  return match[0];
+}
+
 describe('markdownToDocx XML output', () => {
+  it('applies the legal preset heading and paragraph typography to DOCX XML', async () => {
+    const documentXml = await readDocumentXml([
+      '# 民事起诉状',
+      '',
+      '## 事实与理由',
+      '',
+      '原告围绕合同履行情况陈述如下。',
+    ].join('\n'), getPreset('legal'));
+
+    const titleParagraph = xmlParagraphContaining(documentXml, '民事起诉状');
+    const subheadingParagraph = xmlParagraphContaining(documentXml, '事实与理由');
+    const bodyParagraph = xmlParagraphContaining(documentXml, '原告围绕合同履行情况陈述如下。');
+
+    expect(titleParagraph).toMatch(/<w:jc\b[^>]*w:val="center"/);
+    expect(titleParagraph).toMatch(/<w:sz\b[^>]*w:val="44"/);
+    expect(titleParagraph).toMatch(/<w:b\b/);
+    expect(titleParagraph).toMatch(/<w:spacing\b[^>]*w:line="360"/);
+
+    expect(subheadingParagraph).toMatch(/<w:sz\b[^>]*w:val="32"/);
+    expect(subheadingParagraph).toMatch(/<w:b\b/);
+    expect(subheadingParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+    expect(subheadingParagraph).toMatch(/<w:spacing\b[^>]*w:line="360"/);
+
+    expect(bodyParagraph).toMatch(/<w:sz\b[^>]*w:val="28"/);
+    expect(bodyParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+    expect(bodyParagraph).toMatch(/<w:spacing\b[^>]*w:line="360"/);
+  });
+
+  it('strips Markdown-only markers from the generated DOCX text', async () => {
+    const documentXml = await readDocumentXml([
+      '# 民事起诉状',
+      '',
+      '---',
+      '',
+      '- 第一项事实',
+      '* 第二项事实',
+    ].join('\n'), getPreset('legal'));
+
+    expect(documentXml).toContain('民事起诉状');
+    expect(documentXml).toContain('第一项事实');
+    expect(documentXml).toContain('第二项事实');
+    expect(documentXml).not.toContain('•');
+    expect(documentXml).not.toContain('—');
+    expect(documentXml).not.toContain('<w:t>#</w:t>');
+    expect(documentXml).not.toContain('<w:t>-</w:t>');
+    expect(documentXml).not.toContain('<w:t>*</w:t>');
+  });
+
   it('preserves key merge and header nodes for legal HTML tables', async () => {
     const markdown = readFileSync(
       join(process.cwd(), 'fixtures', 'legal-html-tables', 'evidence-directory.md'),
@@ -193,14 +250,6 @@ describe('markdownToDocx XML output', () => {
           left_indent: 18,
           line_spacing: 1.1,
         },
-        mappedList: {
-          font: '宋体',
-          ascii: 'Arial',
-          size: 10,
-          color: '336699',
-          left_indent: 30,
-          line_spacing: 1.1,
-        },
         mappedRule: {
           font: 'Arial',
           ascii: 'Arial',
@@ -216,8 +265,6 @@ describe('markdownToDocx XML output', () => {
         table: 'mappedTable',
         image_caption: 'mappedCaption',
         code_block: 'mappedCode',
-        list: 'mappedList',
-        horizontal_rule: 'mappedRule',
       },
       html_mapping: {
         selectors: {
@@ -243,22 +290,17 @@ describe('markdownToDocx XML output', () => {
       '',
       '- 映射列表',
       '',
-      '---',
-      '',
       '![证据图](https://example.com/evidence.png)',
     ].join('\n'), preset);
 
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="微软雅黑")(?=[^>]*w:ascii="Arial")/);
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="楷体")(?=[^>]*w:ascii="Georgia")/);
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="Courier New")(?=[^>]*w:ascii="Courier New")/);
-    expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="宋体")(?=[^>]*w:ascii="Arial")/);
     expect(allXmlAttrs(documentXml, 'w:color', 'w:val')).toEqual(expect.arrayContaining([
       '445566',
       '112233',
       '777777',
       '990000',
-      '336699',
-      '222222',
     ]));
     expect(allXmlAttrs(documentXml, 'w:shd', 'w:fill')).toEqual(expect.arrayContaining([
       'ABCDEF',

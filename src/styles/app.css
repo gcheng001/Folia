@@ -1377,9 +1377,16 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   text-indent: var(--word-paragraph-indent);
 }
 
-.word-paper-content ul,
-.word-paper-content ol,
 .word-paper-content.vditor-reset ul,
+.word-paper-content ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  line-height: var(--word-line-height);
+  text-align: var(--word-paragraph-align);
+}
+
+.word-paper-content ol,
 .word-paper-content.vditor-reset ol {
   margin: 0;
   padding-left: var(--word-list-indent);
@@ -1391,6 +1398,11 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .word-paper-content.vditor-reset li {
   margin: 0;
   padding-left: 0;
+}
+
+.word-paper-content ul > li,
+.word-paper-content.vditor-reset ul > li {
+  text-indent: var(--word-paragraph-indent);
 }
 
 .word-paper-content li p,
@@ -1459,10 +1471,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .word-paper-content hr,
 .word-paper-content.vditor-reset hr {
-  height: auto;
-  margin: 6pt 0;
-  border: none;
-  text-align: var(--word-hr-align);
+  display: none;
 }
 
 .word-paper-content hr::before,
