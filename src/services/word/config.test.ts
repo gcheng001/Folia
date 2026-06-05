@@ -2,6 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { getPreset } from './config';
 
 describe('built-in Word export presets', () => {
+  it('keeps the legal preset aligned with the local legal-custom typography', () => {
+    const legal = getPreset('legal');
+
+    expect(legal.description).toContain('四号正文');
+    expect(legal.fonts.default).toMatchObject({
+      name: '仿宋_GB2312',
+      ascii: 'Times New Roman',
+      size: 14,
+    });
+    expect(legal.paragraph).toMatchObject({
+      line_spacing: 1.5,
+      first_line_indent: 2,
+      align: 'justify',
+    });
+    expect(legal.titles.level1).toMatchObject({
+      size: 22,
+      bold: true,
+      align: 'center',
+      line_spacing: 1.5,
+    });
+    expect(legal.titles.level2).toMatchObject({
+      size: 16,
+      bold: true,
+      indent: 2,
+      line_spacing: 1.5,
+    });
+  });
+
   it('keeps the report preset close to common GB/T 9704 public document layout', () => {
     const report = getPreset('report');
 

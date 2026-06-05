@@ -223,7 +223,6 @@ async function parseMarkdownLines(content: string, config: PresetConfig): Promis
     if (/^[-*_]{3,}\s*$/.test(line.trim())) {
       flushQuote();
       flushTable();
-      paragraphs.push(addHorizontalRule(config));
       continue;
     }
 
@@ -576,29 +575,7 @@ function addParagraph(text: string, config: PresetConfig): Paragraph {
 
 function addBulletList(line: string, config: PresetConfig): Paragraph {
   const text = line.replace(/^[-*+]\s+/, '');
-  const marker = config.lists.bullet.marker;
-  const styleName = getMarkdownStyleName(config, 'list');
-  const style = getStyle(config, styleName);
-  const font = mergeStyleFont(config.fonts.default, style);
-  const indent = style?.left_indent ?? config.lists.bullet.indent;
-
-  return new Paragraph({
-    spacing: { line: (style?.line_spacing ?? config.paragraph.line_spacing) * 240 },
-    indent: { left: ptToTwip(indent) },
-    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
-    children: [
-      new TextRun({
-        text: `${marker} `,
-        font: {
-          eastAsia: font.name,
-          ascii: font.ascii,
-        },
-        size: ptToHalfPt(font.size),
-        color: font.color,
-      }),
-      ...createFormattedRuns(text, config, { styleName }),
-    ],
-  });
+  return addParagraph(text, config);
 }
 
 function addNumberedList(line: string, config: PresetConfig): Paragraph {
@@ -672,35 +649,6 @@ function addQuote(text: string, config: PresetConfig): Paragraph {
     indent: { left: ptToTwip(style?.left_indent ?? qc.left_indent) },
     shading: { type: 'clear', fill: style?.background_color ?? qc.background_color },
     children: createFormattedRuns(text, config, { isQuote: true, styleName }),
-  });
-}
-
-function addHorizontalRule(config: PresetConfig): Paragraph {
-  const hr = config.horizontal_rule;
-  const style = getMarkdownStyle(config, 'horizontal_rule');
-  const font = mergeStyleFont({
-    name: hr.font,
-    ascii: hr.font,
-    size: hr.size,
-    color: hr.color,
-  }, style);
-
-  return new Paragraph({
-    alignment: parseAlignment(style?.align ?? hr.alignment),
-    spacing: { before: 120, after: 120 },
-    shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
-    children: [
-      new TextRun({
-        text: hr.character.repeat(hr.repeat_count),
-        font: { eastAsia: font.name, ascii: font.ascii },
-        size: ptToHalfPt(font.size),
-        color: font.color,
-        bold: style?.bold || undefined,
-        italics: style?.italic || undefined,
-        underline: style?.underline ? {} : undefined,
-        strike: style?.strikethrough || undefined,
-      }),
-    ],
   });
 }
 
