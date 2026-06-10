@@ -256,6 +256,13 @@ describe('settingsService', () => {
       'html-wechat-style',
       'html-ai',
       'html-ip',
+      'html-magazine',
+      'html-minimal',
+      'html-dark',
+      'html-blog',
+      'html-parchment',
+      'html-tech',
+      'html-academic',
     ]);
   });
 
@@ -312,6 +319,13 @@ describe('settingsService', () => {
         'html-wechat-style',
         'html-ai',
         'html-ip',
+        'html-magazine',
+        'html-minimal',
+        'html-dark',
+        'html-blog',
+        'html-parchment',
+        'html-tech',
+        'html-academic',
       ],
     });
 

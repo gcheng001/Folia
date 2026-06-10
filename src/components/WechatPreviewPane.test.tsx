@@ -356,6 +356,13 @@ describe('WechatPreviewPane', () => {
     expect(options.map(([value]) => value)).toEqual([
       'html-wechat-style',
       'html-ip',
+      'html-magazine',
+      'html-minimal',
+      'html-dark',
+      'html-blog',
+      'html-parchment',
+      'html-tech',
+      'html-academic',
       customId,
     ]);
     expect(options.map(([, label]) => label)).toContain('面板绿色');

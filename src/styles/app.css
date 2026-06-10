@@ -185,6 +185,15 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-color: color-mix(in oklch, var(--accent) 28%, transparent);
 }
 
+.app-toolbar button.discard-draft-button {
+  color: var(--danger);
+}
+
+.app-toolbar button.discard-draft-button:hover {
+  background: color-mix(in oklch, var(--danger) 10%, var(--control-hover-bg));
+  border-color: color-mix(in oklch, var(--danger) 34%, transparent);
+}
+
 .app-toolbar button.toolbar-update-button {
   width: auto;
   min-width: 0;
@@ -286,6 +295,88 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   overflow: hidden;
   background: var(--bg);
   min-width: 0;
+}
+
+/* ===== Split View ===== */
+
+.editor-pane-group {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.split-view .editor-pane-group {
+  flex: 1;
+}
+
+.editor-pane-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.editor-pane-label {
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.split-divider {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border-soft);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.split-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 2px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--border);
+  opacity: 0.4;
+  transform: translateY(-50%);
+}
+
+.split-divider:hover {
+  background: var(--accent);
+}
+
+.split-drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.split-drop-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.split-drop-hint small {
+  font-size: 12px;
+  color: var(--border);
 }
 
 /* When a right panel is open, every writing-layout pane (including the HTML
