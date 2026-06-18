@@ -167,6 +167,25 @@ export function AppLayout() {
     tearOffTab,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
+  // 新建空白草稿标签（多标签语义：等价于 TabBar 的 onNew）
+  const handleNew = useCallback(() => {
+    openInNewTab(createEmptyFile());
+  }, [openInNewTab]);
+  // 当前 active 标签是未命名草稿（无 path）时显示“放弃新建”按钮
+  const newDraftActive = !!(activeTab && !activeTab.file.path);
+  // 放弃新建草稿 = 关闭当前标签，active 自动回到前一个标签
+  const handleDiscardNewDraft = useCallback(() => {
+    if (activeTabId) closeTab(activeTabId);
+  }, [activeTabId, closeTab]);
+  // Anything HTML：把当前内容发到本地 localhost:3000 窗口
+  const handleOpenHtmlAnything = useCallback(() => {
+    void import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('open_html_anything', {
+        content: file.content,
+        fileName: file.name,
+      }).catch((error) => console.warn('open_html_anything failed:', error));
+    });
+  }, [file.content, file.name]);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -800,6 +819,10 @@ export function AppLayout() {
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
+        newDraftActive={newDraftActive}
+        onNew={handleNew}
+        onDiscardNewDraft={handleDiscardNewDraft}
+        onOpenHtmlAnything={handleOpenHtmlAnything}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}

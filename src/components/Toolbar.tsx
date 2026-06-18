@@ -2,12 +2,15 @@ import type { ReactNode } from 'react';
 import {
   BookOpenText,
   Braces,
+  FilePlus,
   FolderOpen,
+  Globe,
   Newspaper,
   RefreshCw,
   Save,
   SaveAll,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../hooks/useSettings';
@@ -29,6 +32,11 @@ type ToolbarProps = {
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
+  /** 当前 active 标签是未命名草稿时为 true，用于显示“放弃新建”按钮。 */
+  newDraftActive: boolean;
+  onNew: () => void;
+  onDiscardNewDraft: () => void;
+  onOpenHtmlAnything: () => void;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
@@ -43,7 +51,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, newDraftActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -67,6 +75,20 @@ export function Toolbar({
     >
       <div className="toolbar-left">
         <div className="toolbar-group toolbar-file-actions" aria-label={t('toolbarFileGroup')}>
+          <button data-no-window-drag="true" onClick={onNew} title={t('toolbarNewTitle')} aria-label={t('toolbarNewLabel')}>
+            <FilePlus size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          {newDraftActive && (
+            <button
+              data-no-window-drag="true"
+              className="discard-draft-button"
+              onClick={onDiscardNewDraft}
+              title={t('toolbarDiscardNewDraftTitle')}
+              aria-label={t('toolbarDiscardNewDraftLabel')}
+            >
+              <X size={iconSize} strokeWidth={strokeWidth} />
+            </button>
+          )}
           <button data-no-window-drag="true" onClick={onOpen} title={t('toolbarOpenTitle')} aria-label={t('toolbarOpenLabel')}>
             <FolderOpen size={iconSize} strokeWidth={strokeWidth} />
           </button>
@@ -150,6 +172,9 @@ export function Toolbar({
             aria-label={t('toolbarWechatPreviewLabel')}
           >
             <Newspaper size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button data-no-window-drag="true" onClick={onOpenHtmlAnything} title="Anything HTML" aria-label="Anything HTML">
+            <Globe size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>
