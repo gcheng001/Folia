@@ -4,7 +4,8 @@
   "description": "enables the default permissions",
   "windows": [
     "main",
-    "html-anything"
+    "html-anything",
+    "tab-window-*"
   ],
   "permissions": [
     "core:default",
@@ -25,6 +26,7 @@
     "core:webview:allow-webview-show",
     "core:webview:allow-webview-hide",
     "core:webview:allow-set-webview-focus",
+    "core:event:default",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
@@ -34,6 +36,7 @@
     "fs:allow-read-file",
     "fs:allow-write-file",
     "process:allow-restart",
+    "opener:default",
     "updater:default"
   ]
 }

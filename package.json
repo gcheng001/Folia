@@ -1,7 +1,7 @@
 {
   "name": "folia",
   "private": true,
-  "version": "0.3.21",
+  "version": "0.3.22",
   "type": "module",
   "scripts": {
     "dev": "vite --config config/vite.config.ts",
@@ -14,7 +14,10 @@
     "tauri": "tauri",
     "tauri:build:local": "tauri build --config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "tauri:build:update": "tauri build --config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'",
-    "updater:manifest": "node scripts/create-updater-manifest.mjs"
+    "updater:manifest": "node scripts/create-updater-manifest.mjs",
+    "etv:dev": "WEBKIT_INSPECTOR_SERVER=127.0.0.1:9222 tauri dev",
+    "etv:run": "node scripts/etv-folia.mjs",
+    "etv": "node scripts/etv-folia.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
@@ -23,6 +26,7 @@
     "@tauri-apps/api": "2.11.0",
     "@tauri-apps/plugin-dialog": "2.7.1",
     "@tauri-apps/plugin-fs": "2.5.1",
+    "@tauri-apps/plugin-opener": "2.5.4",
     "@tauri-apps/plugin-process": "2.3.1",
     "@tauri-apps/plugin-updater": "2.10.1",
     "@types/dompurify": "3.0.5",

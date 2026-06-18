@@ -7,6 +7,8 @@ import { resolvePreviewFontFamily, resolvePreviewHeadingFontFamily, resolvePrevi
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import { createHtmlReadingPreviewHtml } from '../services/htmlReadingPreviewService';
 import { resolveLocalImages } from '../services/localImageResolver';
+import { openExternalUrl } from '../services/urlOpener';
+import { sanitizeForVditor } from '../services/sanitizeService';
 
 type PreviewPaneProps = {
   source: string;
@@ -18,6 +20,7 @@ type PreviewPaneProps = {
 
 export function PreviewPane({ source, tocIds, wideTables = false, renderMode = 'markdown', filePath }: PreviewPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const deferredSource = useDeferredValue(source);
   const deferredTocIds = useDeferredValue(tocIds);
   const settings = useSettings();
@@ -52,6 +55,19 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
       import('vditor'),
     ]).then(([, { default: Vditor }]) => {
       if (cancelled) return;
+      // ISS-169 加固：sanitize 改在 Vditor 的 `transform` 钩子里完成——
+      // Vditor 内部 previewRender 在 `previewElement.innerHTML = html`
+      // 之前同步调用 transform(html)，我们对 Lute 已转义的 HTML 做
+      // DOMPurify sanitize，再让 Vditor 写入 DOM。这样 <img onerror> /
+      // <svg onload> 等元素从未以「危险态」插入 DOM，从源头消除 onerror
+      // 窗口（ISS-168 的 after() 后处理虽然通常赶在异步加载前，但理论上
+      // 非绝对安全）。
+      //
+      // ISS-168 仍保留：Vditor 内置 sanitize 的白名单会整块过滤 <svg>，
+      // 故 sanitize: false。transform 钩子用 DOMPurify 的
+      // html + svg + svgFilters profile（见 sanitizeService.ts），保留
+      // svg 子元素及滤镜，剥离 <script>/on*/javascript: 等。后处理再无
+      // 必要（after 内不再 sanitize；保留给本地图片与 toc id 注入）。
       Vditor.preview(el, deferredSource, {
         mode: 'light',
         anchor: 0,
@@ -68,10 +84,15 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
           lineNumber: false,
         },
         markdown: {
-          sanitize: true,
+          sanitize: false,
+        },
+        transform(html) {
+          return sanitizeForVditor(html);
         },
         after() {
           if (cancelled) return;
+          // ISS-169：sanitize 已由 transform 钩子在 innerHTML 设置前完成，
+          // 这里只负责本地图片与 toc id 注入（两者不受 sanitize 影响）。
           void resolveLocalImages(el, filePath);
           if (deferredTocIds.length === 0) return;
           applyTocIds(el, deferredTocIds);
@@ -84,8 +105,26 @@ export function PreviewPane({ source, tocIds, wideTables = false, renderMode = '
     };
   }, [deferredSource, deferredTocIds, filePath, renderFeatures.hasHighlightableCode, renderMode]);
 
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    function handleClick(e: MouseEvent) {
+      const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href) return;
+      e.preventDefault();
+      void openExternalUrl(href);
+    }
+
+    shell.addEventListener('click', handleClick);
+    return () => shell.removeEventListener('click', handleClick);
+  }, []);
+
   return (
     <div
+      ref={shellRef}
       className={`preview-shell ${wideTables ? 'html-preview-pane' : ''}`}
       aria-label={wideTables ? 'HTML 阅读预览' : 'Markdown 阅读预览'}
       style={{

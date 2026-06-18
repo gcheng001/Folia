@@ -1,24 +1,19 @@
+import type { ReactNode } from 'react';
 import {
   BookOpenText,
   Braces,
-  Columns2,
-  FilePlus,
   FolderOpen,
-  Globe,
   Newspaper,
   RefreshCw,
   Save,
   SaveAll,
   SlidersHorizontal,
-  X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
 import { handleTitlebarMouseDown } from '../services/titlebarDrag';
-
-export type EditorMode = 'wysiwyg' | 'source';
+import type { EditorMode } from '../types/session';
 
 type UpdateToolbarStatus = {
   phase: 'ready' | 'installing';
@@ -28,20 +23,15 @@ type UpdateToolbarStatus = {
 type ToolbarProps = {
   dirty: boolean;
   fileName: string;
-  fileContent: string;
+  /** 传入 <TabBar /> 占据中间区域，替代独立文件名显示。占位首页时不传。 */
+  tabBar?: ReactNode;
   editorMode: EditorMode;
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
-  splitViewActive: boolean;
-  newDraftActive: boolean;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
-  onToggleSplitView: () => void;
-  onOpenB: () => void;
-  onNew: () => void;
-  onDiscardNewDraft: () => void;
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -52,12 +42,9 @@ type ToolbarProps = {
 };
 
 export function Toolbar({
-  dirty, fileName, fileContent,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled,
-  splitViewActive, newDraftActive,
-  onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
-  onToggleSplitView, onOpenB,
-  onNew, onDiscardNewDraft, onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
+  dirty, fileName, tabBar,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
+  onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
@@ -80,20 +67,6 @@ export function Toolbar({
     >
       <div className="toolbar-left">
         <div className="toolbar-group toolbar-file-actions" aria-label={t('toolbarFileGroup')}>
-          <button data-no-window-drag="true" onClick={onNew} title={t('toolbarNewTitle')} aria-label={t('toolbarNewLabel')}>
-            <FilePlus size={iconSize} strokeWidth={strokeWidth} />
-          </button>
-          {newDraftActive && (
-            <button
-              data-no-window-drag="true"
-              className="discard-draft-button"
-              onClick={onDiscardNewDraft}
-              title={t('toolbarDiscardNewDraftTitle')}
-              aria-label={t('toolbarDiscardNewDraftLabel')}
-            >
-              <X size={iconSize} strokeWidth={strokeWidth} />
-            </button>
-          )}
           <button data-no-window-drag="true" onClick={onOpen} title={t('toolbarOpenTitle')} aria-label={t('toolbarOpenLabel')}>
             <FolderOpen size={iconSize} strokeWidth={strokeWidth} />
           </button>
@@ -103,29 +76,20 @@ export function Toolbar({
           <button data-no-window-drag="true" onClick={onSaveAs} disabled={editingDisabled} title={t('toolbarSaveAsTitle')} aria-label={t('toolbarSaveAsLabel')}>
             <SaveAll size={iconSize} strokeWidth={strokeWidth} />
           </button>
-          <button
-            data-no-window-drag="true"
-            className={splitViewActive ? 'active' : ''}
-            onClick={onToggleSplitView}
-            title={splitViewActive ? '关闭对比视图' : '打开对比视图'}
-            aria-label="对比视图"
-          >
-            <Columns2 size={iconSize} strokeWidth={strokeWidth} />
-          </button>
-          {splitViewActive && (
-            <button data-no-window-drag="true" onClick={onOpenB} title="打开右侧文件" aria-label="打开右侧文件">
-              <FolderOpen size={iconSize} strokeWidth={strokeWidth} />
-            </button>
-          )}
         </div>
       </div>
-      <div className="toolbar-title" data-tauri-drag-region aria-label={t('currentFileLabel')}>
-        <span className={`file-name ${hasOpenedFile || dirty ? 'visible' : ''}`}>
-          {dirty && <span className="dirty-dot" />}
-          <span className="file-name-text">{fileName}</span>
-        </span>
+      <div
+        className={`toolbar-title${tabBar ? ' toolbar-title--tabs' : ''}`}
+        data-tauri-drag-region
+        aria-label={t('currentFileLabel')}
+      >
+        {tabBar ?? (
+          <span className={`file-name ${hasOpenedFile || dirty ? 'visible' : ''}`}>
+            {dirty && <span className="dirty-dot" />}
+            <span className="file-name-text">{fileName}</span>
+          </span>
+        )}
       </div>
-      <div className="toolbar-spacer" data-tauri-drag-region aria-hidden="true" />
       <div className="toolbar-right">
         <div className="toolbar-group toolbar-view-actions" aria-label={t('toolbarViewGroup')}>
           {updateStatus && (
@@ -186,19 +150,6 @@ export function Toolbar({
             aria-label={t('toolbarWechatPreviewLabel')}
           >
             <Newspaper size={iconSize} strokeWidth={strokeWidth} />
-          </button>
-
-          <button
-            data-no-window-drag="true"
-            onClick={() => invoke('open_html_anything', {
-              content: fileContent,
-              fileName,
-            }).catch((e) => console.warn('Failed to open Anything HTML:', e))}
-            disabled={editingDisabled}
-            title="把当前 Markdown 发送到 Anything HTML（需先启动 localhost:3000）"
-            aria-label="Anything HTML"
-          >
-            <Globe size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>

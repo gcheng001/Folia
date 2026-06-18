@@ -79,6 +79,7 @@ open /Applications/Folia.app
 Folia 是我在法律文档处理和 AI 协作实践中沉淀出来的轻量桌面工具：重点解决 Markdown 文档阅读、复杂 HTML 表格稳定预览，以及导出 Word 前的版式确认。
 
 - GitHub: [cat-xierluo](https://github.com/cat-xierluo)
+- 个人主页：[cat-xierluo.github.io/personal-site](https://cat-xierluo.github.io/personal-site/)
 - 微信：`ywxlaw`
 
 <p>
@@ -115,6 +116,23 @@ npm test
 npm run lint
 npm run typecheck
 ```
+
+### 桌面端真机 E2E（CDP）
+
+`e2e/` 下的 Playwright 用例跑的是 Vite dev server 上的浏览器路径，**不连真实 Tauri WebView**。macOS WKWebView 与 Chromium 在键盘修饰键、IME、字体回退、滚动惯性、Tauri IPC、Finder 拖放等方面偶发差异，只有桌面端生产包才暴露。
+
+为此提供 `scripts/etv-folia.mjs`（ISS-161）：通过 Playwright `connectOverCDP` 直连已启的 `tauri dev` 实例，复用其 WKWebView 跑真实桌面端断言。
+
+```bash
+# 终端 A：启动带 CDP 端口的 Tauri 桌面开发模式
+npm run etv:dev
+
+# 终端 B：等 WebView 出现后跑端到端验证（3 个场景）
+npm run etv:run
+# 仅跑指定场景：node scripts/etv-folia.mjs a   # / b / c
+```
+
+**macOS 限定**：当前仅 macOS WKWebView 通过 `WEBKIT_INSPECTOR_SERVER=127.0.0.1:9222` 暴露 CDP；Linux（GTK WebKit）/ Windows（WebView2）需用对应环境变量。**不进 GitHub Actions**：CI runner 上 WKWebView 跑不动，由开发者本地复测真实桌面端行为。
 
 ## 构建
 

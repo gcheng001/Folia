@@ -1,17 +1,5 @@
 {
   "permissions": {
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(rm -rf /*)",
-      "Bash(rm -rf ~)",
-      "Bash(rm -rf ~/*)",
-      "Bash(dd * of=/dev/*)",
-      "Bash(mkfs*)",
-      "Bash(git push --force * main*)",
-      "Bash(git push --force * master*)",
-      "Bash(git reset --hard*)",
-      "Bash(git clean -fdx*)"
-    ],
     "allow": [
       "Bash",
       "Read",
@@ -28,8 +16,29 @@
       "mcp__playwright",
       "mcp__MiniMax",
       "mcp__zai-mcp-server",
-      "mcp__pencil"
+      "mcp__pencil",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)",
+      "Bash(dd * of=/dev/*)",
+      "Bash(mkfs*)",
+      "Bash(git push --force * main*)",
+      "Bash(git push --force * master*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fdx*)"
     ]
   },
+  "enabledMcpjsonServers": [
+    "MiniMax",
+    "qcc-company",
+    "qcc-risk",
+    "qcc-ipr",
+    "qcc-operation"
+  ],
   "alwaysThinkingEnabled": true
 }

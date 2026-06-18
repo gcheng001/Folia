@@ -1,7 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import type { OpenedFile, TocItem } from '../types/document';
-import { createEmptyFile } from '../types/document';
+import { createEmptyFile, type TocItem } from '../types/document';
 import {
   getExportPresetConfig,
   getLastOpenedPath,
@@ -22,10 +21,16 @@ import {
 import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
 import { translate } from '../services/i18n';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
-import { Toolbar, type EditorMode } from '../components/Toolbar';
+import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
+import { TabBar } from '../components/TabBar';
+import type { TabDragPayload } from '../components/tabDragPayload';
+import { RecentFilesPage } from '../components/RecentFilesPage';
+import { ContextMenu } from '../components/ContextMenu';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
+import { useSession } from '../hooks/useSession';
+import { detectCurrentWindowLabel } from '../services/tabWindowService';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -79,9 +84,6 @@ const HtmlTableViewerOverlay = lazy(() =>
 );
 
 type AvailableUpdate = Extract<UpdateCheckResult, { status: 'available' }>;
-type RightPanelMode = 'none' | 'word' | 'wechat';
-type DropPosition = { x: number; y: number; toLogical?: (scaleFactor: number) => { x: number; y: number } };
-type PositionPoint = { x: number; y: number };
 type UpdateInstallState =
   | { phase: 'idle' }
   | { phase: 'downloading'; source: UpdateSource; update: AvailableUpdate }
@@ -112,6 +114,10 @@ function SettingsPageFallback() {
   );
 }
 
+// TOC 提取是对全文的正则扫描；编辑超长文档时每键都跑会卡顿，
+// 故把 TOC 刷新防抖到输入停顿后执行（ISS-159）。文件内容本身仍每键同步落盘/保存。
+const TOC_REFRESH_DEBOUNCE_MS = 150;
+
 function extractToc(content: string): TocItem[] {
   const headings: TocItem[] = [];
   const regex = /^(#{1,6})\s+(.+)$/gm;
@@ -132,40 +138,6 @@ function toUpdateErrorMessage(error: unknown): string {
   return '更新安装失败';
 }
 
-function uniqueDropPoints(points: PositionPoint[]): PositionPoint[] {
-  const seen = new Set<string>();
-  return points.filter((point) => {
-    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
-    const key = `${Math.round(point.x * 100) / 100}:${Math.round(point.y * 100) / 100}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function dropPointCandidates(position: DropPosition, windowOrigin?: PositionPoint | null): PositionPoint[] {
-  const scaleFactor = window.devicePixelRatio || 1;
-  const points: PositionPoint[] = [{ x: position.x, y: position.y }];
-  if (typeof position.toLogical === 'function') points.push(position.toLogical(scaleFactor));
-  if (scaleFactor > 1) points.push({ x: position.x / scaleFactor, y: position.y / scaleFactor });
-  if (windowOrigin) {
-    const rel = { x: position.x - windowOrigin.x, y: position.y - windowOrigin.y };
-    points.push(rel);
-    if (scaleFactor > 1) points.push({ x: rel.x / scaleFactor, y: rel.y / scaleFactor });
-  }
-  return uniqueDropPoints(points);
-}
-
-function isPointInsideElement(point: PositionPoint, element: Element): boolean {
-  const rect = element.getBoundingClientRect();
-  return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
-}
-
-function isRightSplitDropPosition(position: DropPosition, rightPane: Element | null, windowOrigin?: PositionPoint | null): boolean {
-  if (!rightPane) return false;
-  return dropPointCandidates(position, windowOrigin).some((point) => isPointInsideElement(point, rightPane));
-}
-
 export function AppLayout() {
   const settings = useSettings();
   const isTauriRuntime = '__TAURI_INTERNALS__' in window;
@@ -174,21 +146,68 @@ export function AppLayout() {
   const autoUpdateCheckStarted = useRef(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLDivElement>(null);
-  const rightSplitPaneRef = useRef<HTMLDivElement>(null);
-  const [file, setFile] = useState<OpenedFile>(createEmptyFile());
-  const [fileB, setFileB] = useState<OpenedFile | null>(null);
-  const [newDraftReturnFile, setNewDraftReturnFile] = useState<OpenedFile | null>(null);
-  const [newDraftActive, setNewDraftActive] = useState(false);
-  const [splitView, setSplitView] = useState(false);
-  const splitViewRef = useRef(splitView);
-  const hoveringSplitB = useRef(false);
-  const [toc, setToc] = useState<TocItem[]>([]);
+  // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
+  const tocRefreshTimerRef = useRef<number | null>(null);
+  // 取消挂起的 TOC 防抖刷新：打开新文件 / 卸载时调用，避免上一个文件的过期 setToc 覆盖新文件大纲（ISS-159）。
+  const cancelPendingTocRefresh = useCallback(() => {
+    if (tocRefreshTimerRef.current !== null) {
+      window.clearTimeout(tocRefreshTimerRef.current);
+      tocRefreshTimerRef.current = null;
+    }
+  }, []);
+  const session = useSession();
+  const {
+    activeFile: file,
+    activeTab,
+    openInNewTab,
+    closeTab,
+    activeTabId,
+    updateActiveFile,
+    updateActiveTabMeta,
+    tearOffTab,
+  } = session;
+  const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
+  const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
+  const isTearOffSupported = useMemo(
+    () => '__TAURI_INTERNALS__' in window,
+    [],
+  );
+
+  // ISS-164：从其他窗口拖到本窗口 tab bar 的 merge-back 请求。
+  // 本窗口作为目标，emit tab:drop-requested 信号回源；源窗口 useSession 监听后
+  // 会主动调用 mergeBackTab（携带完整 tab 数据），目标再 receiveTab。
+  const handleMergeBackDrop = useCallback((payload: TabDragPayload) => {
+    if (payload.sourceLabel === windowLabel) return;
+    void import('../services/tabWindowService').then(({ requestMergeBack }) => {
+      void requestMergeBack({
+        tabId: payload.tabId,
+        sourceLabel: payload.sourceLabel,
+        targetLabel: windowLabel,
+        dirty: payload.dirty,
+      });
+    });
+  }, [windowLabel]);
+
+  const handleTearOff = useCallback(async (id: string) => {
+    await tearOffTab(id, { confirmDirty: confirmCloseDirty });
+  }, [tearOffTab, confirmCloseDirty]);
+  // Lazy initializer：会话恢复或新建带内容标签时，立即从 activeTab.file.content 生成 TOC，
+  // 避免首屏渲染时左侧大纲空白（旧实现是 useState([])，依赖后续 handleContentChange 防抖或
+  // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
+  const [toc, setToc] = useState<TocItem[]>(() => {
+    const initial = activeTab;
+    return initial?.file.fileType === 'docx' ? [] : extractToc(initial?.file.content ?? '');
+  });
+  // 跟踪最近一次已为其生成 TOC 的 activeTabId；切换 tab 时与当前 activeTabId 不一致
+  // 就在 render 阶段同步重置 toc 与挂起的防抖刷新（ISS-163）。详见下方 if 分支。
+  const [lastTocTabId, setLastTocTabId] = useState(activeTabId);
   const [tocSessionPinned, setTocSessionPinned] = useState(false);
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg');
+  const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  const editorMode = session.editorMode;
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
-  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>('none');
+  const rightPanelMode = session.rightPanelMode;
   const [rightPanelWidth, setRightPanelWidth] = useState(460);
   const [resizing, setResizing] = useState(false);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
@@ -196,10 +215,33 @@ export function AppLayout() {
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
   const [updateState, setUpdateState] = useState<UpdateInstallState>({ phase: 'idle' });
 
+  // 切换 tab 时刷新左侧大纲（ISS-163）。React 19 推荐"render 中调整 state"模式：
+  // 不放在 useEffect 里是因为 react-hooks/set-state-in-effect 不允许 effect 体内同步 setState，
+  // 而且依赖 activeTab.file.content 会与 handleContentChange 的 150ms 防抖刷新生效顺序冲突。
+  // 此处的 setLastTocTabId + setToc 在 render 内同步触发，React 会丢弃本帧并以新状态重渲染，
+  // 不会造成级联渲染。
+  if (lastTocTabId !== activeTabId) {
+    setLastTocTabId(activeTabId);
+    setToc(activeTab?.file.fileType === 'docx' ? [] : extractToc(activeTab?.file.content ?? ''));
+  }
+
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.colorScheme = settings.theme;
   }, [settings.theme]);
+
+  // 卸载时取消挂起的 TOC 防抖，避免离开后仍触发 stale setToc（ISS-159）。
+  useEffect(() => {
+    return () => cancelPendingTocRefresh();
+  }, [cancelPendingTocRefresh]);
+
+  // 切换 tab 时取消旧 tab 挂起的 TOC 防抖刷新（ISS-159 同款竞态 / ISS-163）：
+  // render-time setToc 已经把大纲重置为新 tab 的标题，但旧 tab 的 handleContentChange
+  // 若还有挂起的 150ms 定时器，到时仍会用旧 tab 的 content 覆盖新 tab 的大纲。
+  // 此处仅操作 ref（取消定时器），不触发 setState，不与 render-time reset 冲突。
+  useEffect(() => {
+    cancelPendingTocRefresh();
+  }, [activeTabId, cancelPendingTocRefresh]);
 
   useEffect(() => {
     /* Kick off the settings chunk immediately on mount so the modal is fully
@@ -212,91 +254,39 @@ export function AppLayout() {
     const { openFile } = await import('../services/fileService');
     const opened = await openFile(settings.defaultEncoding);
     if (opened) {
-      setFile(opened);
+      openInNewTab(opened);
+      cancelPendingTocRefresh();
       setToc(extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       setHtmlPresentationVisible(false);
-      if (opened.fileType === 'docx') {
-        setRightPanelMode('none');
-      } else {
-        setEditorMode('wysiwyg');
-      }
     }
-  }, [settings.defaultEncoding]);
-
-  const handleOpenB = useCallback(async () => {
-    const { openFile } = await import('../services/fileService');
-    const opened = await openFile(settings.defaultEncoding);
-    if (opened) {
-      setFileB(opened);
-      if (!splitView) setSplitView(true);
-    }
-  }, [settings.defaultEncoding, splitView]);
-
-  const handleOpenPathB = useCallback(async (path: string) => {
-    const { openPath } = await import('../services/fileService');
-    const opened = await openPath(path, settings.defaultEncoding);
-    setFileB(opened);
-    if (!splitView) setSplitView(true);
-  }, [settings.defaultEncoding, splitView]);
-
-  const handleNew = useCallback(() => {
-    reopenAttempted.current = true;
-    if (!newDraftActive) setNewDraftReturnFile(file);
-    setNewDraftActive(true);
-    setFile(createEmptyFile());
-    setToc([]);
-    setHtmlPresentationVisible(false);
-    setEditorMode('wysiwyg');
-    setRightPanelMode('none');
-  }, [file, newDraftActive]);
-
-  const handleDiscardNewDraft = useCallback(() => {
-    if (!newDraftActive) return;
-    const restored = newDraftReturnFile ?? createEmptyFile();
-    setFile(restored);
-    setToc(restored.fileType === 'docx' ? [] : extractToc(restored.content));
-    setNewDraftActive(false);
-    setNewDraftReturnFile(null);
-    setHtmlPresentationVisible(false);
-    if (restored.fileType === 'docx') {
-      setRightPanelMode('none');
-    } else {
-      setEditorMode('wysiwyg');
-    }
-  }, [newDraftActive, newDraftReturnFile]);
+  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
 
   const handleOpenPath = useCallback(async (path: string) => {
     const { openPath } = await import('../services/fileService');
     const opened = await openPath(path, settings.defaultEncoding);
-    setNewDraftActive(false);
-    setNewDraftReturnFile(null);
-    setFile(opened);
+    openInNewTab(opened);
+    cancelPendingTocRefresh();
     setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
-    if (opened.fileType === 'docx') {
-      setRightPanelMode('none');
-    } else {
-      setEditorMode('wysiwyg');
-    }
-  }, [settings.defaultEncoding]);
+  }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
 
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
     const { saveFile } = await import('../services/fileService');
     const updated = await saveFile(file);
-    setFile(updated);
+    updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file]);
+  }, [file, updateActiveFile]);
 
   const handleSaveAs = useCallback(async () => {
     if (file.fileType === 'docx') return;
     const { saveFileAs } = await import('../services/fileService');
     const updated = await saveFileAs(file);
-    setFile(updated);
+    updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file]);
+  }, [file, updateActiveFile]);
 
   const handleExportWord = useCallback(async () => {
     if (!file.path || file.fileType === 'docx') return;
@@ -309,40 +299,38 @@ export function AppLayout() {
   }, [file]);
 
   const handleContentChange = useCallback((value: string) => {
-    setFile(prev => ({
+    updateActiveFile((prev) => ({
       ...prev,
       content: value,
       dirty: value !== prev.lastSavedContent,
     }));
-    setToc(extractToc(value));
-  }, []);
+    // extractToc 是全文正则扫描，超长文档每键都跑会卡顿；防抖到输入停顿后刷新（ISS-159）。
+    if (tocRefreshTimerRef.current !== null) {
+      window.clearTimeout(tocRefreshTimerRef.current);
+    }
+    tocRefreshTimerRef.current = window.setTimeout(() => {
+      tocRefreshTimerRef.current = null;
+      setToc(extractToc(value));
+    }, TOC_REFRESH_DEBOUNCE_MS);
+  }, [updateActiveFile]);
 
   const handleToggleEditorMode = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
-    setEditorMode((mode) => mode === 'source' ? 'wysiwyg' : 'source');
-  }, [file.fileType]);
-
-  const handleToggleSplitView = useCallback(() => {
-    if (splitView) {
-      setSplitView(false);
-      setFileB(null);
-    } else {
-      setSplitView(true);
-    }
-  }, [splitView]);
+    updateActiveTabMeta({ editorMode: editorMode === 'source' ? 'wysiwyg' : 'source' });
+  }, [file.fileType, editorMode, updateActiveTabMeta]);
 
   const handleToggleWordPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
-    setRightPanelMode((mode) => mode === 'word' ? 'none' : 'word');
-  }, [file.fileType]);
+    updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'word' ? 'none' : 'word' });
+  }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleToggleWechatPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
-    setRightPanelMode((mode) => mode === 'wechat' ? 'none' : 'wechat');
-  }, [file.fileType]);
+    updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'wechat' ? 'none' : 'wechat' });
+  }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleRightPanelResizerPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const container = mainContentRef.current;
@@ -409,22 +397,21 @@ export function AppLayout() {
   }, [updateState]);
 
   useEffect(() => {
-    splitViewRef.current = splitView;
-  }, [splitView]);
-
-  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
-      if (e.key === 'n' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleNew(); return; }
       if (e.key === 'o' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleOpen(); return; }
       if (e.key === 's' && e.shiftKey && !e.altKey) { e.preventDefault(); handleSaveAs(); return; }
       if (e.key === 's' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleSave(); return; }
-      if (e.key === 'w' && !e.shiftKey && !e.altKey && newDraftActive) { e.preventDefault(); handleDiscardNewDraft(); return; }
       if (e.key === 'e' && e.shiftKey && !e.altKey) { e.preventDefault(); handleExportWord(); return; }
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
+      if (e.key === 'w' && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        closeTab(activeTabId, { confirmDirty: confirmCloseDirty });
+        return;
+      }
       if (e.key === ',' && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         void preloadSettingsPage();
@@ -433,7 +420,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleDiscardNewDraft, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, newDraftActive]);
+  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -443,18 +430,7 @@ export function AppLayout() {
       if (!items || items.length === 0) return;
       const f = items[0];
       const path = (f as unknown as { path?: string }).path;
-      if (!path || !isOpenableDocumentPath(path)) return;
-
-      const dropPosition = { x: e.clientX, y: e.clientY };
-      const shouldOpenRight = splitView
-        && (hoveringSplitB.current || isRightSplitDropPosition(dropPosition, rightSplitPaneRef.current));
-      hoveringSplitB.current = false;
-
-      if (shouldOpenRight) {
-        await handleOpenPathB(path);
-        return;
-      }
-      await handleOpenPath(path);
+      if (path && isOpenableDocumentPath(path)) await handleOpenPath(path);
     };
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
     window.addEventListener('dragover', prevent);
@@ -463,7 +439,7 @@ export function AppLayout() {
       window.removeEventListener('dragover', prevent);
       window.removeEventListener('drop', handler);
     };
-  }, [handleOpenPath, handleOpenPathB, splitView]);
+  }, [handleOpenPath]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -544,7 +520,9 @@ export function AppLayout() {
   }, [handleOpenPath, isTauriRuntime]);
 
   useEffect(() => {
-    if (!systemOpenChecked || !settings.reopenLastFile || file.path || reopenAttempted.current || newDraftActive) return;
+    // session 已恢复持久化标签时，跳过旧的单文件重开逻辑（多标签会话已取代 reopenLastFile）。
+    if (session.tabs.some((t) => t.file.path || t.file.content)) return;
+    if (!systemOpenChecked || !settings.reopenLastFile || file.path || reopenAttempted.current) return;
     const lastPath = getLastOpenedPath();
     if (!lastPath) return;
     reopenAttempted.current = true;
@@ -569,7 +547,7 @@ export function AppLayout() {
         window.cancelIdleCallback(idleId);
       }
     };
-  }, [file.path, handleOpenPath, newDraftActive, settings.reopenLastFile, systemOpenChecked]);
+  }, [file.path, handleOpenPath, settings.reopenLastFile, systemOpenChecked, session.tabs]);
 
   useEffect(() => {
     if (!settings.autoUpdateCheck || autoUpdateCheckStarted.current || !isTauriRuntime) return;
@@ -589,11 +567,33 @@ export function AppLayout() {
     const timeout = window.setTimeout(() => {
       void import('../services/fileService')
         .then(({ saveFile }) => saveFile(file))
-        .then((updated) => setFile(updated))
+        .then((updated) => updateActiveFile(() => updated))
         .catch((e) => console.error('Auto-save failed:', e));
     }, 800);
     return () => window.clearTimeout(timeout);
-  }, [file, settings.autoSave]);
+  }, [file, settings.autoSave, updateActiveFile]);
+
+  // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
+  // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
+  // reloading 由 activeTab 派生（draftPersisted=false + content 空 = 重读中），避免 effect 内 set state。
+  const { markPathInvalid } = session;
+  useEffect(() => {
+    if (!activeTab || activeTab.draftPersisted) return;
+    if (!activeTab.file.path || activeTab.file.content) return;
+    if (activeTab.file.fileType === 'docx') return;
+    let cancelled = false;
+    void import('../services/fileService')
+      .then(({ openPath }) => openPath(activeTab.file.path, settings.defaultEncoding))
+      .then((opened) => { if (!cancelled) updateActiveFile(() => opened); })
+      .catch(() => { if (!cancelled) markPathInvalid(activeTab.id); });
+    return () => { cancelled = true; };
+  }, [activeTab, settings.defaultEncoding, updateActiveFile, markPathInvalid]);
+  const reloading = !!activeTab
+    && !activeTab.pathInvalid
+    && !activeTab.draftPersisted
+    && !!activeTab.file.path
+    && !activeTab.file.content
+    && activeTab.file.fileType !== 'docx';
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -617,7 +617,6 @@ export function AppLayout() {
     rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
     resizing ? 'is-resizing' : '',
-    splitView ? 'split-view' : '',
   ].filter(Boolean).join(' ');
 
   const resolveTocHeading = useCallback((item: TocItem, index: number): HTMLElement | null => {
@@ -714,7 +713,9 @@ export function AppLayout() {
       window.removeEventListener('resize', scheduleUpdate);
       observer?.disconnect();
     };
-  }, [editorMode, file.content, resolveTocHeading, toc, rightPanelMode]);
+    // 故意不含 file.content：内容变化通过上面的 MutationObserver 实时感知，
+    // 不应每键都 disconnect + 重新 observe 整棵 DOM（ISS-159）。toc 变化时重建即可。
+  }, [editorMode, resolveTocHeading, toc, rightPanelMode]);
 
   const editorPane = isDocx ? (
     <div className="editor-pane readonly-pane">
@@ -749,7 +750,7 @@ export function AppLayout() {
         previewWidth={rightPanelWidth}
         canExport={Boolean(file.path)}
         onExportWord={handleExportWord}
-        onClose={() => setRightPanelMode('none')}
+        onClose={() => updateActiveTabMeta({ rightPanelMode: 'none' })}
         filePath={file.path}
       />
     </Suspense>
@@ -758,7 +759,7 @@ export function AppLayout() {
       <WechatPreviewPane
         source={file.content}
         fileName={file.name}
-        onClose={() => setRightPanelMode('none')}
+        onClose={() => updateActiveTabMeta({ rightPanelMode: 'none' })}
         filePath={file.path}
       />
     </Suspense>
@@ -781,21 +782,27 @@ export function AppLayout() {
     <div className="app-layout" data-theme={settings.theme} style={appStyle}>
       <Toolbar
         dirty={file.dirty}
-        fileContent={file.content}
         fileName={file.name}
+        tabBar={
+          <TabBar
+            tabs={session.tabs}
+            activeTabId={session.activeTabId}
+            windowLabel={windowLabel}
+            onSelect={session.switchTab}
+            onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
+            onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
+            onNew={() => session.openInNewTab(createEmptyFile())}
+            onTearOff={isTearOffSupported ? handleTearOff : undefined}
+            onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
+          />
+        }
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
-        splitViewActive={splitView}
-        newDraftActive={newDraftActive}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
-        onToggleSplitView={handleToggleSplitView}
-        onOpenB={handleOpenB}
-        onNew={handleNew}
-        onDiscardNewDraft={handleDiscardNewDraft}
         onOpen={handleOpen}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
@@ -812,7 +819,16 @@ export function AppLayout() {
         className={mainContentClassName}
         style={{ '--right-panel-width': `${rightPanelWidth}px` } as React.CSSProperties}
       >
-        {isDocx ? docxPane : (
+        {session.showHomePage ? (
+          <RecentFilesPage
+            recentFiles={session.recentFiles}
+            onOpenFile={handleOpen}
+            onOpenRecent={(path) => { void handleOpenPath(path); }}
+            onNew={() => session.openInNewTab(createEmptyFile())}
+            onRemoveRecent={(path) => session.removeRecentFile(path)}
+            onClearRecent={() => session.clearRecentFiles()}
+          />
+        ) : isDocx ? docxPane : (
           <>
             <FloatingToc
               items={toc}
@@ -823,45 +839,7 @@ export function AppLayout() {
               onAlwaysPinnedChange={handleTocAlwaysPinnedChange}
               onNavigate={handleTocNavigate}
             />
-            <div className="editor-pane-group">
-              <div className="editor-pane-wrapper">
-                <div className="editor-pane-label">{file.name}</div>
-                {editorPane}
-              </div>
-              {splitView && (
-                <>
-                  <div className="split-divider" />
-                  {fileB ? (
-                    <div
-                      ref={rightSplitPaneRef}
-                      className="editor-pane-wrapper"
-                      data-split-drop="true"
-                      onDragOver={(e) => { e.preventDefault(); hoveringSplitB.current = true; }}
-                      onDragLeave={() => { hoveringSplitB.current = false; }}
-                    >
-                      <div className="editor-pane-label">{fileB.name}</div>
-                      <Suspense fallback={<div className="editor-pane lazy-pane"><span>加载中</span></div>}>
-                        <WysiwygEditorPane source={fileB.content} onChange={(v) => setFileB((prev) => prev ? { ...prev, content: v } : null)} />
-                      </Suspense>
-                    </div>
-                  ) : (
-                    <div
-                      ref={rightSplitPaneRef}
-                      className="editor-pane-wrapper split-drop-zone"
-                      data-split-drop="true"
-                      onDragOver={(e) => { e.preventDefault(); hoveringSplitB.current = true; }}
-                      onDragLeave={() => { hoveringSplitB.current = false; }}
-                    >
-                      <div className="editor-pane-label">等待文件</div>
-                      <div className="split-drop-hint">
-                        <span>拖拽文件到此处</span>
-                        <small>或点击上方 📂 按钮打开</small>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+            {editorPane}
           </>
         )}
         {rightPanelMode !== 'none' && !isDocx && (
@@ -880,7 +858,26 @@ export function AppLayout() {
         )}
         {rightPanel}
       </div>
-      <StatusBar filePath={file.path} dirty={file.dirty} />
+      <StatusBar
+        filePath={file.path}
+        dirty={file.dirty}
+        draftPersisted={session.activeTab?.draftPersisted}
+        pathInvalid={session.activeTab?.pathInvalid}
+        reloading={reloading}
+        onSaveAs={() => { void handleSaveAs(); }}
+      />
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onCloseTab={() => session.closeTab(contextMenu.tabId, { confirmDirty: confirmCloseDirty })}
+          onCloseOthers={() => session.closeOthers(contextMenu.tabId)}
+          onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
+          onCloseAll={() => session.closeAll()}
+          isPlaceholder={session.tabs.find((t) => t.id === contextMenu.tabId)?.isPlaceholder ?? false}
+        />
+      )}
       {settingsVisible && (
         <Suspense fallback={<SettingsPageFallback />}>
           <SettingsPage
