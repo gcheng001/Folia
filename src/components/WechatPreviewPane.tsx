@@ -167,50 +167,30 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
 
   const handleExportPdf = async () => {
     if (!previewResult) return;
-    setActionStatus({ target: 'pdf', tone: 'muted', text: '正在准备打印…' });
+    setActionStatus({ target: 'pdf', tone: 'muted', text: 'PDF 生成中（浏览器渲染）…' });
     try {
-      // 用隐藏 iframe 渲染 HTML 后调用原生 print()（异步、不阻塞主线程，彻底避免
-      // html2pdf.js 主线程同步截图导致长文档卡死）。用户在打印对话框选「另存为 PDF」。
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      iframe.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(iframe);
-      const win = iframe.contentWindow;
-      const doc = win?.document;
-      if (!win || !doc) {
-        if (iframe.parentNode) document.body.removeChild(iframe);
-        setActionStatus({ target: 'pdf', tone: 'error', text: t('wechatPreviewExportError') });
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      const { invoke } = await import('@tauri-apps/api/core');
+      const baseName = fileName.replace(/\.(md|markdown|html?)$/i, '').trim() || 'document';
+      const savePath = await save({
+        defaultPath: `${baseName}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (!savePath) {
+        setActionStatus({ target: 'pdf', tone: 'muted', text: t('wechatPreviewExportCancelled') });
         return;
       }
-      doc.open();
-      doc.write(
-        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${fileName}</title>` +
-        `<style>@page{margin:12mm;}html,body{margin:0;padding:0;}</style></head>` +
-        `<body>${previewResult.clipboardHtml}</body></html>`,
-      );
-      doc.close();
-      const printNow = () => {
-        win.focus();
-        win.print();
-      };
-      if (doc.readyState === 'complete') {
-        setTimeout(printNow, 200);
-      } else {
-        win.addEventListener('load', () => setTimeout(printNow, 100));
-      }
-      // 打印对话框处理完前后清理 iframe（给足 60s）。
-      window.setTimeout(() => {
-        if (iframe.parentNode) document.body.removeChild(iframe);
-      }, 60000);
-      setActionStatus({ target: 'pdf', tone: 'ok', text: '已打开打印对话框，左下角「PDF」→「另存为 PDF」' });
+      const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${baseName}</title></head><body>${previewResult.clipboardHtml}</body></html>`;
+      await invoke('export_pdf_via_chrome', { html: fullHtml, savePath });
+      setActionStatus({ target: 'pdf', tone: 'ok', text: t('wechatPreviewExportSuccess') });
     } catch (error) {
-      console.warn('Failed to print to PDF:', error);
-      setActionStatus({ target: 'pdf', tone: 'error', text: t('wechatPreviewExportError') });
+      console.warn('Failed to export PDF:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      setActionStatus({
+        target: 'pdf',
+        tone: 'error',
+        text: msg.includes('未找到') ? '未装 Chrome/Edge，PDF 不可用' : t('wechatPreviewExportError'),
+      });
     }
   };
 

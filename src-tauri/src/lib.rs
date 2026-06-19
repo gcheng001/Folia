@@ -496,6 +496,50 @@ fn html_anything_import_script(
   )))
 }
 
+/// 查找系统已装的 Chromium 内核浏览器可执行文件（Chrome > Edge > Chromium > Brave）。
+fn find_chromium() -> Option<String> {
+  let candidates = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+  ];
+  candidates.iter().find(|p| std::path::Path::new(p).exists()).map(|s| s.to_string())
+}
+
+/// 用 headless Chromium 把 HTML 渲染成 PDF（无页眉页脚、矢量、文字可选、不卡 UI）。
+/// 写临时 HTML → spawn chromium --headless --print-to-pdf → 清理临时文件。
+#[tauri::command]
+async fn export_pdf_via_chrome(html: String, save_path: String) -> Result<(), String> {
+  use std::io::Write as _;
+  let chrome = find_chromium()
+    .ok_or_else(|| "未找到 Chrome/Edge/Chromium，请先安装 Chrome".to_string())?;
+  let tmp = std::env::temp_dir().join(format!("folia-pdf-{}.html", std::process::id()));
+  {
+    let mut f = std::fs::File::create(&tmp).map_err(|e| format!("创建临时文件失败: {e}"))?;
+    f.write_all(html.as_bytes()).map_err(|e| format!("写入临时文件失败: {e}"))?;
+  }
+  let file_url = format!("file://{}", tmp.to_string_lossy());
+  // --virtual-time-budget 等 JS/图片/字体加载完；--no-pdf-header-footer 确保无页眉页脚。
+  let output = std::process::Command::new(&chrome)
+    .args([
+      "--headless=new",
+      "--disable-gpu",
+      "--no-pdf-header-footer",
+      "--run-all-compositor-stages-before-draw",
+      "--virtual-time-budget=10000",
+      &format!("--print-to-pdf={}", save_path),
+      &file_url,
+    ])
+    .output()
+    .map_err(|e| format!("启动浏览器失败: {e}"))?;
+  let _ = std::fs::remove_file(&tmp);
+  if !output.status.success() {
+    return Err(format!("生成 PDF 失败: {}", String::from_utf8_lossy(&output.stderr)));
+  }
+  Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app_state = AppState {
@@ -520,7 +564,8 @@ pub fn run() {
       create_tab_window,
       update_tab_window_tabs,
       close_tab_window,
-      open_html_anything
+      open_html_anything,
+      export_pdf_via_chrome
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
