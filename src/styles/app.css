@@ -633,6 +633,9 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 .editor-pane-split-name {
   flex: 1;
@@ -663,6 +666,8 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .editor-pane-split > .wysiwyg-editor-pane,
 .editor-pane-split > .editor-pane {
   flex: 1;
+  height: auto;
+  min-height: 0;
 }
 
 /* When a right panel is open, every writing-layout pane (including the HTML
