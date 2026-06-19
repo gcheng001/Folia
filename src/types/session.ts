@@ -32,6 +32,10 @@ export interface SessionState {
   tabs: Tab[];
   activeTabId: string;
   recentFiles: RecentFileEntry[];
+  /** 窗口内分屏：右侧并排显示的 tab id；null 表示无分屏。该 tab 仍在 tabs[] 中，只是额外在右侧渲染。 */
+  splitTabId: string | null;
+  /** 是否处于分屏视图（splitTabId 非 null 时通常为 true）。 */
+  splitView: boolean;
 }
 
 /** localStorage 持久化结构（带版本号，用于 schema 校验与未来迁移）。 */

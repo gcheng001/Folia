@@ -14,12 +14,16 @@ export function makeTabFromFile(file: OpenedFile, isPlaceholder = false): Tab {
 
 /** 启动引导：有持久化 tabs 则恢复（修正失效的 activeTabId），否则给一个空占位标签保证编辑器可用。 */
 export function bootstrapSession(loaded: SessionState): SessionState {
+  // 兼容旧持久化（无 split 字段）：补默认值。
+  const splitTabId = loaded.splitTabId ?? null;
   if (loaded.tabs.length > 0) {
     const activeId = loaded.tabs.some((t) => t.id === loaded.activeTabId) ? loaded.activeTabId : loaded.tabs[0].id;
-    return { ...loaded, activeTabId: activeId };
+    // splitTabId 可能指向已不存在的 tab（上次会话残留 / 旧版数据），normalize 一次防悬空。
+    const validSplitId = splitTabId && loaded.tabs.some((t) => t.id === splitTabId) ? splitTabId : null;
+    return { ...loaded, activeTabId: activeId, splitTabId: validSplitId, splitView: validSplitId ? loaded.splitView ?? false : false };
   }
   const placeholder = makeTabFromFile(createEmptyFile(), true);
-  return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles };
+  return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles, splitTabId: null, splitView: false };
 }
 
 export type SessionAction =
@@ -43,9 +47,28 @@ export type SessionAction =
   | { type: 'tearOffTab'; id: string }
   | { type: 'removeTabById'; id: string }
   | { type: 'receiveTab'; tab: Tab }
-  | { type: 'windowClosed'; remainingTabIds: string[]; tabsById: Record<string, Tab> };
+  | { type: 'windowClosed'; remainingTabIds: string[]; tabsById: Record<string, Tab> }
+  // 窗口内分屏（split-view）：
+  // - toggleSplit 切换分屏开关；关闭时清 splitTabId。
+  // - setSplitTab 把某 tab 设为右侧分屏 tab（拖拽或按钮触发）。
+  // - closeSplit 关闭分屏（不清 tab，tab 仍在 tabs[]）。
+  // - updateSplitTabFile 更新分屏 tab 内容（右侧编辑器编辑）。
+  | { type: 'toggleSplit' }
+  | { type: 'setSplitTab'; id: string }
+  | { type: 'closeSplit' }
+  | { type: 'updateSplitTabFile'; updater: (f: OpenedFile) => OpenedFile };
 
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
+  const next = reduceInternal(state, action);
+  // 不变式：splitTabId 必须指向现存 tab。删除 tab 的 case 可能留下悬空 splitTabId，
+  // 统一在出口 normalize（关闭分屏），避免右侧渲染一个不存在的 tab。
+  if (next.splitTabId && !next.tabs.some((t) => t.id === next.splitTabId)) {
+    return { ...next, splitTabId: null, splitView: false };
+  }
+  return next;
+}
+
+function reduceInternal(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'openInNewTab': {
       const active = state.tabs.find((t) => t.id === state.activeTabId);
@@ -161,6 +184,22 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (newTabs.length === 0) return state;
       return { ...state, tabs: [...state.tabs, ...newTabs], activeTabId: newTabs[0].id };
     }
+    // ──────── 窗口内分屏（split-view）────────
+    case 'toggleSplit':
+      // 关闭分屏时清 splitTabId；开启时保留既有 splitTabId（若已设）。
+      return { ...state, splitView: !state.splitView, splitTabId: state.splitView ? null : state.splitTabId };
+    case 'setSplitTab':
+      // 仅允许设为现存 tab；splitTab 不能等于 activeTabId（右侧显示同一个无意义）。
+      if (!state.tabs.some((t) => t.id === action.id) || action.id === state.activeTabId) return state;
+      return { ...state, splitTabId: action.id, splitView: true };
+    case 'closeSplit':
+      return { ...state, splitTabId: null, splitView: false };
+    case 'updateSplitTabFile':
+      if (!state.splitTabId) return state;
+      return {
+        ...state,
+        tabs: state.tabs.map((t) => (t.id === state.splitTabId ? { ...t, file: action.updater(t.file) } : t)),
+      };
     default:
       return state;
   }

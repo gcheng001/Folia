@@ -20,7 +20,7 @@ describe('bootstrapSession', () => {
   it('有 tabs 时保留并修正失效的 activeTabId 到首个', () => {
     const tab = makeTabFromFile(file('a.md'));
     const loaded: SessionState = { tabs: [tab], activeTabId: '不存在', recentFiles: [] };
-    expect(bootstrapSession(loaded)).toEqual({ tabs: [tab], activeTabId: tab.id, recentFiles: [] });
+    expect(bootstrapSession(loaded)).toEqual({ tabs: [tab], activeTabId: tab.id, recentFiles: [], splitTabId: null, splitView: false });
   });
 
   it('无 tabs 时给空占位标签，编辑器始终可用', () => {
@@ -263,5 +263,59 @@ describe('sessionReducer.markPathInvalid', () => {
     const next = sessionReducer(start, { type: 'markPathInvalid', id: t1.id });
     expect(next.tabs[0].pathInvalid).toBe(true);
     expect(next.tabs[1].pathInvalid).toBeUndefined();
+  });
+});
+
+describe('sessionReducer split-view', () => {
+  function splitState(tabs: Tab[], activeTabId: string, splitTabId: string | null = null, splitView = false): SessionState {
+    return { tabs, activeTabId, recentFiles: [], splitTabId, splitView };
+  }
+
+  it('setSplitTab 设置分屏 tab 并开启 splitView', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md'));
+    const s = splitState([t1, t2], t1.id);
+    expect(sessionReducer(s, { type: 'setSplitTab', id: t2.id }))
+      .toEqual({ tabs: [t1, t2], activeTabId: t1.id, recentFiles: [], splitTabId: t2.id, splitView: true });
+  });
+
+  it('setSplitTab 不允许设为 activeTabId（返回同一引用）', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const s = splitState([t1], t1.id);
+    expect(sessionReducer(s, { type: 'setSplitTab', id: t1.id })).toBe(s);
+  });
+
+  it('toggleSplit 切换分屏开关（关闭时清 splitTabId）', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md'));
+    expect(sessionReducer(splitState([t1, t2], t1.id, t2.id, false), { type: 'toggleSplit' }).splitView).toBe(true);
+    const off = sessionReducer(splitState([t1, t2], t1.id, t2.id, true), { type: 'toggleSplit' });
+    expect(off.splitView).toBe(false);
+    expect(off.splitTabId).toBeNull();
+  });
+
+  it('closeSplit 清空分屏', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md'));
+    expect(sessionReducer(splitState([t1, t2], t1.id, t2.id, true), { type: 'closeSplit' }))
+      .toEqual({ tabs: [t1, t2], activeTabId: t1.id, recentFiles: [], splitTabId: null, splitView: false });
+  });
+
+  it('updateSplitTabFile 只更新分屏 tab 内容，不影响主区', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A'));
+    const t2 = makeTabFromFile(file('b.md', 'B'));
+    const next = sessionReducer(splitState([t1, t2], t1.id, t2.id, true), { type: 'updateSplitTabFile', updater: (f) => ({ ...f, content: 'B2', dirty: true }) });
+    expect(next.tabs[1].file.content).toBe('B2');
+    expect(next.tabs[1].file.dirty).toBe(true);
+    expect(next.tabs[0].file.content).toBe('A');
+  });
+
+  it('关闭 splitTab 后 splitTabId 被 normalize 清空（防悬空）', () => {
+    const t1 = makeTabFromFile(file('a.md'));
+    const t2 = makeTabFromFile(file('b.md'));
+    const next = sessionReducer(splitState([t1, t2], t1.id, t2.id, true), { type: 'closeTab', id: t2.id, confirmed: true });
+    expect(next.tabs).toHaveLength(1);
+    expect(next.splitTabId).toBeNull();
+    expect(next.splitView).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   BookOpenText,
   Braces,
+  Columns2,
   FilePlus,
   FolderOpen,
   Globe,
@@ -34,9 +35,12 @@ type ToolbarProps = {
   editingDisabled: boolean;
   /** 当前 active 标签是未命名草稿时为 true，用于显示“放弃新建”按钮。 */
   newDraftActive: boolean;
+  /** 是否处于分屏视图（高亮分屏按钮）。 */
+  splitViewActive: boolean;
   onNew: () => void;
   onDiscardNewDraft: () => void;
   onOpenHtmlAnything: () => void;
+  onToggleSplit: () => void;
   onToggleEditorMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
@@ -51,7 +55,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, newDraftActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -175,6 +179,15 @@ export function Toolbar({
           </button>
           <button data-no-window-drag="true" onClick={onOpenHtmlAnything} title="Anything HTML" aria-label="Anything HTML">
             <Globe size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={splitViewActive ? 'active' : ''}
+            data-no-window-drag="true"
+            onClick={onToggleSplit}
+            title="分屏对照"
+            aria-label="分屏对照"
+          >
+            <Columns2 size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>

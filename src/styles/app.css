@@ -628,6 +628,43 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--border);
 }
 
+/* ===== 窗口内分屏标签栏（split-view 阶段B）===== */
+.editor-pane-split-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.editor-pane-split-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-pane-split-close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.editor-pane-split-close:hover {
+  background: var(--border-soft);
+  color: var(--text);
+}
+.editor-pane-split > .wysiwyg-editor-pane,
+.editor-pane-split > .editor-pane {
+  flex: 1;
+}
+
 /* When a right panel is open, every writing-layout pane (including the HTML
    presentation pane that replaces the editor in `html-presentation-layout`)
    must refuse to shrink below the readable threshold. The right panel

@@ -152,6 +152,9 @@ export function useSession() {
 
   const activeTab = state.tabs.find((t) => t.id === state.activeTabId) ?? state.tabs[0];
   const activeFile = activeTab?.file ?? createEmptyFile();
+  // 分屏 tab：仍在 tabs[] 中，额外在右侧渲染。splitTabId 无效时为 undefined。
+  const splitTab = state.splitTabId ? state.tabs.find((t) => t.id === state.splitTabId) : undefined;
+  const splitFile = splitTab?.file ?? null;
 
   const openInNewTab = useCallback((file: OpenedFile) => {
     dispatch({ type: 'openInNewTab', file });
@@ -188,6 +191,14 @@ export function useSession() {
   const closeOthers = useCallback((id: string) => { dispatch({ type: 'closeOthers', id }); }, []);
   const closeToRight = useCallback((id: string) => { dispatch({ type: 'closeToRight', id }); }, []);
   const closeAll = useCallback(() => { dispatch({ type: 'closeAll' }); }, []);
+
+  // ── 窗口内分屏（split-view）──
+  const toggleSplit = useCallback(() => { dispatch({ type: 'toggleSplit' }); }, []);
+  const setSplitTab = useCallback((id: string) => { dispatch({ type: 'setSplitTab', id }); }, []);
+  const closeSplit = useCallback(() => { dispatch({ type: 'closeSplit' }); }, []);
+  const updateSplitTabFile = useCallback((updater: (f: OpenedFile) => OpenedFile) => {
+    dispatch({ type: 'updateSplitTabFile', updater });
+  }, []);
 
   const markPathInvalid = useCallback((id: string) => {
     dispatch({ type: 'markPathInvalid', id });
@@ -277,6 +288,14 @@ export function useSession() {
     closeOthers,
     closeToRight,
     closeAll,
+    // 窗口内分屏
+    splitTab,
+    splitFile,
+    splitView: state.splitView,
+    toggleSplit,
+    setSplitTab,
+    closeSplit,
+    updateSplitTabFile,
     markPathInvalid,
     updateActiveFile,
     updateActiveTabMeta,

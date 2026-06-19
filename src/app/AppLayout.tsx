@@ -165,6 +165,11 @@ export function AppLayout() {
     updateActiveFile,
     updateActiveTabMeta,
     tearOffTab,
+    splitFile,
+    splitView,
+    setSplitTab,
+    closeSplit,
+    updateSplitTabFile,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
   // 新建空白草稿标签（多标签语义：等价于 TabBar 的 onNew）
@@ -186,6 +191,15 @@ export function AppLayout() {
       }).catch((error) => console.warn('open_html_anything failed:', error));
     });
   }, [file.content, file.name]);
+  // 分屏开关：开启时自动选第一个非 active、非占位标签作为右侧分屏；关闭时清分屏。
+  const handleToggleSplit = useCallback(() => {
+    if (splitView) {
+      closeSplit();
+      return;
+    }
+    const candidate = session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder);
+    if (candidate) setSplitTab(candidate.id);
+  }, [splitView, closeSplit, session.tabs, activeTabId, setSplitTab]);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -592,6 +606,18 @@ export function AppLayout() {
     return () => window.clearTimeout(timeout);
   }, [file, settings.autoSave, updateActiveFile]);
 
+  // 分屏区文件自动保存（与主区同款逻辑，独立监听 splitFile）。
+  useEffect(() => {
+    if (!splitFile || !settings.autoSave || !splitFile.path || !splitFile.dirty || splitFile.fileType === 'docx') return;
+    const timeout = window.setTimeout(() => {
+      void import('../services/fileService')
+        .then(({ saveFile }) => saveFile(splitFile))
+        .then((updated) => updateSplitTabFile(() => updated))
+        .catch((e) => console.error('Split auto-save failed:', e));
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [splitFile, settings.autoSave, updateSplitTabFile]);
+
   // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
   // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
   // reloading 由 activeTab 派生（draftPersisted=false + content 空 = 重读中），避免 effect 内 set state。
@@ -628,12 +654,15 @@ export function AppLayout() {
     : undefined;
   const shouldShowHtmlPresentation = htmlPresentationVisible && file.fileType === 'html' && !isDocx;
   const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
+  // 分屏时右侧面板（Word/微信预览）不参与布局，避免与分屏区挤压。
+  const rightPanelEffective = splitView ? 'none' : rightPanelMode;
   const mainContentClassName = [
     'main-content',
     isDocx ? 'docx-layout' : 'writing-layout',
-    rightPanelMode !== 'none' && !isDocx ? 'right-panel-open' : '',
-    rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
-    rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
+    rightPanelEffective !== 'none' && !isDocx ? 'right-panel-open' : '',
+    rightPanelEffective === 'word' && !isDocx ? 'word-preview-open' : '',
+    rightPanelEffective === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
+    splitView && !isDocx ? 'split-view' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
     resizing ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
@@ -762,6 +791,21 @@ export function AppLayout() {
     </Suspense>
   );
 
+  // 分屏区编辑器（右侧）：MVP 只支持所见即所得模式；docx 显示只读提示。
+  const splitEditorPane = splitFile ? (
+    splitFile.fileType === 'docx' ? (
+      <div className="editor-pane readonly-pane"><span>Word 文件为只读</span></div>
+    ) : (
+      <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>分屏编辑器加载中</span></div>}>
+        <WysiwygEditorPane
+          source={splitFile.content}
+          onChange={(value) => updateSplitTabFile((f) => ({ ...f, content: value, dirty: value !== f.lastSavedContent }))}
+          filePath={splitFile.path}
+        />
+      </Suspense>
+    )
+  ) : null;
+
   const rightPanel = rightPanelMode === 'word' && !isDocx ? (
     <Suspense fallback={<aside className="word-preview-panel" aria-label={t('wordPreviewAria')} />}>
       <WordPaperPreviewPane
@@ -820,9 +864,11 @@ export function AppLayout() {
         wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
         newDraftActive={newDraftActive}
+        splitViewActive={splitView}
         onNew={handleNew}
         onDiscardNewDraft={handleDiscardNewDraft}
         onOpenHtmlAnything={handleOpenHtmlAnything}
+        onToggleSplit={handleToggleSplit}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
@@ -862,10 +908,30 @@ export function AppLayout() {
               onAlwaysPinnedChange={handleTocAlwaysPinnedChange}
               onNavigate={handleTocNavigate}
             />
-            {editorPane}
+            {splitView && splitEditorPane ? (
+              <div className="editor-pane-group split-active">
+                <div className="editor-pane-wrapper editor-pane-main">{editorPane}</div>
+                <div className="split-divider" data-no-window-drag="true" />
+                <div className="editor-pane-wrapper editor-pane-split">
+                  <div className="editor-pane-label editor-pane-split-label">
+                    <span className="editor-pane-split-name">{splitFile?.name}</span>
+                    <button
+                      className="editor-pane-split-close"
+                      data-no-window-drag="true"
+                      onClick={() => closeSplit()}
+                      aria-label="关闭分屏"
+                      title="关闭分屏"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {splitEditorPane}
+                </div>
+              </div>
+            ) : editorPane}
           </>
         )}
-        {rightPanelMode !== 'none' && !isDocx && (
+        {rightPanelEffective !== 'none' && !isDocx && (
           <div
             className={`word-preview-resizer ${resizing ? 'dragging' : ''}`}
             role="separator"
@@ -879,7 +945,7 @@ export function AppLayout() {
             onDoubleClick={() => setRightPanelWidth(460)}
           />
         )}
-        {rightPanel}
+        {rightPanelEffective !== 'none' && rightPanel}
       </div>
       <StatusBar
         filePath={file.path}

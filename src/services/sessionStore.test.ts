@@ -21,7 +21,7 @@ function makeTab(id: string, content = 'hello', dirty = false): SessionState['ta
 }
 
 function emptySession(): SessionState {
-  return { tabs: [], activeTabId: '', recentFiles: [] };
+  return { tabs: [], activeTabId: '', recentFiles: [], splitTabId: null, splitView: false };
 }
 
 beforeEach(() => { localStorage.clear(); });
@@ -37,6 +37,8 @@ describe('sessionStore.loadSession', () => {
       tabs: [makeTab('a')],
       activeTabId: 'a',
       recentFiles: [{ path: '/tmp/a.md', name: 'a.md', openedAt: 1000 }],
+      splitTabId: null,
+      splitView: false,
     };
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ version: 1, ...session }));
     expect(loadSession()).toEqual(session);
@@ -55,7 +57,7 @@ describe('sessionStore.loadSession', () => {
 
 describe('sessionStore.saveSession', () => {
   it('正常写入并可读回', () => {
-    const session: SessionState = { tabs: [makeTab('a')], activeTabId: 'a', recentFiles: [] };
+    const session: SessionState = { tabs: [makeTab('a')], activeTabId: 'a', recentFiles: [], splitTabId: null, splitView: false };
     saveSession(session);
     const raw = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)!) as PersistedSession;
     expect(raw.version).toBe(1);

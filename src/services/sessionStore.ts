@@ -4,7 +4,7 @@ import { DRAFT_PERSIST_MAX_BYTES } from '../types/session';
 export const SESSION_STORAGE_KEY = 'folia.session.v1';
 
 function emptySession(): SessionState {
-  return { tabs: [], activeTabId: '', recentFiles: [] };
+  return { tabs: [], activeTabId: '', recentFiles: [], splitTabId: null, splitView: false };
 }
 
 function isPersistedSession(value: unknown): value is PersistedSession {
@@ -30,6 +30,9 @@ export function loadSession(): SessionState {
       tabs: parsed.tabs.map((t) => ({ ...t, isPlaceholder: t.isPlaceholder ?? false })) as Tab[],
       activeTabId: parsed.activeTabId,
       recentFiles: parsed.recentFiles,
+      // 兼容旧持久化（无 split 字段）；splitTabId 有效性由 bootstrapSession 再校验一次。
+      splitTabId: parsed.splitTabId ?? null,
+      splitView: parsed.splitView ?? false,
     };
   } catch {
     return emptySession();
@@ -42,6 +45,8 @@ function toPersisted(session: SessionState): PersistedSession {
     version: 1,
     activeTabId: session.activeTabId,
     recentFiles: session.recentFiles,
+    splitTabId: session.splitTabId,
+    splitView: session.splitView,
     tabs: session.tabs.map((tab) => {
       const oversized = tab.file.content.length > DRAFT_PERSIST_MAX_BYTES;
       return {
