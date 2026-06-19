@@ -168,13 +168,17 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
 
   const handleExportPdf = async () => {
     if (!previewArticleRef.current) return;
+    // html2pdf 在主线程同步渲染（html2canvas），文档长会冻结 UI。
+    // 先提示"生成中"并让出一帧渲染提示，再把 scale 降到 1（计算量减 75%）缩短卡顿时长。
+    setActionStatus({ target: 'pdf', tone: 'muted', text: 'PDF 生成中，文档较长请稍候…' });
+    await new Promise((resolve) => setTimeout(resolve, 60));
     try {
       const baseName = fileName.replace(/\.(md|markdown|html?)$/i, '').trim() || 'document';
       await html2pdf().set({
         margin: [10, 10, 12, 10],
         filename: `${baseName}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        image: { type: 'jpeg', quality: 0.92 },
+        html2canvas: { scale: 1, useCORS: true, backgroundColor: '#ffffff', logging: false },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       }).from(previewArticleRef.current).save();
       setActionStatus({ target: 'pdf', tone: 'ok', text: t('wechatPreviewExportSuccess') });
