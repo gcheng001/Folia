@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardCopy, FileOutput, X } from 'lucide-react';
+import { ClipboardCopy, FileOutput, FileText, X } from 'lucide-react';
 import { useSettings } from '../hooks/useSettings';
 import { detectMarkdownRenderFeatures } from '../services/markdownFeatureDetector';
 import { translate } from '../services/i18n';
@@ -18,6 +18,7 @@ import {
 import { getHtmlExportPresetDefinition } from '../services/htmlExportPresets';
 import type { HtmlExportPresetId } from '../services/htmlExportPresets';
 import { resolveLocalImages } from '../services/localImageResolver';
+import html2pdf from 'html2pdf.js';
 
 type WechatPreviewPaneProps = {
   source: string;
@@ -27,7 +28,7 @@ type WechatPreviewPaneProps = {
 };
 
 type ActionStatus = {
-  target: 'copy' | 'export';
+  target: 'copy' | 'export' | 'pdf';
   tone: 'ok' | 'error' | 'muted';
   text: string;
 };
@@ -37,6 +38,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const deferredSource = useDeferredValue(source);
   const renderRef = useRef<HTMLDivElement>(null);
+  const previewArticleRef = useRef<HTMLDivElement>(null);
   const renderIdRef = useRef(0);
   const [previewResult, setPreviewResult] = useState<WechatPreviewResult | null>(null);
   const [actionStatus, setActionStatus] = useState<ActionStatus | null>(null);
@@ -164,6 +166,24 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
     }
   };
 
+  const handleExportPdf = async () => {
+    if (!previewArticleRef.current) return;
+    try {
+      const baseName = fileName.replace(/\.(md|markdown|html?)$/i, '').trim() || 'document';
+      await html2pdf().set({
+        margin: [10, 10, 12, 10],
+        filename: `${baseName}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      }).from(previewArticleRef.current).save();
+      setActionStatus({ target: 'pdf', tone: 'ok', text: t('wechatPreviewExportSuccess') });
+    } catch (error) {
+      console.warn('Failed to export PDF:', error);
+      setActionStatus({ target: 'pdf', tone: 'error', text: t('wechatPreviewExportError') });
+    }
+  };
+
   const handlePresetChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setHtmlExportPreset(event.target.value as HtmlExportPresetId);
   };
@@ -222,6 +242,16 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
           </button>
           <button
             type="button"
+            className={`wechat-preview-action ${effectiveActionStatus?.target === 'pdf' ? effectiveActionStatus.tone : ''}`}
+            disabled={!canUsePreviewResult}
+            onClick={() => void handleExportPdf()}
+            title="导出 PDF"
+            aria-label="导出 PDF"
+          >
+            <FileText size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
             className="wechat-preview-close-button"
             onClick={onClose}
             title={t('closePreviewTitle')}
@@ -250,6 +280,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
           <div className="wechat-preview-empty">{t('wechatPreviewError')}</div>
         ) : (
           <div
+            ref={previewArticleRef}
             className="wechat-preview-article-shell"
             dangerouslySetInnerHTML={{ __html: previewResult?.previewHtml ?? '' }}
           />
