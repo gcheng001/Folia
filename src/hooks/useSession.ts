@@ -2,11 +2,12 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
-import { sessionReducer, bootstrapSession } from './sessionReducer';
+import { sessionReducer, bootstrapSessionForWindow } from './sessionReducer';
 import { loadSession, saveSession } from '../services/sessionStore';
 import {
   closeTabWindow,
   detectCurrentWindowLabel,
+  detectCurrentWindowTabIds,
   mergeBackTab,
   syncWindowTabIds,
   tearOffTabToWindow,
@@ -24,9 +25,11 @@ export interface CloseOptions {
  * 本 hook 负责：初始化（启动恢复）、debounce 持久化草稿、派生 activeFile/editorMode 等。
  */
 export function useSession() {
-  const [state, dispatch] = useReducer(sessionReducer, undefined, () =>
-    bootstrapSession(loadSession())
-  );
+  const [state, dispatch] = useReducer(sessionReducer, undefined, () => {
+    const windowLabel = detectCurrentWindowLabel();
+    const initialTabIds = detectCurrentWindowTabIds();
+    return bootstrapSessionForWindow(loadSession(), windowLabel, initialTabIds);
+  });
 
   // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。
   const stateRef = useRef(state);
@@ -39,27 +42,22 @@ export function useSession() {
   }, [state]);
 
   // 卸载/关窗时同步 flush：debounce 期间若用户 Cmd+Q / 刷新 / 切后台，挂起的 saveSession
-  // 会被 clearTimeout 丢掉。此处监听 pagehide/beforeunload 与 Tauri onCloseRequested，
-  // 同步写一次 localStorage（写是同步的，能赶在进程退出前完成），满足 DEC-092 核心承诺。
+  // 会被 clearTimeout 丢掉。此处监听 pagehide/beforeunload 同步写一次 localStorage，
+  // 满足 DEC-092 核心承诺。
+  //
+  // 修复（ISS-174 review 跟进）：v0.4.2 实测发现 `getCurrentWindow().onCloseRequested`
+  // 在 macOS 2.11.0 上误拦截 close——即便 handler 未调用 `preventDefault`，窗口
+  // 也不会自动 destroy。Rust 侧 `on_window_event(CloseRequested)` 已保证 emit
+  // `window:closed` 后窗口正常关闭，这里不再注册 JS close handler 避免双重
+  // 监听造成的时序竞态。如未来需要 confirm 后再关（DEC-108），需重新审视
+  // Tauri API 行为后再加。
   useEffect(() => {
     const flush = () => saveSession(stateRef.current);
     window.addEventListener('pagehide', flush);
     window.addEventListener('beforeunload', flush);
-    let unlisten: (() => void) | undefined;
-    if ('__TAURI_INTERNALS__' in window) {
-      void import('@tauri-apps/api/window')
-        .then(({ getCurrentWindow }) =>
-          getCurrentWindow()
-            .onCloseRequested(() => { flush(); })
-            .then((fn) => { unlisten = fn; })
-            .catch(() => {}),
-        )
-        .catch(() => {});
-    }
     return () => {
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('beforeunload', flush);
-      unlisten?.();
     };
   }, []);
 
@@ -215,15 +213,13 @@ export function useSession() {
     [state.tabs]
   );
 
-  // ISS-164：把当前 tab 拖出成独立窗口。
-  // 调用方负责 HTML5 drag wiring；这里只做 IPC + reducer。
-  const tearOffTab = useCallback(
-    async (id: string, options?: CloseOptions) => {
+  // DEC-111：drag 到空白处时调用，撕出当前 tab 到新独立窗口。
+  // 与原 ISS-164 tearOffTab 流程一致，但去掉了 dirty 确认——浏览器范式下
+  // tear-off 不强制弹 confirm（Chrome / Safari 都不弹），由用户自行保存。
+  const tearOffViaDrag = useCallback(
+    async (id: string) => {
       const tab = state.tabs.find((t) => t.id === id);
       if (!tab) return false;
-      // dirty 标签在撕出前弹确认（与 closeTab 同款）。
-      if (tab.file.dirty && options?.confirmDirty && !options.confirmDirty()) return false;
-
       const windowLabel = detectCurrentWindowLabel();
       const payload: TabTearOffPayload = {
         tabId: id,
@@ -231,11 +227,14 @@ export function useSession() {
         dirty: tab.file.dirty,
       };
       try {
+        // 确保新窗口启动时能从共享 localStorage 找到刚撕出的 tab；
+        // debounce save 可能尚未落盘。
+        saveSession(stateRef.current);
         await tearOffTabToWindow(payload);
         dispatch({ type: 'removeTabById', id });
         return true;
       } catch (error) {
-        console.warn('useSession: tearOffTab failed', error);
+        console.warn('useSession: tearOffViaDrag failed', error);
         return false;
       }
     },
@@ -303,7 +302,9 @@ export function useSession() {
     removeRecentFile,
     clearRecentFiles,
     // ISS-164 tear-off / merge-back
-    tearOffTab,
+    // tearOffViaDrag 是 DEC-111「drag 到空白处创建新窗口」的入口；
+    // mergeBackTab 走 drag merge-back 主路径。
+    tearOffViaDrag,
     mergeBackTab: mergeBackTabById,
   };
 }

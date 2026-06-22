@@ -8,6 +8,7 @@ import {
   broadcastFullSync,
   closeTabWindow,
   detectCurrentWindowLabel,
+  detectCurrentWindowTabIds,
   makeTabWindowLabel,
   mergeBackTab,
   onSessionFullSync,
@@ -107,6 +108,18 @@ describe('detectCurrentWindowLabel', () => {
   it('过长 label（>64 字符）降级为 main', () => {
     history.replaceState({}, '', `/?label=${'a'.repeat(65)}`);
     expect(detectCurrentWindowLabel()).toBe('main');
+  });
+});
+
+describe('detectCurrentWindowTabIds', () => {
+  it('从 URL query 解析初始 tabIds', () => {
+    history.replaceState({}, '', '/?mode=tab-window&label=tab-window-abc&tabIds=tab-a,tab-b');
+    expect(detectCurrentWindowTabIds()).toEqual(['tab-a', 'tab-b']);
+  });
+
+  it('过滤非法 tab id', () => {
+    history.replaceState({}, '', '/?tabIds=tab-a,has%20space,../../x,tab_b');
+    expect(detectCurrentWindowTabIds()).toEqual(['tab-a', 'tab_b']);
   });
 });
 
@@ -336,3 +349,9 @@ describe('事件常量', () => {
     expect(TAB_WINDOW_EVENTS.dropRequested).toBe('tab:drop-requested');
   });
 });
+
+// ──────── ISS-174 dirty 拦截对话框（DEC-110 已撤销） ────────
+// DEC-110 移除 toolbar X 按钮后，confirmCloseWindowWithDirty 失去唯一生产端
+// 调用者 AppLayout.closeCurrentTabWindow。DEC-108 dirty 拦截方案需要走 Rust
+// OnCloseRequested + prevent_close() 重做（独立后续项），不再保留前端
+// confirmCloseWindowWithDirty 占位实现与测试。

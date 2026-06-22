@@ -18,6 +18,7 @@ import {
 import { getHtmlExportPresetDefinition } from '../services/htmlExportPresets';
 import type { HtmlExportPresetId } from '../services/htmlExportPresets';
 import { resolveLocalImages } from '../services/localImageResolver';
+import { prepareMarkdownForVditorPreview } from '../services/markdownSvgPreviewService';
 
 type WechatPreviewPaneProps = {
   source: string;
@@ -46,6 +47,10 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
   );
   const renderFeatures = useMemo(
     () => detectMarkdownRenderFeatures(deferredSource),
+    [deferredSource],
+  );
+  const markdownPreviewInput = useMemo(
+    () => prepareMarkdownForVditorPreview(deferredSource),
     [deferredSource],
   );
   const htmlExportPreset = useMemo(
@@ -84,7 +89,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
       import('vditor'),
     ]).then(async ([, { default: Vditor }]) => {
       if (cancelled || renderIdRef.current !== renderId) return;
-      await Vditor.preview(el, deferredSource, {
+      await Vditor.preview(el, markdownPreviewInput.markdown, {
         mode: 'light',
         anchor: 0,
         cdn: '/vditor',
@@ -100,8 +105,9 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
           lineNumber: false,
         },
         markdown: {
-          sanitize: true,
+          sanitize: false,
         },
+        transform: markdownPreviewInput.transform,
         after() {
           if (cancelled || renderIdRef.current !== renderId) return;
           void resolveLocalImages(el, filePath);
@@ -123,7 +129,7 @@ export function WechatPreviewPane({ source, fileName = 'document.md', onClose, f
     return () => {
       cancelled = true;
     };
-  }, [deferredSource, fileName, filePath, htmlExportPreset, renderFeatures.hasHighlightableCode, sourceIsEmpty]);
+  }, [deferredSource, fileName, filePath, htmlExportPreset, markdownPreviewInput, renderFeatures.hasHighlightableCode, sourceIsEmpty]);
 
   const effectiveStatus = sourceIsEmpty ? 'empty' : status;
   const effectiveActionStatus = sourceIsEmpty ? null : actionStatus;

@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from './WysiwygEditorPane';
+import { FOLIA_IR_SVG_FRAGMENT_CLASS, FOLIA_IR_SVG_ROOT_CLASS } from '../services/vditorIrSanitizeService';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,10 +43,7 @@ vi.mock('vditor', () => ({
     }
 
     public getValue(): string {
-      const html = this.vditor.ir.element.innerHTML;
-      // 模拟 Lute 简单反序列化：含 svg 时返回占位 MD；测试中不验证
-      // 完整 MD 文本，只验证 IR DOM 的 svg 元素是否被 sanitize 保留
-      return html.includes('<svg') ? '<svg/>' : '';
+      return this.vditor.ir.element.innerHTML;
     }
 
     public setValue(): void {
@@ -68,6 +66,10 @@ vi.mock('../services/htmlTableBlockService', () => ({
   classifyHtmlTableBlocks: vi.fn().mockReturnValue({ complex: [], simple: [] }),
   replaceHtmlTableBlock: vi.fn(),
 }));
+
+// 让 Fix #1 测试可以临时把 classifyHtmlTableBlocks 切到「返回非空 complex」模式。
+// mockImplementation 在 beforeEach 通过 vi.clearAllMocks 之后需要在每个 test 里重新设置。
+import * as htmlTableBlockService from '../services/htmlTableBlockService';
 
 function flushMicrotasks(): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -190,6 +192,54 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       });
     });
 
+    it('after() 回调重组被 Vditor IR 按空行拆开的 SVG 预览', async () => {
+      let root: Root | null = null;
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange: () => undefined,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+
+      ir!.innerHTML = [
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;svg viewBox="0 0 120 80" width="120" height="80"&gt;\n  &lt;rect width="120" height="80" fill="#FFFFFF"/&gt;</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="1"><svg viewBox="0 0 120 80" width="120" height="80"><rect width="120" height="80" fill="#FFFFFF"></rect></svg></pre>',
+        '</div>',
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block"></code></pre>',
+        '<pre class="vditor-ir__preview" data-render="1"></pre>',
+        '</div>',
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">&lt;text x="60" y="24" font-size="14" fill="#111111" text-anchor="middle"&gt;标题&lt;/text&gt;\n&lt;/svg&gt;</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="1"><text x="60" y="24" font-size="14" fill="#111111" text-anchor="middle">标题</text></pre>',
+        '</div>',
+      ].join('');
+
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+        await flushFrames();
+      });
+
+      const repairedPreview = ir!.querySelector(`.${FOLIA_IR_SVG_ROOT_CLASS} .vditor-ir__preview`);
+      expect(repairedPreview?.querySelector('svg text')?.textContent).toBe('标题');
+      expect(ir!.querySelectorAll(`.${FOLIA_IR_SVG_FRAGMENT_CLASS}`)).toHaveLength(2);
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
     it('input() 回调跑 sanitizeIrDom 让用户输入后的 IR DOM 内 svg 保留 + onerror 剥离', async () => {
       let root: Root | null = null;
 
@@ -208,7 +258,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 先跑一次 after() 让组件进入 ready 阶段
       await act(async () => {
         call.options.after?.();
-        await flushMicrotasks();
+        await flushFrames();
       });
 
       const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
@@ -216,6 +266,8 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
 
       // 模拟用户输入后 Lute 把 svg + onerror 渲染到 IR DOM
       ir!.innerHTML = '<p data-block="0"><svg viewBox="0 0 5 5"><rect width="5" height="5"/></svg><img src="y" onerror="alert(1)"></p>';
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
 
       // 模拟 input(value) 回调触发 sanitize
       await act(async () => {
@@ -235,6 +287,199 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root?.unmount();
       });
+    });
+
+    it('input() 保存时使用 sanitize 后的当前编辑器值，而不是回调传入的旧 value', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+      ir!.innerHTML = [
+        '<div data-block="0" data-type="html-block" class="vditor-ir__node">',
+        '<pre class="vditor-ir__marker--pre vditor-ir__marker"><code data-type="html-block">',
+        '&lt;div&gt;&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt;&lt;/div&gt;',
+        '</code></pre>',
+        '<pre class="vditor-ir__preview" data-render="2"><div><img src="x" onerror="alert(1)"></div></pre>',
+        '</div>',
+      ].join('');
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      await act(async () => {
+        call.options.input?.('<div><img src="x" onerror="alert(1)"></div>');
+        await flushFrames();
+      });
+
+      const saved = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(saved).toContain('<img src="x"');
+      expect(saved).not.toContain('onerror');
+      expect(saved).not.toContain('alert(');
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    it('忽略 Vditor 初始化完成前触发的 input，避免用 Lute 中间值覆盖原文', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '<p data-block="0"><span data-type="text">init</span></p>',
+            onChange,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+
+      await act(async () => {
+        call.options.input?.('<svg viewBox="0 0 10 10"><rect width="10"/></svg>');
+        await flushMicrotasks();
+      });
+      expect(onChange).not.toHaveBeenCalled();
+
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      await act(async () => {
+        const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+        ir?.focus();
+        ir?.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+        call.options.input?.('用户输入');
+        await flushFrames();
+      });
+      expect(onChange).toHaveBeenLastCalledWith('用户输入');
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    // ISS-170 review follow-up #1：sanitize 命中时 input() 复杂表分支必须
+    // 跳过 serviceReplaceHtmlTableBlock 注入 original.html，否则会把
+    // DOMPurify 刚剥离的属性反向灌回去（XSS bypass）。
+    it('input() sanitize 命中时跳过复杂表 restore，避免 DOMPurify 剥离的属性被反向注入', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+      const replaceHtmlTableBlock = vi.fn(
+        (md: string, _index: number, html: string) => `${md}\n${html}`,
+      );
+      vi.mocked(htmlTableBlockService.classifyHtmlTableBlocks).mockImplementation(
+        () => ({
+          complex: [
+            { index: 0, html: '<table rowspan="2" onclick="alert(1)"><tr><td>原始（含 onclick）</td></tr></table>' },
+          ],
+          simple: [],
+        }),
+      );
+      vi.mocked(htmlTableBlockService.replaceHtmlTableBlock).mockImplementation(replaceHtmlTableBlock);
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+      });
+
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
+      expect(ir).not.toBeNull();
+      // 模拟用户在非锁区敲了一个字，让 input() 重新走 sanitize + classify。
+      // DOMPurify 在 sanitize 时剥离了 table 内部的 onclick（残留属性），
+      // 让 nextBlocks 与 original.html 不一致——但因为 sanitized === true，
+      // restore 必须被跳过，replaceHtmlTableBlock 不应被调用。
+      ir!.innerHTML = '<p data-block="0"><span data-type="text">x</span></p>';
+      ir!.focus();
+      ir!.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      await act(async () => {
+        call.options.input?.('x');
+        await flushFrames();
+      });
+
+      // 关键断言：replaceHtmlTableBlock 没被调用（sanitize 命中时跳过 restore）。
+      expect(replaceHtmlTableBlock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    // ISS-170 review follow-up #3：卸载竞态——RAF 回调在 cleanup destroy editor
+    // 之后才触发，必须早返回，不能在 destroyed Vditor 上调 getValue() 抛错。
+    it('卸载后 RAF 回调检查 editorRef，不再访问 destroyed Vditor', async () => {
+      let root: Root | null = null;
+      const onChange = vi.fn();
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(
+          React.createElement(WysiwygEditorPane, {
+            source: '',
+            onChange,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      // 触发外部 setValue useEffect 路径（render 不同 source prop），安排 RAF 回调
+      await act(async () => {
+        root!.render(
+          React.createElement(WysiwygEditorPane, {
+            source: 'new content',
+            onChange,
+          }),
+        );
+        await flushMicrotasks();
+      });
+
+      // 立即卸载（在 RAF 触发之前），cleanup 应 destroy editor 并把 editorRef 置 null
+      await act(async () => {
+        root?.unmount();
+        root = null;
+      });
+
+      // 推进 RAF：必须不抛错（修复前会在 destroyed Vditor 上调 getValue 抛 TypeError）
+      await act(async () => {
+        await flushFrames();
+      });
+
+      // 卸载后 sanitize 不应再触发 onChange
+      expect(onChange).not.toHaveBeenCalled();
     });
   });
 });

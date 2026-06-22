@@ -164,12 +164,12 @@ export function AppLayout() {
     activeTabId,
     updateActiveFile,
     updateActiveTabMeta,
-    tearOffTab,
     splitFile,
     splitView,
     setSplitTab,
     closeSplit,
     updateSplitTabFile,
+    tearOffViaDrag,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
   // 新建空白草稿标签（多标签语义：等价于 TabBar 的 onNew）
@@ -221,9 +221,9 @@ export function AppLayout() {
     });
   }, [windowLabel]);
 
-  const handleTearOff = useCallback(async (id: string) => {
-    await tearOffTab(id, { confirmDirty: confirmCloseDirty });
-  }, [tearOffTab, confirmCloseDirty]);
+  // DEC-110：tear-off 按钮 + toolbar X 关闭按钮均已移除（用户反馈：与浏览器不一致）。
+  // 关闭独立窗口走 OS 原生红绿灯 / 标题栏 X，Rust `OnCloseRequested` 自动回收 tab。
+  // handleTearOff / closeCurrentTabWindow 之类的工具栏入口不再需要。
   // Lazy initializer：会话恢复或新建带内容标签时，立即从 activeTab.file.content 生成 TOC，
   // 避免首屏渲染时左侧大纲空白（旧实现是 useState([])，依赖后续 handleContentChange 防抖或
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
@@ -855,7 +855,7 @@ export function AppLayout() {
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
             onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
             onNew={() => session.openInNewTab(createEmptyFile())}
-            onTearOff={isTearOffSupported ? handleTearOff : undefined}
+            onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
         }

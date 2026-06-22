@@ -370,11 +370,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   font-weight: 600;
   color: var(--fg);
 }
-.recent-page-subtitle {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
 .recent-page-actions { display: flex; gap: 10px; }
 .recent-page-primary,
 .recent-page-secondary {
@@ -1355,6 +1350,20 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   white-space: normal;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.wysiwyg-editor-pane .folia-ir-svg-fragment-hidden {
+  display: none !important;
+}
+
+.wysiwyg-editor-pane .folia-ir-svg-root > .vditor-ir__preview {
+  overflow-x: auto;
+}
+
+.wysiwyg-editor-pane .folia-ir-svg-root > .vditor-ir__preview > svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 /* ===== Preview Shell ===== */
