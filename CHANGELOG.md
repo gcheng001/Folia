@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-26
+
+### Fixed
+
+- **修复 HTTPS 图片（含 WebP）在主编辑器 / 预览窗不显示的问题**（ISS-178 / DEC-116）：`src-tauri/tauri.conf.json` 的 CSP `img-src` / `media-src` 此前只放行 `'self' asset: http://asset.localhost data: blob: file:`，任何 `https://` 来源的 `<img>` / `<source>` / `<video>` 都会被 WebView 拒绝加载——`<img>` 节点能进 DOM，但浏览器拦截图片数据，表现为"图片语法在、图片本身没法渲染"。用户报告的具体场景是腾讯云 COS 上的 WebP（`https://xierluo-1257032130.cos.ap-shanghai.myqcloud.com/...webp`），但根因与 WebP 无关，是 CSP 不允许 `https:` 协议。修复：在 `img-src` / `media-src` 加上 `https:`；`connect-src` / `frame-src` / `font-src` 维持原状，避免放开脚本 fetch 与 iframe 来源。`src/services/tauriCapabilities.test.ts` 增加 `expect(csp).toMatch(/img-src [^;]*\bhttps:/)` 与 `expect(csp).toMatch(/media-src [^;]*\bhttps:/)` 两条断言守住，防止后续 CSS 改动再把 `https:` 删掉。PR #62 / 验证：Vite dev + Playwright 探针 HTML 注入与 Tauri 一致的 CSP，修复前 3 张 HTTPS 图 naturalW=0 + console 4 条 CSP error；修复后 COS WebP naturalW=1280×720、gstatic WebP naturalW=550×368、console 0 error；Tauri dev + osascript 加载 `test.md` 实测 4 种引用方式（含本地 WebP、inline HTML、HTTPS、绝对路径）全部正常渲染。`npm test` 47 / 388、`npm run typecheck` / `lint` / `build`、`cargo check` 全绿。
+
+## [0.4.5] - 2026-06-23
+
+### Fixed
+
+- 修复部分多行 SVG 后方仍出现大段白色条的问题（DEC-114 / PR #61）：Vditor IR 在清洗后会把部分 SVG 子片段（尤其是 `<path>`）降级成普通段落，旧的 SVG 修复器只沿相邻 IR HTML 节点收集，遇到普通段落就停止，导致“初版 Skill 的文件结构”等图后方残留空白源码块。现在 source-aware SVG 修复会按原始 Markdown SVG 源码顺序继续识别并隐藏后续残留片段，同时保留图注和正文；Playwright 注入用户 `ch07.md` 实测 7 张 SVG 全部恢复且无可见残留，session 仍保持未修改。
+- 修复主编辑器内 SVG 文本继承 `<pre>` 等宽字体的问题（DEC-114 / PR #61）：部分 AI 生成 SVG 未指定 `font-family`，在 Vditor IR 预览中会继承代码块字体，导致长英文标签比原设计更宽，看起来像被框或白底截掉。现在修复后的 SVG 预览使用阅读正文字体；“初版 Skill 的文件结构”根节点文字宽度实测由约 285px 降为约 226.6px，可正常落在 240px 蓝框内。
+
 ## [0.4.4] - 2026-06-22
 
 ### Fixed
