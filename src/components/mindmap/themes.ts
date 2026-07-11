@@ -19,36 +19,39 @@ export interface MindMapTheme {
 }
 
 export const MINDMAP_THEMES: MindMapTheme[] = [
+  // 文字色与黑白主题线条色走应用主题 CSS 变量，深色模式下随 --text 自动翻转
+  // （Codex R2 P2：硬编码深色文字在深色画布上不可读）；彩色系分支色为中等饱和度，
+  // 深浅两种背景下均可读。
   {
     id: 'simple-blue',
     name: '蓝色',
-    branchColors: ['#1d4ed8', '#2563eb', '#3b82f6', '#60a5fa', '#0ea5e9'],
-    text: '#1f2937',
-    root: '#1d4ed8',
+    branchColors: ['#2563eb', '#3b82f6', '#60a5fa', '#0ea5e9', '#38bdf8'],
+    text: 'var(--text, #1f2937)',
+    root: '#3b82f6',
     edgeWidth: 1.5,
   },
   {
     id: 'simple-color',
     name: '彩色',
     branchColors: ['#e11d48', '#ea580c', '#ca8a04', '#16a34a', '#0891b2', '#2563eb', '#7c3aed'],
-    text: '#1f2937',
-    root: '#334155',
+    text: 'var(--text, #1f2937)',
+    root: 'var(--text, #334155)',
     edgeWidth: 1.5,
   },
   {
     id: 'simple-purple',
     name: '紫色',
-    branchColors: ['#6d28d9', '#7c3aed', '#8b5cf6', '#a78bfa', '#c084fc'],
-    text: '#1f2937',
-    root: '#6d28d9',
+    branchColors: ['#7c3aed', '#8b5cf6', '#a78bfa', '#c084fc'],
+    text: 'var(--text, #1f2937)',
+    root: '#8b5cf6',
     edgeWidth: 1.5,
   },
   {
     id: 'simple-mono',
     name: '黑白',
-    branchColors: ['#111827'],
-    text: '#111827',
-    root: '#111827',
+    branchColors: ['var(--text, #111827)'],
+    text: 'var(--text, #111827)',
+    root: 'var(--text, #111827)',
     edgeWidth: 1.5,
   },
 ];
