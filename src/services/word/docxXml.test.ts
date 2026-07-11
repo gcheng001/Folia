@@ -429,3 +429,58 @@ describe('legal document layout (此致/顶格/落款)', () => {
     expect(dateParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
   });
 });
+
+// 肖永吉案导出取证发现的三个缺陷（PRD: docs/plans/PRD-mindmap-ux-and-word-export.md 项 D）
+describe('legal export defects (H5/H6 井号、段前空格、法条引用样式)', () => {
+  it('renders H5/H6 headings as headings instead of literal # paragraphs', async () => {
+    const documentXml = await readDocumentXml([
+      '##### ① 核心争点',
+      '',
+      '###### A. 协议条款的文义',
+    ].join('\n'), getPreset('legal'));
+
+    const texts = documentXml.replace(/<[^>]+>/g, '');
+    expect(texts).not.toContain('#');
+    expect(texts).toContain('① 核心争点');
+    expect(texts).toContain('A. 协议条款的文义');
+    expect(documentXml).toMatch(/w:val="Heading5"/);
+    expect(documentXml).toMatch(/w:val="Heading6"/);
+  });
+
+  it('strips leading full-width/half-width spaces from paragraphs (indent comes from template only)', async () => {
+    const documentXml = await readDocumentXml([
+      '　全角空格开头的正文段落。',
+      '',
+      '  半角空格开头的正文段落。',
+    ].join('\n'), getPreset('legal'));
+
+    const fullWidth = xmlParagraphWithText(documentXml, '全角空格开头的正文段落。');
+    expect(fullWidth.replace(/<[^>]+>/g, '')).not.toMatch(/^[\s　]/);
+    // 首行缩进仍由模板控制（四号 14pt × 2 字符 = 560 twips）
+    expect(fullWidth).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+
+    const halfWidth = xmlParagraphWithText(documentXml, '半角空格开头的正文段落。');
+    expect(halfWidth.replace(/<[^>]+>/g, '')).not.toMatch(/^\s/);
+  });
+
+  it('renders legal blockquotes (法条引用) without shading, in FangSong at readable size', async () => {
+    const documentXml = await readDocumentXml(
+      '> 《中华人民共和国民法典》第1191条第1款：用人单位的工作人员因执行工作任务造成他人损害的，由用人单位承担侵权责任。',
+      getPreset('legal'),
+    );
+
+    const quoteParagraph = xmlParagraphWithText(documentXml, '第1191条');
+    expect(quoteParagraph).not.toMatch(/<w:shd\b/);
+    expect(quoteParagraph).toMatch(/w:eastAsia="仿宋_GB2312"/);
+    // font_size 12pt = 24 half-points，不再是 9pt 小字
+    expect(quoteParagraph).toMatch(/<w:sz w:val="24"/);
+    // 左缩进保留以示引用（24pt = 480 twips）
+    expect(quoteParagraph).toMatch(/<w:ind\b[^>]*w:left="480"/);
+  });
+
+  it('keeps blockquote shading in non-legal presets untouched', async () => {
+    const documentXml = await readDocumentXml('> 引用一段说明文字。', getPreset('academic'));
+    const quoteParagraph = xmlParagraphWithText(documentXml, '引用一段说明文字。');
+    expect(quoteParagraph).toMatch(/<w:shd\b[^>]*w:fill="F5F5F5"/);
+  });
+});

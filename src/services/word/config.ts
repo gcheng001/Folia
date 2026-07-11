@@ -50,7 +50,8 @@ const legal = {
     line_spacing: 1.2,
   },
   inline_code: { font: 'Consolas', size: 10, color: 'C7254E' },
-  quote: { background_color: 'EAEAEA', left_indent: 24, font_size: 9, line_spacing: 1.2 },
+  // 法条引用：无底纹、小四仿宋、行距与正文一致（律师用户实测反馈：灰底 9pt 小字像代码块）
+  quote: { left_indent: 24, font_size: 12, line_spacing: 1.5 },
   math: { font: 'Times New Roman', size: 12, italic: true, color: '0000FF' },
   image: { display_ratio: 0.92, max_width_cm: 14.2, target_dpi: 260, show_caption: false },
   horizontal_rule: { character: '—', repeat_count: 30, font: '仿宋_GB2312', size: 10, color: 'CCCCCC', alignment: 'center' },

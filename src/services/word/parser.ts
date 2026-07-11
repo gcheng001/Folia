@@ -297,10 +297,10 @@ async function parseMarkdownLines(content: string, config: PresetConfig): Promis
     }
 
     // 8. 标题
-    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
       flushTable();
-      const level = Math.min(headingMatch[1].length, 4) as 1 | 2 | 3 | 4;
+      const level = headingMatch[1].length as 1 | 2 | 3 | 4 | 5 | 6;
       paragraphs.push(addHeading(headingMatch[2].trim(), level, config));
       continue;
     }
@@ -341,7 +341,9 @@ async function parseMarkdownLines(content: string, config: PresetConfig): Promis
       layout.noFirstLineIndent = true;
     }
 
-    paragraphs.push(addParagraph(line, config, layout));
+    // 段首空白（全角/半角/不换行空格）一律剥离：缩进只由模板首行缩进控制，
+    // 避免源 MD 自带段首空格与 firstLineChars 叠加成双重缩进
+    paragraphs.push(addParagraph(trimmed, config, layout));
     prevPlainText = trimmed;
     seenPlainParagraph = true;
   }
@@ -556,10 +558,12 @@ function calculateImageSize(
 
 function addHeading(
   text: string,
-  level: 1 | 2 | 3 | 4,
+  level: 1 | 2 | 3 | 4 | 5 | 6,
   config: PresetConfig,
 ): Paragraph {
-  const headingKey = `level${level}` as keyof typeof config.titles;
+  // 排版配置只定义到 level4：5/6 级沿用 level4 的字体排版，但大纲级别保留 Heading5/6
+  const styleLevel = Math.min(level, 4) as 1 | 2 | 3 | 4;
+  const headingKey = `level${styleLevel}` as keyof typeof config.titles;
   const hc = config.titles[headingKey];
 
   const headingLevelMap: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
@@ -567,13 +571,15 @@ function addHeading(
     2: HeadingLevel.HEADING_2,
     3: HeadingLevel.HEADING_3,
     4: HeadingLevel.HEADING_4,
+    5: HeadingLevel.HEADING_5,
+    6: HeadingLevel.HEADING_6,
   };
 
   const headingIndent =
     (hc.indent && hc.indent > 0)
       ? hc.indent * config.fonts.default.size * 20
       : undefined;
-  const styleName = getMarkdownStyleName(config, `heading${level}` as keyof NonNullable<PresetConfig['markdown_mapping']>);
+  const styleName = getMarkdownStyleName(config, `heading${styleLevel}` as keyof NonNullable<PresetConfig['markdown_mapping']>);
   const style = getStyle(config, styleName);
   const firstLineIndent =
     style?.first_line_indent && style.first_line_indent > 0
@@ -594,7 +600,7 @@ function addHeading(
     },
     indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
     shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
-    children: createFormattedRuns(text, config, { titleLevel: level, styleName }),
+    children: createFormattedRuns(text, config, { titleLevel: styleLevel, styleName }),
   });
 }
 
@@ -700,11 +706,12 @@ function addQuote(text: string, config: PresetConfig): Paragraph {
   const qc = config.quote;
   const styleName = getMarkdownStyleName(config, 'blockquote') ?? getMarkdownStyleName(config, 'quote');
   const style = getStyle(config, styleName);
+  const fill = style?.background_color ?? qc.background_color;
 
   return new Paragraph({
     spacing: { line: (style?.line_spacing ?? qc.line_spacing) * 240 },
     indent: { left: ptToTwip(style?.left_indent ?? qc.left_indent) },
-    shading: { type: 'clear', fill: style?.background_color ?? qc.background_color },
+    shading: fill ? { type: 'clear', fill } : undefined,
     children: createFormattedRuns(text, config, { isQuote: true, styleName }),
   });
 }

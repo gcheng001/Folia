@@ -177,9 +177,9 @@ export interface InlineCodeConfig {
   color: string;
 }
 
-/** 引用块配置 */
+/** 引用块配置。background_color 缺省表示无底纹（法律文书的法条引用不用底纹） */
 export interface QuoteConfig {
-  background_color: string;
+  background_color?: string;
   left_indent: number;
   font_size: number;
   line_spacing: number;
