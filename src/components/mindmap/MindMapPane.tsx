@@ -55,7 +55,7 @@ import {
 import { alignNodes, distributeNodes, type NodeBox } from '../../services/mindmap/align';
 import { CustomNode } from './CustomNode';
 import { CustomEdge } from './CustomEdge';
-import { CustomFlowEdge } from './CustomFlowEdge';
+import { CustomFlowEdge, EdgeMarkerDefs } from './CustomFlowEdge';
 import { AnnotationGroupNode, computeGroupBbox, makeGroupNode } from './AnnotationGroupNode';
 import { MindMapToolbar, type MindMapTool } from './MindMapToolbar';
 import { SelectionContextBar, type StyleTarget } from './SelectionContextBar';
@@ -116,6 +116,20 @@ function isNodeId(id: string): boolean {
   return id.startsWith('n');
 }
 
+// P0-2: 节点 ID 映射：lineIndex (n0/n1) ↔ positionKey (稳定内容路径)
+// 用于 customEdges/groups 的持久化引用
+function buildPositionKeyMap(doc: { root: MindNode }): Map<string, string> {
+  const map = new Map<string, string>(); // positionKey → nodeId
+  const walk = (node: MindNode): void => {
+    if (node.kind !== 'root') {
+      map.set(node.id, `n${node.lineIndex}`);
+    }
+    for (const child of node.children) walk(child);
+  };
+  walk(doc.root);
+  return map;
+}
+
 function defaultEdgeId(): string {
   return `e-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -152,6 +166,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   const [historyIndex, setHistoryIndex] = useState(-1);
 
   const documentKey = filePath || fileName;
+  // P0-1: 跟踪当前 sidecar 所属的文档 key，防止文件切换时的数据污染
+  const [hydratedDocumentKey, setHydratedDocumentKey] = useState<string | null>(null);
   const pendingNewLineRef = useRef<number | null>(null);
   const dragRef = useRef<{
     pointerId: number;
@@ -160,6 +176,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     nodeId: string;
     initialPositions: Map<string, { x: number; y: number }>;
     altKey: boolean;
+    beforeMarkdown: string; // P0-3: 记录拖动前的 markdown，用于 dragStop 时形成历史事务
+    beforeSidecar: MindMapCanvasSidecar; // P0-3: 记录拖动前的 sidecar
   } | null>(null);
   const hoverTimerRef = useRef<number | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -184,24 +202,31 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     setEdgeMode(loaded.edgeMode);
     setHistory([]);
     setHistoryIndex(-1);
+    // P0-1: 标记 sidecar 已完全加载到这个 documentKey
+    setHydratedDocumentKey(documentKey);
   }, [documentKey]);
 
   // sidecar 持久化
   useEffect(() => {
-    if (!documentKey) return;
+    // P0-1: 只有当 sidecar 已经完全加载到当前 documentKey 时才持久化
+    // 防止文件切换时用旧 sidecar 覆盖新文件
+    if (!documentKey || hydratedDocumentKey !== documentKey) return;
     saveCanvasSidecar(documentKey, sidecar);
     // v1 兼容：把 positions 也写一份旧 key（v1 在新版上仍然能读出来）
     saveMindMapPositions(documentKey, sidecar.positions);
-  }, [documentKey, sidecar]);
+  }, [documentKey, sidecar, hydratedDocumentKey]);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   // 把当前 (markdown, sidecar) 推入历史。
+  // P0-3: 历史必须存不可变的结果快照，防止后续修改影响历史
   const pushHistory = useCallback((md: string, sc: MindMapCanvasSidecar) => {
+    // 深拷贝 sidecar 以确保历史中的对象不可变
+    const sidecarCopy = JSON.parse(JSON.stringify(sc)) as MindMapCanvasSidecar;
     setHistory((prev) => {
       const truncated = prev.slice(0, historyIndex + 1);
-      truncated.push({ markdown: md, sidecar: sc });
+      truncated.push({ markdown: md, sidecar: sidecarCopy });
       while (truncated.length > HISTORY_LIMIT) truncated.shift();
       return truncated;
     });
@@ -346,14 +371,23 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         });
       }
     }
-    const customEdges: Edge[] = sidecar.customEdges.map((ce) => ({
-      id: ce.id,
-      source: ce.source,
-      target: ce.target,
-      type: 'customFlow',
-      data: { edge: ce },
-      selected: selectedIds.includes(ce.id),
-    }));
+    // P0-2: 将 positionKey 映射回当前的 n{lineIndex}，找不到则清理 dangling 引用
+    const positionKeyToNodeId = buildPositionKeyMap(doc);
+    const customEdges: Edge[] = sidecar.customEdges
+      .map((ce) => {
+        const mappedSource = positionKeyToNodeId.get(ce.source);
+        const mappedTarget = positionKeyToNodeId.get(ce.target);
+        if (!mappedSource || !mappedTarget) return null; // 引用失效，不渲染
+        return {
+          id: ce.id,
+          source: mappedSource,
+          target: mappedTarget,
+          type: 'customFlow',
+          data: { edge: ce },
+          selected: selectedIds.includes(ce.id),
+        } as Edge;
+      })
+      .filter((e): e is Edge => e !== null);
     return [...tree, ...customEdges];
   }, [doc, theme, sidecar.customEdges, selectedIds, edgeMode]);
 
@@ -368,14 +402,17 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       const h = (n.data as { height?: number })?.height ?? n.height ?? 40;
       byLineIndex.set(li, { x: n.position.x, y: n.position.y, width: w, height: h });
     }
+    // P0-2: 将 positionKey 映射回当前的 n{lineIndex}
+    const positionKeyToNodeId = buildPositionKeyMap(doc);
     const nodes: Node[] = [];
     for (const g of sidecar.groups) {
       const memberBoxes = g.memberIds
-        .map((id) => lineIndexOf(id))
-        .map((li) => (li === null ? undefined : byLineIndex.get(li)));
+        .map((positionKey) => positionKeyToNodeId.get(positionKey)) // P0-2: positionKey → nodeId
+        .map((nodeId) => (nodeId === undefined ? undefined : lineIndexOf(nodeId)))
+        .map((li) => (li === null || li === undefined ? undefined : byLineIndex.get(li)));
       const bbox = computeGroupBbox(memberBoxes);
-      if (!bbox) continue;
-      nodes.push(makeGroupNode(g, bbox, selectedIds.includes(g.id)));
+      if (!bbox) continue; // P0-2: 引用失效时隐藏 dangling group
+      nodes.push(makeGroupNode(g, bbox, selectedIds.includes(`g:${g.id}`))); // P0-5: 使用 g: 前缀
     }
     return nodes;
   }, [sidecar.groups, derivedNodes, selectedIds]);
@@ -395,7 +432,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     setEdges(derivedEdges);
   }, [derivedEdges, setEdges]);
 
-  // 节点变化：位置更新要写回 sidecar
+  // 节点变化：位置更新要写回 sidecar（拖动过程中不记录历史）
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
       const next = applyNodeChanges(changes, current);
@@ -417,10 +454,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
             if (dx === 0 && dy === 0) return sc;
             const positions = { ...sc.positions };
             for (const mid of group.memberIds) {
-              const li = lineIndexOf(mid);
-              if (li === null) continue;
-              const key = mid;
-              const cur = positions[key] ?? derivedNodes.find((dn) => dn.id === mid)?.position;
+              const key = mid; // P0-2: memberIds 已经是 positionKey
+              const cur = positions[key] ?? derivedNodes.find((dn) => dn.id === key)?.position;
               if (cur) positions[key] = { x: cur.x + dx, y: cur.y + dy };
             }
             return { ...sc, positions };
@@ -431,9 +466,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         const li = lineIndexOf(nodeId);
         if (li === null) continue;
         // 用 collectOutlineNodes 拿 positionKey
-        const node = docRef.current.root.children
-          .concat(collectOutlineNodes(docRef.current.root).flatMap((n) => [n, ...n.children]))
-          .find((n) => n.lineIndex === li);
+        const node = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === li);
         const positionKey = node?.id ?? nodeId;
         setSidecar((sc) => ({
           ...sc,
@@ -556,6 +589,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       const n = nodes.find((nn) => nn.id === id);
       if (n) initial.set(id, { x: n.position.x, y: n.position.y });
     }
+    // P0-3: 记录拖动前的状态，在 dragStop 时形成一次事务
     dragRef.current = {
       pointerId: 0,
       startX: 0,
@@ -563,8 +597,10 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       nodeId: node.id,
       initialPositions: initial,
       altKey: false,
+      beforeMarkdown: markdown,
+      beforeSidecar: JSON.parse(JSON.stringify(sidecar)) as MindMapCanvasSidecar,
     };
-  }, [editingId, selectedIds, nodes, tool]);
+  }, [editingId, selectedIds, nodes, tool, markdown, sidecar]);
 
   // 拖动过程：结构预览（高亮+hover timer）
   const handleNodeDrag = useCallback((event: React.MouseEvent | TouchEvent | MouseEvent, node: Node) => {
@@ -634,7 +670,15 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     if (node.id.startsWith('g:')) return;
     if (drag.altKey) {
       clearStructureHover();
-      // 强制自由：什么都不做（位置已由 React Flow 写到 nodes 状态）
+      // P0-3: 自由拖动，检查位置是否真正改变，形成一次历史事务
+      const current = nodes.find((n) => n.id === node.id);
+      if (current) {
+        const before = drag.initialPositions.get(node.id);
+        if (before && (before.x !== current.position.x || before.y !== current.position.y)) {
+          // 位置改变，记录历史
+          pushHistory(drag.beforeMarkdown, drag.beforeSidecar);
+        }
+      }
       return;
     }
     const li = lineIndexOf(node.id);
@@ -655,7 +699,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       const md = moveSubtreeAsLastChild(docRef.current, li, targetLi);
       clearStructureHover();
       if (md !== null && onChangeRef.current) {
-        pushHistory(markdown, sidecar);
+        // P0-3: 结构移动，形成一次历史事务
+        pushHistory(drag.beforeMarkdown, drag.beforeSidecar);
         onChangeRef.current(md);
         // 清掉被移动子树旧坐标：被移动子树里所有老 content-path key 都没意义了。
         setSidecar((sc) => {
@@ -696,17 +741,34 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     }
     // 自由拖动：位置已在 React Flow 状态；这里同步到 sidecar
     clearStructureHover();
-    // 已在 onNodesChange 中处理 position 更新
-  }, [pendingStructure, clearStructureHover, markdown, sidecar, pushHistory, doc.lines]);
+    // P0-3: 检查位置是否真正改变，形成一次历史事务
+    const current = nodes.find((n) => n.id === node.id);
+    if (current) {
+      const before = drag.initialPositions.get(node.id);
+      if (before && (before.x !== current.position.x || before.y !== current.position.y)) {
+        // 位置改变，记录历史
+        pushHistory(drag.beforeMarkdown, drag.beforeSidecar);
+      }
+    }
+  }, [pendingStructure, clearStructureHover, markdown, sidecar, pushHistory, nodes]);
 
   // 连接模式：onConnect
   const handleConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return;
     if (connection.source === connection.target) return;
+    // P0-2: 将临时的 n{lineIndex} 转换为稳定的 positionKey 保存
+    const sourceLi = lineIndexOf(connection.source);
+    const targetLi = lineIndexOf(connection.target);
+    if (sourceLi === null || targetLi === null) return;
+
+    const sourceNode = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === sourceLi);
+    const targetNode = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === targetLi);
+    if (!sourceNode || !targetNode) return;
+
     const newEdge: CustomFlowEdgeT = {
       id: defaultEdgeId(),
-      source: connection.source,
-      target: connection.target,
+      source: sourceNode.id, // P0-2: 保存 positionKey 而非 n{lineIndex}
+      target: targetNode.id,
       arrow: 'one-way',
       shape: 'straight',
       dash: 'solid',
@@ -764,15 +826,29 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   // 添加标注框
   const handleCreateGroup = useCallback(() => {
     if (selectedIds.length < 2) return;
+    // P0-2: 将 n{lineIndex} 转换为 positionKey 保存
+    const memberIdToPositionKey = (id: string): string | null => {
+      const li = lineIndexOf(id);
+      if (li === null) return null;
+      const node = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === li);
+      return node?.id ?? null;
+    };
+
+    const memberIds = selectedIds
+      .map(memberIdToPositionKey)
+      .filter((id): id is string => id !== null);
+
+    if (memberIds.length < 2) return; // 转换后有效成员不足
+
     const group: AnnotationGroup = {
       id: defaultGroupId(),
       title: '标注',
-      memberIds: [...selectedIds],
+      memberIds,
       style: { ...DEFAULT_GROUP_STYLE },
     };
     pushHistory(markdown, sidecar);
     setSidecar((sc) => ({ ...sc, groups: [...sc.groups, group] }));
-    setSelectedIds([group.id]);
+    setSelectedIds([`g:${group.id}`]); // P0-5: 标注框 ID 必须是 g: 前缀
   }, [selectedIds, markdown, sidecar, pushHistory]);
 
   // 主题切换
@@ -1151,6 +1227,11 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
             >
               <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
             </marker>
+            {/* P0-7：每条 customFlow 边都需要自己的 marker 定义。
+                BaseEdge 用 marker-end 引用未定义的 id 时箭头不显示，这里集中注入。 */}
+            {sidecar.customEdges.map((ce) => (
+              <EdgeMarkerDefs key={ce.id} edge={ce} id={ce.id} />
+            ))}
           </defs>
         </svg>
       </ReactFlow>
