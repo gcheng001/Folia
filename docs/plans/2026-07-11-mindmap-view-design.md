@@ -201,3 +201,59 @@ src/components/mindmap/exportImage.ts        PNG/PDF 导出
 - **序列化保真**：CST 保留策略 + fixtures 兜底；任何"识别不了"的结构宁可整块当备注也不丢。
 - **Vditor/源码/脑图三模式内容同步**：统一以 tab 的 Markdown 字符串为唯一交换介质，沿用 wysiwyg↔source 现成切换管线。
 - **快捷键冲突**：脑图模式内画布接管编辑键，全局键（Cmd+S/O/W、标签切换）沿用 Folia。
+
+## 8. 当前实现状态（v0.4.7）
+
+### 8.1 数据存储
+
+- **localStorage 存储**：画布 sidecar 使用 `folia.mindmap.canvas.v2:<documentKey>` 键存储于浏览器 localStorage，不是应用数据目录文件。按文件绝对路径隔离，节点重命名/移动导致 content-path 失配时，相关 key 自然失效、自动布局接管。
+- **v1 兼容**：`positions` 镜像写一份到 `folia.mindmap.positions.v1:` 键，旧画布切换过来不丢坐标。
+
+### 8.2 NodeRef 身份与 Dangling 规则
+
+- **身份映射**：节点 ID 为 `n{lineIndex}`（如 `n0`, `n1`），customEdges 和 groups 的 memberIds 使用稳定的 positionKey（节点内容路径，如 `庭审记录/四、原告举证/借条`）。
+- **Dangling 处理**：节点重命名/移动后，旧的 positionKey 失配。组件内通过 `buildPositionKeyMap` 将 positionKey 映射回当前的 `n{lineIndex}`，找不到则清理 dangling 引用（不渲染或隐藏）。
+
+### 8.3 Schema 迁移
+
+- **v1 → v2**：首次加载 v1 兼容数据时，合并 `positions` 到 v2 sidecar。迁移完成后标记，避免重复迁移。
+- **幂等性**：重复加载同一文档不会重复迁移，文件隔离保证不同文件的 sidecar 独立。
+
+### 8.4 撤销/重做
+
+- **历史栈**：内部栈（上限 64 条）存储 `{markdown, sidecar}` 快照。
+- **事务边界**：每次会改变 MD 或 sidecar 的操作形成一次 undo 事务。自由拖动、结构拖动、对齐等均形成独立事务。
+
+### 8.5 导出实现
+
+- **全画布裁剪**：`computeExportBounds` 计算所有节点 + 边 + 标注框的真实包围盒 + 16px 余量，与 viewport 平移/缩放无关。
+- **UI 排除**：导出时自动排除 toolbar、context bar、React Flow Controls、选择轮廓、handles、editing input（不在 `.react-flow__viewport` 子树内）。
+- **PNG/PDF**：PNG 支持 1x/2x 倍率和白底/透明底选择，PDF 固定白底。
+- **错误处理**：Tauri save/write 失败抛出错误并在 MindMapPane 显示可理解提示，Web fallback 只使用 basename（不把绝对路径当下载文件名）。
+
+### 8.6 结构拖动合法性护栏
+
+- **中央区域检测**：只有进入节点中央区域（内缩 20%）才开始 400ms 确认计时。
+- **确认高亮**：确认前后有明显不同高亮（预告 vs 确认），提示文本包含"设为『目标』的子节点"。
+- **临时连接线**：显示虚线箭头预览，确认后变绿色实线。
+- **Alt/Option 强制自由**：按住 Alt/Option 拖动始终退化为自由拖动，不进入结构预览。
+
+### 8.7 删除键逻辑
+
+- **编辑态**：input/textarea/contenteditable 编辑态 Delete 只删文字（浏览器原生处理）。
+- **单选**：节点/边/框 均可删除。
+- **多选**：只删除边和框，不删除节点。
+- **根节点保护**：根节点不允许删除。
+
+### 8.8 状态管理
+
+- **单一受控状态**：React Flow 的 nodes 和 edges state 直接使用 allNodes/allEdges 作为唯一来源，避免状态竞争。
+- **Group 拖动**：使用 `rf.getNodes()` 获取最新节点位置，不依赖旧 closure 累加偏移。
+- **Undo 事务**：free/group drag 均形成一个 undo 事务。
+
+## 9. 后续增强（v0.5+）
+
+- **Schema 版本化**：引入 `schemaVersion` 字段，支持无损升级。
+- **MindMapPane 拆分**：抽离 history/document hydration 或 export controller/graph projection，明确状态所有权。
+- **文件监听热重载**：Agent 联动体感。
+- **右侧伴随面板模式**：边看 MD 边看图。

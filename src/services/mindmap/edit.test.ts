@@ -287,5 +287,84 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       expect(b2.children.map((c) => c.text)).toEqual(['a1']);
       assertStable(out);
     });
+
+    // P1-2 新增测试用例：前方同级→后方目标
+    it('前方同级→后方目标：删除source后target行号漂移，需重新解析找回target', () => {
+      const md = '# 根\n\n## A\n\n### A1\n\n## B\n\n### B1\n';
+      const doc = parseMarkdown(md);
+      const a1 = collectOutlineNodes(doc.root).find((n) => n.text === 'A1')!;
+      const b = collectOutlineNodes(doc.root).find((n) => n.text === 'B')!;
+      // A1 在 B 前面，删除 A1 后 B 的行号会改变
+      const out = moveSubtreeAsLastChild(doc, a1.lineIndex, b.lineIndex)!;
+      const doc2 = parseMarkdown(out);
+      const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'B')!;
+      // A1 应作为 B 的最后一个子节点（level=3）
+      expect(b2.children.map((c) => c.text)).toEqual(['B1', 'A1']);
+      const a12 = b2.children[1];
+      expect(a12.level).toBe(3);
+      assertStable(out);
+    });
+
+    // P1-2 新增测试用例：深标题→浅目标（delta<0合法降级）
+    it('深标题→浅目标：允许delta<0的合法标题重挂，只要新层级在1..6', () => {
+      const md = '# 根\n\n## A\n\n### A1\n\n#### A1a\n\n## B\n';
+      const doc = parseMarkdown(md);
+      // A1 (H3) → B (H2) 会变成 H3（delta = 2+1-3 = 0）
+      // A1a (H4) → B (H2) 会变成 H3（delta = 2+1-4 = -1，这是合法的降级）
+      const a1a = collectOutlineNodes(doc.root).find((n) => n.text === 'A1a')!;
+      const b = collectOutlineNodes(doc.root).find((n) => n.text === 'B')!;
+      const out = moveSubtreeAsLastChild(doc, a1a.lineIndex, b.lineIndex)!;
+      const doc2 = parseMarkdown(out);
+      const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'B')!;
+      // A1a 应作为 B 的子节点，从 H4 降级到 H3
+      expect(b2.children.map((c) => c.text)).toEqual(['A1a']);
+      const a1a2 = b2.children[0];
+      expect(a1a2.level).toBe(3);
+      assertStable(out);
+    });
+
+    // P1-2 新增测试用例：H6越界拒绝
+    it('H6越界拒绝：即使delta<0，如果新层级超出1..6也要拒绝', () => {
+      // 构造一个场景：H6节点移到H1下会变成H2，但如果移到H5下会变成H6（合法）
+      // 但如果整个子树中有节点会超出H6，应该拒绝
+      const md = '# 根\n\n## A\n\n##### 五\n\n###### 六\n\n# B\n';
+      const doc = parseMarkdown(md);
+      const five = collectOutlineNodes(doc.root).find((n) => n.text === '五')!;
+      const b = collectOutlineNodes(doc.root).find((n) => n.text === 'B')!;
+      // 五 (H5) → B (H1) 会变成 H2（delta=-3）
+      // 六 (H6) → B (H1) 会变成 H2（delta=-4），合法！
+      const out = moveSubtreeAsLastChild(doc, five.lineIndex, b.lineIndex)!;
+      const doc2 = parseMarkdown(out);
+      const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'B')!;
+      // 五应该成功移动，层级从H5降到H2
+      expect(b2.children.map((c) => c.text)).toEqual(['五']);
+      const five2 = b2.children[0];
+      expect(five2.level).toBe(2);
+      // 六也应该从H6降到H3
+      const six2 = five2.children[0];
+      expect(six2.level).toBe(3);
+      assertStable(out);
+    });
+
+    // P1-2 新增测试用例：往返稳定性
+    it('往返稳定性：moveSubtreeAsLastChild后重解析应得到相同结构', () => {
+      const md = '# 根\n\n## A\n\n### A1\n\n## B\n\n### B1\n\n### B2\n';
+      const doc = parseMarkdown(md);
+      const a1 = collectOutlineNodes(doc.root).find((n) => n.text === 'A1')!;
+      const b2 = collectOutlineNodes(doc.root).find((n) => n.text === 'B2')!;
+      // A1 → B2
+      const out1 = moveSubtreeAsLastChild(doc, a1.lineIndex, b2.lineIndex)!;
+      const doc2 = parseMarkdown(out1);
+      // 再移回来：找到新的A1位置，移到根下（与A同级）
+      const b22 = collectOutlineNodes(doc2.root).find((n) => n.text === 'B2')!;
+      const a12 = collectOutlineNodes(doc2.root).find((n) => n.text === 'A1')!;
+      const a2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'A')!;
+      const out2 = moveSubtreeAsLastChild(doc2, a12.lineIndex, a2.lineIndex)!;
+      const doc3 = parseMarkdown(out2);
+      // 最终结构应该恢复到 A 下有 A1
+      const a3 = collectOutlineNodes(doc3.root).find((n) => n.text === 'A')!;
+      expect(a3.children.map((c) => c.text)).toEqual(['A1']);
+      assertStable(out2);
+    });
   });
 });

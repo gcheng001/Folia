@@ -28,7 +28,8 @@ interface MindMapToolbarProps {
   onAutoLayout: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onExport: (format: 'png' | 'pdf') => void;
+  // P1-5: 导出参数包含format, scale, background
+  onExport: (format: 'png' | 'pdf', scale?: number, background?: 'transparent' | 'white') => void;
   selectedCount: number;
   onCreateGroup: () => void;
   onAlign: (kind: 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom' | 'distribute-h' | 'distribute-v') => void;
@@ -336,11 +337,17 @@ export function MindMapToolbar(props: MindMapToolbarProps): React.ReactElement {
                 zIndex: 11,
                 display: 'flex',
                 flexDirection: 'column',
-                minWidth: 160,
+                minWidth: 200,
               }}
             >
-              <button type="button" data-testid="mm-export-png-1x" onClick={() => { onExport('png'); setExportOpen(false); }} style={menuItemStyle}>PNG · 1x</button>
-              <button type="button" data-testid="mm-export-png-2x" onClick={() => { onExport('png'); setExportOpen(false); }} style={menuItemStyle}>PNG · 2x（高清）</button>
+              {/* P1-5: PNG 导出选项 */}
+              <div style={{ fontSize: 11, fontWeight: 600, padding: '4px 8px', color: 'var(--text, #1f2937)' }}>PNG 图片</div>
+              <button type="button" data-testid="mm-export-png-1x-white" onClick={() => { onExport('png', 1, 'white'); setExportOpen(false); }} style={menuItemStyle}>1x · 白底</button>
+              <button type="button" data-testid="mm-export-png-2x-white" onClick={() => { onExport('png', 2, 'white'); setExportOpen(false); }} style={menuItemStyle}>2x · 白底（高清）</button>
+              <button type="button" data-testid="mm-export-png-1x-transparent" onClick={() => { onExport('png', 1, 'transparent'); setExportOpen(false); }} style={menuItemStyle}>1x · 透明底</button>
+              <button type="button" data-testid="mm-export-png-2x-transparent" onClick={() => { onExport('png', 2, 'transparent'); setExportOpen(false); }} style={menuItemStyle}>2x · 透明底（高清）</button>
+              <div style={{ height: 1, background: 'var(--border, #e5e7eb)', margin: '4px 0' }} />
+              {/* P1-5: PDF 导出选项 */}
               <button type="button" data-testid="mm-export-pdf" onClick={() => { onExport('pdf'); setExportOpen(false); }} style={menuItemStyle}>PDF（白底）</button>
             </div>
           )}

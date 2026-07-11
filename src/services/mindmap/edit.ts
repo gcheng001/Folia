@@ -239,8 +239,7 @@ export function moveSubtreeAsLastChild(
 
   const start = sourceHit.node.lineIndex;
   const end = subtreeEnd(doc, sourceHit.node);
-  if (start <= targetHit.node.lineIndex && targetHit.node.lineIndex < end) return null;
-  // target 自身也在 source 子树内
+  // P1-2: 禁止 target 在 source 子树内（避免环）
   if (targetHit.node.lineIndex >= start && targetHit.node.lineIndex < end) return null;
 
   const block = doc.lines.slice(start, end);
@@ -249,21 +248,26 @@ export function moveSubtreeAsLastChild(
     const sourceLevel = (sourceHit.node as MindNode & { level: number }).level;
     const targetLevel = (targetHit.node as MindNode & { level: number }).level;
     const delta = targetLevel + 1 - sourceLevel;
-    // delta < 0 表示 source 比 target 深，结构上要降级——UI 层在 400ms 高亮阶段
-    // 已经阻止「拖到自己/自己后代」，这里兜底拦截剩余情况。
-    if (delta < 0) return null;
-    let maxNew = targetLevel + 1;
+    // P1-2: 允许 delta < 0（降级），只要整个子树新层级都在 1..6
+    let maxNew = -Infinity;
+    let minNew = Infinity;
     const rewrite = (n: MindNode): void => {
       if (n.kind === 'heading') {
         const next = n.level + delta;
-        if (next > 6) return; // 标记为非法，循环结束后统一拒绝
+        // 检查新层级是否合法
+        if (next < 1 || next > 6) {
+          maxNew = 999; // 标记为非法
+          return;
+        }
         if (next > maxNew) maxNew = next;
+        if (next < minNew) minNew = next;
         block[n.lineIndex - start] = `${'#'.repeat(next)} ${n.text}`;
       }
       for (const c of n.children) rewrite(c);
     };
     rewrite(sourceHit.node);
-    if (maxNew > 6) return null;
+    // P1-2: 只要所有新层级在 1..6 就允许，包括 delta < 0 的降级情况
+    if (maxNew > 6 || minNew < 1) return null;
   } else {
     // list：重写 source 及其后代每一项的缩进，使 source 真的嵌到 target 之下。
     // 与 insertChild 一致：子项内容列 = 父项内容列 + 2（markmap 约定，

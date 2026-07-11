@@ -347,7 +347,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     });
   }, [doc, theme, onChange, selectedIds, editingId, sidecar.positions, sidecar.nodeStyles, startEdit, commitEdit, cancelEdit]);
 
-  // 派生 edges：父子边（依 edgeMode）+ 自定义流程边。
+  // 派生 edges：父子边（依 edgeMode）+ 自定义流程边 + P1-1 临时结构预览线
   const derivedEdges = useMemo<Edge[]>(() => {
     const tree: Edge[] = [];
     if (edgeMode !== 'none') {
@@ -391,8 +391,45 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         } as Edge;
       })
       .filter((e): e is Edge => e !== null);
-    return [...tree, ...customEdges];
-  }, [doc, theme, sidecar.customEdges, selectedIds, edgeMode]);
+
+    // P1-1: 临时结构预览连接线（虚线箭头，绿色表示确认）
+    let previewEdges: Edge[] = [];
+    if (pendingStructure) {
+      const elapsed = Date.now() - pendingStructure.startAt;
+      const confirmed = elapsed >= STRUCTURE_HOVER_MS;
+      const sourceNode = derivedNodes.find(n => n.id === pendingStructure.sourceId);
+      const targetNode = derivedNodes.find(n => n.id === pendingStructure.targetId);
+      if (sourceNode && targetNode) {
+        previewEdges = [{
+          id: 'preview-structure',
+          source: pendingStructure.sourceId,
+          target: pendingStructure.targetId,
+          type: 'customFlow',
+          style: {
+            stroke: confirmed ? '#22c55e' : '#3b82f6',
+            strokeWidth: 2,
+            strokeDasharray: confirmed ? 'none' : '5,5',
+          },
+          markerEnd: 'url(#mm-flow-arrow)',
+          data: {
+            edge: {
+              id: 'preview-structure',
+              source: pendingStructure.sourceId,
+              target: pendingStructure.targetId,
+              arrow: 'one-way',
+              shape: 'straight',
+              dash: confirmed ? 'solid' : 'dashed',
+              color: confirmed ? '#22c55e' : '#3b82f6',
+              width: 2,
+            },
+          },
+          zIndex: 1000, // 确保在正常边之上
+        }];
+      }
+    }
+
+    return [...tree, ...customEdges, ...previewEdges];
+  }, [doc, theme, sidecar.customEdges, selectedIds, edgeMode, pendingStructure, derivedNodes]);
 
   // 标注框：成员位置变化时实时重算 bbox。
   const derivedGroups = useMemo<Node[]>(() => {
@@ -432,8 +469,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
 
   const allNodes: Node[] = useMemo(() => [...derivedGroups, ...derivedNodes], [derivedGroups, derivedNodes]);
 
-  // React Flow 受控状态。直接用 useState 持有节点，避免 useNodesState 的内部规范化
-  // 把 group 节点（zIndex=-1 / type='group'）过滤掉。
+  // React Flow 受控状态。直接使用 allNodes 作为唯一来源，避免状态竞争。
+  // P1-4: 不使用中间state，直接让ReactFlow管理节点和边的最新状态
   const [nodes, setNodes] = useState<Node[]>(allNodes);
   const [edges, setEdges] = useState<Edge[]>([]);
 
@@ -446,6 +483,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   }, [derivedEdges, setEdges]);
 
   // 节点变化：位置更新要写回 sidecar（拖动过程中不记录历史）
+  // P1-4: 使用ReactFlow提供的getNodes获取最新状态，避免依赖旧closure
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((current) => {
       const next = applyNodeChanges(changes, current);
@@ -455,12 +493,14 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       if (ch.type === 'position' && ch.position) {
         const nodeId = ch.id;
         if (nodeId.startsWith('g:')) {
-          // 标注框整体拖动：按 offset 平移其所有成员
+          // P1-4: 标注框整体拖动：使用rf.getNodes()获取最新节点位置
+          const currentNodes = rf.getNodes();
           const groupId = nodeId.slice(2);
           setSidecar((sc) => {
             const group = sc.groups.find((g) => g.id === groupId);
             if (!group) return sc;
-            const oldNode = nodes.find((n) => n.id === nodeId);
+            // P1-4: 使用ReactFlow当前状态中的节点，而不是旧的closure中的nodes
+            const oldNode = currentNodes.find((n) => n.id === nodeId);
             if (!oldNode) return sc;
             const dx = ch.position!.x - oldNode.position.x;
             const dy = ch.position!.y - oldNode.position.y;
@@ -491,7 +531,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     if (changes.some((c) => c.type === 'select')) {
       // 选择变化由 onSelectionChange 统一接管，这里只兜住位置更新
     }
-  }, [setNodes, nodes, derivedNodes]);
+  }, [setNodes, derivedNodes, rf]);
 
   const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
     setEdges((current) => applyEdgeChanges(changes, current));
@@ -555,7 +595,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     return () => window.removeEventListener('keydown', onKey);
   }, [tool]);
 
-  // 结构拖动检测
+  // P1-1: 结构拖动检测：只有进入节点中央区域（内缩20%）才开始400ms确认
   const findNodeAt = useCallback((pointerFlow: { x: number; y: number }, excludeId: string | null): { id: string; cx: number; cy: number } | null => {
     for (const n of derivedNodes) {
       if (n.id === excludeId) continue;
@@ -563,9 +603,16 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       if (li === null) continue;
       const w = (n.data as { width?: number })?.width as number ?? 120;
       const h = (n.data as { height?: number })?.height as number ?? 40;
-      if (pointerFlow.x >= n.position.x && pointerFlow.x <= n.position.x + w
-          && pointerFlow.y >= n.position.y && pointerFlow.y <= n.position.y + h) {
-        return { id: n.id, cx: n.position.x + w / 2, cy: n.position.y + h / 2 };
+      // P1-1: 只有进入中央区域（内缩20%）才触发
+      const insetX = w * 0.2;
+      const insetY = h * 0.2;
+      const centerX = n.position.x + w / 2;
+      const centerY = n.position.y + h / 2;
+      const halfW = w / 2 - insetX;
+      const halfH = h / 2 - insetY;
+      if (pointerFlow.x >= centerX - halfW && pointerFlow.x <= centerX + halfW
+          && pointerFlow.y >= centerY - halfH && pointerFlow.y <= centerY + halfH) {
+        return { id: n.id, cx: centerX, cy: centerY };
       }
     }
     return null;
@@ -1014,7 +1061,10 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     function onKey(e: KeyboardEvent): void {
       if (!onChangeRef.current) return;
       const ae = document.activeElement;
+      // P1-3: input/textarea编辑态Delete只删文字（由浏览器原生处理）
       if (ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement) return;
+      // P1-3: contenteditable编辑态通过检查属性判断
+      if (ae && ae.getAttribute('contenteditable') === 'true') return;
       if (editingId) return;
       // Cmd/Ctrl + Z / Shift+Z
       if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
@@ -1023,6 +1073,68 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         else undo();
         return;
       }
+      // P1-3: Delete键处理（支持多选删除边/框，单选删除节点/边/框）
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        // 多选：只删除边和框，不删除节点
+        if (selectedIds.length > 1) {
+          const groupIds = new Set(selectedIds.filter((id) => id.startsWith('g:')).map((id) => id.slice(2)));
+          const edgeIds = new Set(selectedIds.filter((id) => !id.startsWith('n') && !id.startsWith('g:')));
+          // P1-3: 多选包含节点时不得误删节点，只删除边和框
+          if (groupIds.size > 0 || edgeIds.size > 0) {
+            pushHistory(markdown, sidecar);
+            setSidecar((sc) => ({
+              ...sc,
+              customEdges: sc.customEdges.filter((e) => !edgeIds.has(e.id)),
+              groups: sc.groups.filter((g) => !groupIds.has(g.id)),
+            }));
+            setSelectedIds((prev) => prev.filter((id) => {
+              if (id.startsWith('g:')) return !groupIds.has(id.slice(2));
+              if (!id.startsWith('n')) return !edgeIds.has(id);
+              return true; // 节点保持选中
+            }));
+          }
+          return;
+        }
+        // 单选：删除节点、边或框
+        if (selectedIds.length === 1) {
+          const id = selectedIds[0];
+          // 删除标注框
+          if (id.startsWith('g:')) {
+            const gid = id.slice(2);
+            pushHistory(markdown, sidecar);
+            setSidecar((sc) => ({ ...sc, groups: sc.groups.filter((g) => g.id !== gid) }));
+            setSelectedIds([]);
+            return;
+          }
+          // 删除边
+          if (!id.startsWith('n')) {
+            if (sidecar.customEdges.some((ee) => ee.id === id)) {
+              pushHistory(markdown, sidecar);
+              setSidecar((sc) => ({ ...sc, customEdges: sc.customEdges.filter((ee) => ee.id !== id) }));
+              setSelectedIds([]);
+              return;
+            }
+            return;
+          }
+          // 删除节点
+          const li = lineIndexOf(id);
+          if (li === null) return;
+          const current = docRef.current;
+          if (li === current.root.lineIndex) return;
+          const node = collectOutlineNodes(current.root).find((n) => n.lineIndex === li);
+          if (!node) return;
+          if (node.children.length > 0 && !window.confirm('删除该节点及其全部子节点？')) return;
+          const md = deleteNode(current, li);
+          if (md !== null) {
+            pushHistory(markdown, sidecar);
+            onChangeRef.current(md);
+            setSelectedIds([]);
+          }
+        }
+        return;
+      }
+      // P1-3: 其他编辑键只在单选时生效
       if (selectedIds.length !== 1) return;
       const sel = selectedIds[0];
       const li = lineIndexOf(sel);
@@ -1049,55 +1161,6 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       } else if ((e.key === ' ' || e.code === 'Space' || e.key === 'F2') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         startEdit(sel);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        // 选中节点/边/框统一 Delete
-        e.preventDefault();
-        if (selectedIds.length === 1) {
-          const id = selectedIds[0];
-          if (id.startsWith('g:')) {
-            const gid = id.slice(2);
-            pushHistory(markdown, sidecar);
-            setSidecar((sc) => ({ ...sc, groups: sc.groups.filter((g) => g.id !== gid) }));
-            setSelectedIds([]);
-            return;
-          }
-          if (!id.startsWith('n')) {
-            if (sidecar.customEdges.some((ee) => ee.id === id)) {
-              pushHistory(markdown, sidecar);
-              setSidecar((sc) => ({ ...sc, customEdges: sc.customEdges.filter((ee) => ee.id !== id) }));
-              setSelectedIds([]);
-              return;
-            }
-            return;
-          }
-          if (li === current.root.lineIndex) return;
-          const node = collectOutlineNodes(current.root).find((n) => n.lineIndex === li);
-          if (!node) return;
-          if (node.children.length > 0 && !window.confirm('删除该节点及其全部子节点？')) return;
-          const md = deleteNode(current, li);
-          if (md !== null) {
-            pushHistory(markdown, sidecar);
-            onChangeRef.current(md);
-            setSelectedIds([]);
-          }
-        } else {
-          // 多选：删选中的所有 customEdges + groups（不删节点）
-          const groupIds = new Set(selectedIds.filter((id) => id.startsWith('g:')).map((id) => id.slice(2)));
-          const edgeIds = new Set(selectedIds.filter((id) => !id.startsWith('n') && !id.startsWith('g:')));
-          if (groupIds.size > 0 || edgeIds.size > 0) {
-            pushHistory(markdown, sidecar);
-            setSidecar((sc) => ({
-              ...sc,
-              customEdges: sc.customEdges.filter((e) => !edgeIds.has(e.id)),
-              groups: sc.groups.filter((g) => !groupIds.has(g.id)),
-            }));
-            setSelectedIds((prev) => prev.filter((id) => {
-              if (id.startsWith('g:')) return !groupIds.has(id.slice(2));
-              if (!id.startsWith('n')) return !edgeIds.has(id);
-              return true;
-            }));
-          }
-        }
       }
     }
     window.addEventListener('keydown', onKey);
@@ -1105,47 +1168,61 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   }, [editingId, selectedIds, applyInsert, startEdit, pushHistory, undo, redo, markdown, sidecar]);
 
   // 导出
-  const handleExport = useCallback(async (format: 'png' | 'pdf') => {
+  // P1-5: 导出参数包含format, scale, background
+  const handleExport = useCallback(async (format: 'png' | 'pdf', scale?: number, background?: 'transparent' | 'white') => {
     const element = wrapperRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null;
     if (!element) return;
     const allNodesRf = rf.getNodes();
     const allEdgesRf = rf.getEdges();
     const bounds = computeExportBounds(rf, allNodesRf, allEdgesRf);
     const baseName = (fileName.replace(/\.[^.]+$/, '') || 'mindmap');
-    if (format === 'png') {
-      const blob = await snapshotToPng(rf, element, bounds, { background: 'white', scale: 2 });
-      const path = await tauriSave({
-        defaultPath: `${baseName}.png`,
-        filters: [{ name: 'PNG 图片', extensions: ['png'] }],
-      });
-      if (!path) return;
-      const buffer = await blob.arrayBuffer();
-      await tauriWriteFile(path, new Uint8Array(buffer));
-    } else {
-      const blob = await snapshotToPdf(element, `${baseName}.pdf`);
-      const path = await tauriSave({
-        defaultPath: `${baseName}.pdf`,
-        filters: [{ name: 'PDF 文档', extensions: ['pdf'] }],
-      });
-      if (!path) return;
-      const buffer = await blob.arrayBuffer();
-      await tauriWriteFile(path, new Uint8Array(buffer));
+    try {
+      if (format === 'png') {
+        // P1-5: PNG 1x/2x真传参数，背景可选白底/透明
+        const pngScale = scale ?? 2;
+        const pngBackground = background ?? 'white';
+        const blob = await snapshotToPng(rf, element, bounds, { background: pngBackground, scale: pngScale });
+        const path = await tauriSave({
+          defaultPath: `${baseName}.png`,
+          filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+        });
+        if (!path) return;
+        const buffer = await blob.arrayBuffer();
+        await tauriWriteFile(path, new Uint8Array(buffer));
+      } else {
+        // P1-5: PDF固定白底
+        const blob = await snapshotToPdf(element, `${baseName}.pdf`);
+        const path = await tauriSave({
+          defaultPath: `${baseName}.pdf`,
+          filters: [{ name: 'PDF 文档', extensions: ['pdf'] }],
+        });
+        if (!path) return;
+        const buffer = await blob.arrayBuffer();
+        await tauriWriteFile(path, new Uint8Array(buffer));
+      }
+    } catch (error) {
+      // P1-7: Tauri save/write失败必须在MindMapPane显示可理解错误提示
+      const message = error instanceof Error ? error.message : '导出失败，请重试';
+      // 简单的alert提示，实际项目可用Toast
+      window.alert(`导出失败: ${message}`);
+      console.error('Export error:', error);
     }
   }, [rf, fileName]);
 
-  // 节点被拖到高亮目标时：给目标加预览样式
+  // P1-1: 节点被拖到高亮目标时：给目标加预览样式（包含确认状态）
   const derivedNodesWithHover = useMemo(() => {
     if (!pendingStructure) return derivedNodes;
     const elapsed = Date.now() - pendingStructure.startAt;
     if (elapsed < 0) return derivedNodes;
+    const confirmed = elapsed >= STRUCTURE_HOVER_MS;
     return derivedNodes.map((n) => {
       if (n.id !== pendingStructure.targetId) return n;
       return {
         ...n,
         data: {
           ...n.data,
-          // 给目标加个内联 className hint；CustomNode 暂未消费，先放 data 上
           isStructureTarget: true,
+          isStructureConfirmed: confirmed, // P1-1: 传递确认状态给CustomNode
         },
       };
     });
@@ -1194,9 +1271,14 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
             boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
           }}
         >
-          拖到节点上停留 400ms：设为子节点；松手 = {(() => {
+          {(() => {
             const elapsed = Date.now() - pendingStructure.startAt;
-            return elapsed >= STRUCTURE_HOVER_MS ? '✓ 准备就绪' : `还需 ${Math.ceil((STRUCTURE_HOVER_MS - elapsed) / 100) * 100}ms`;
+            const confirmed = elapsed >= STRUCTURE_HOVER_MS;
+            const targetNode = derivedNodes.find(n => n.id === pendingStructure.targetId);
+            const targetText = targetNode ? (targetNode.data as { label?: string }).label : '目标';
+            return confirmed
+              ? `✓ 松手设为『${targetText}』的子节点`
+              : `拖到节点中央停留 400ms：设为『${targetText}』的子节点 (${Math.ceil((STRUCTURE_HOVER_MS - elapsed) / 100) * 100}ms)`;
           })()}
         </div>
       )}

@@ -23,6 +23,10 @@ interface CustomNodeData {
   onCancelEdit?: (lineIndex: number) => void;
   /** P0-9: per-node 样式，包含颜色覆盖 */
   perNodeStyle?: { color?: string };
+  /** P1-1: 结构拖动目标状态 */
+  isStructureTarget?: boolean;
+  /** P1-1: 结构拖动确认状态（>=400ms） */
+  isStructureConfirmed?: boolean;
   [key: string]: unknown;
 }
 
@@ -41,6 +45,8 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     onCommitEdit,
     onCancelEdit,
     perNodeStyle,
+    isStructureTarget,
+    isStructureConfirmed,
   } = data as unknown as CustomNodeData;
   const theme = maybeTheme ?? getTheme(undefined);
   // P0-9: per-node 颜色优先于主题分支颜色
@@ -89,7 +95,15 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     textAlign: 'center',
   };
 
-  if (isSelected && !isEditing) {
+  // P1-1: 结构拖动高亮：确认前后不同样式
+  if (isStructureConfirmed) {
+    // 确认状态（>=400ms）：明显高亮 + 绿色调
+    nodeStyle.boxShadow = `0 0 0 3px #22c55e, 0 0 0 5px #22c55e33`;
+    nodeStyle.border = classic ? 'none' : `3px solid #22c55e`;
+  } else if (isStructureTarget) {
+    // 预告状态（<400ms）：轻微高亮
+    nodeStyle.boxShadow = `0 0 0 2px ${color}88, 0 0 0 4px ${color}44`;
+  } else if (isSelected && !isEditing) {
     nodeStyle.boxShadow = `0 0 0 2px ${color}55, 0 0 0 4px ${color}22`;
   }
 

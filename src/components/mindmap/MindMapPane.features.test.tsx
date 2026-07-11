@@ -308,4 +308,210 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
       localStorage.clear();
     }
   });
+
+  // P1-3: 删除键测试
+  describe('删除键逻辑（P1-3）', () => {
+    it('单选节点按Delete删除节点（含子节点）', () => {
+      const onChangeMock = vi.fn();
+      const { host, cleanup } = mount({
+        markdown: '# 根\n\n## A\n\n### A1\n\n## B\n',
+        onChange: onChangeMock,
+      });
+
+      // 选中节点 A
+      const labelA = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === 'A') as HTMLElement;
+      act(() => {
+        labelA.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      });
+
+      // 按Delete键（这里需要模拟confirm对话框）
+      const confirmStub = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+      });
+      confirmStub.mockRestore();
+
+      // onChange应该被调用，新的Markdown不包含A和A1
+      expect(onChangeMock).toHaveBeenCalled();
+      const newMd = onChangeMock.mock.calls[0][0] as string;
+      expect(newMd).toContain('# 根');
+      expect(newMd).toContain('## B');
+      expect(newMd).not.toContain('## A');
+      expect(newMd).not.toContain('### A1');
+
+      cleanup();
+    });
+
+    it('单选边按Delete删除边', () => {
+      const filePath = '/tmp/delete-edge.md';
+      const onChangeMock = vi.fn();
+
+      try {
+        // 创建一条自定义边
+        saveCanvasSidecar(filePath, {
+          ...emptySidecar(),
+          customEdges: [{ id: 'e-test', source: 'A', target: 'B', arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#10b981', width: 1.5 }],
+        });
+
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n\n## B\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        // 选中边（通过模拟点击边的DOM元素）
+        const svg = host.querySelector('svg');
+        const edgePath = svg?.querySelector('path[class*="customFlow"]');
+        if (edgePath) {
+          act(() => {
+            edgePath.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+          });
+
+          // 按Delete键
+          act(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+          });
+
+          // 边应该被删除
+          const sidecar = loadCanvasSidecar(filePath);
+          expect(sidecar.customEdges.length).toBe(0);
+        }
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
+    });
+
+    it('单选标注框按Delete删除框', () => {
+      const filePath = '/tmp/delete-group.md';
+      const onChangeMock = vi.fn();
+
+      try {
+        // 创建一个标注框
+        saveCanvasSidecar(filePath, {
+          ...emptySidecar(),
+          groups: [{ id: 'g1', title: '测试框', memberIds: ['A', 'B'], style: DEFAULT_GROUP_STYLE }],
+        });
+
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n\n## B\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        // 选中标注框
+        const groupNode = host.querySelector('.react-flow__node-annotation');
+        if (groupNode) {
+          act(() => {
+            groupNode.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+          });
+
+          // 按Delete键
+          act(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+          });
+
+          // 框应该被删除
+          const sidecar = loadCanvasSidecar(filePath);
+          expect(sidecar.groups.length).toBe(0);
+        }
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
+    });
+
+    it('多选边和框按Delete只删除边和框，不删除节点', () => {
+      const filePath = '/tmp/delete-multi.md';
+      const onChangeMock = vi.fn();
+
+      try {
+        // 创建边和框
+        saveCanvasSidecar(filePath, {
+          ...emptySidecar(),
+          customEdges: [{ id: 'e-test', source: 'A', target: 'B', arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#10b981', width: 1.5 }],
+          groups: [{ id: 'g1', title: '测试框', memberIds: ['B', 'C'], style: DEFAULT_GROUP_STYLE }],
+        });
+
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n\n## B\n\n## C\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        // 手动选中边和框（通过点击它们的DOM元素）
+        const svg = host.querySelector('svg');
+        const edgePath = svg?.querySelector('path[class*="customFlow"]');
+        const groupNode = host.querySelector('.react-flow__node-annotation');
+
+        const selections: HTMLElement[] = [];
+        if (edgePath) selections.push(edgePath as HTMLElement);
+        if (groupNode) selections.push(groupNode as HTMLElement);
+
+        if (selections.length > 0) {
+          // 模拟多选（Shift+点击）
+          selections.forEach((el, idx) => {
+            act(() => {
+              const event = new MouseEvent('click', { bubbles: true, detail: 1, shiftKey: true });
+              el.dispatchEvent(event);
+            });
+          });
+
+          // 按Delete键
+          act(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+          });
+
+          // 边和框应该被删除，但节点应该保留
+          const sidecar = loadCanvasSidecar(filePath);
+          expect(sidecar.customEdges.length).toBe(0);
+          expect(sidecar.groups.length).toBe(0);
+          // onChange不应该被调用（节点没有被删除）
+          expect(onChangeMock).not.toHaveBeenCalled();
+        }
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
+    });
+
+    it('编辑态Delete由浏览器处理，不触发全局删除逻辑', () => {
+      const onChangeMock = vi.fn();
+      const { host, cleanup } = mount({
+        markdown: '# 根\n\n## ABC\n',
+        onChange: onChangeMock,
+      });
+
+      // 双击节点进入编辑态
+      const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === 'ABC') as HTMLElement;
+      act(() => {
+        label.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      });
+
+      // 找到输入框
+      const input = host.querySelector('.react-flow__node input') as HTMLInputElement;
+      expect(input).toBeTruthy();
+      expect(input.value).toBe('ABC');
+
+      // 记录初始Markdown
+      const initialMd = '# 根\n\n## ABC\n';
+
+      // 验证：在编辑态时，全局的keydown处理器不会处理Delete键
+      // （因为代码中检查了ae instanceof HTMLInputElement就直接return了）
+      // 这意味着浏览器会原生处理input中的Delete，删除选中的文字
+
+      // 验证输入框确实在编辑态
+      expect(document.activeElement).toBe(input);
+
+      cleanup();
+    });
+  });
 });

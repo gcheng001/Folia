@@ -69,24 +69,26 @@ export function computeExportBounds(
 
 /** 把画布 DOM 渲染成 PNG（DataURL）。scale=像素倍率，2/4 倍高清。 */
 export async function snapshotToPng(
-  rf: ReactFlowInstance,
+  _rf: ReactFlowInstance,
   element: HTMLElement,
   bounds: ExportBounds,
   options: { background: 'transparent' | 'white'; scale?: number } = { background: 'white' },
 ): Promise<Blob> {
   const scale = options.scale ?? 2;
   const { default: html2canvas } = await import('html2canvas');
+  // P1-6: 全画布裁剪 - 与viewport平移/缩放无关，按真实nodes bounds输出
+  // 不使用viewport的zoom和x,y偏移，直接按bounds裁剪
   const canvas = await html2canvas(element, {
     backgroundColor: options.background === 'white' ? '#ffffff' : null,
     scale,
     useCORS: true,
     logging: false,
-    x: bounds.x * rf.getViewport().zoom + rf.getViewport().x,
-    y: bounds.y * rf.getViewport().zoom + rf.getViewport().y,
-    width: bounds.width * rf.getViewport().zoom,
-    height: bounds.height * rf.getViewport().zoom,
-    windowWidth: bounds.width * rf.getViewport().zoom,
-    windowHeight: bounds.height * rf.getViewport().zoom,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    windowWidth: bounds.width,
+    windowHeight: bounds.height,
   });
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob 失败'))), 'image/png');

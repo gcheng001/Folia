@@ -29,8 +29,9 @@ export async function save(options: SaveOptions): Promise<string | null> {
         filters: options.filters,
       });
       return path ?? null;
-    } catch {
-      // fallback to browser
+    } catch (error) {
+      // P1-7: Tauri save失败必须抛错
+      throw new Error(`保存失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   // 浏览器：返回建议文件名，让调用方走 downloadBlob
@@ -42,13 +43,16 @@ export async function writeFile(path: string, contents: Uint8Array): Promise<voi
     try {
       await tauriWriteFileRaw(path, contents);
       return;
-    } catch {
-      // fallthrough to browser download
+    } catch (error) {
+      // P1-7: Tauri write失败必须抛错
+      throw new Error(`写入失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  // 浏览器 fallback：path 视为文件名。复制 buffer 确保 ArrayBuffer（非 Shared）。
+  // P1-7: 浏览器fallback：只使用basename，绝不把绝对路径当下载文件名
+  const filename = path.split('/').pop()!.split('\\').pop()!;
+  // 复制 buffer 确保 ArrayBuffer（非 Shared）。
   const copy = new Uint8Array(contents);
-  triggerBrowserDownload(new Blob([copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength)]), path);
+  triggerBrowserDownload(new Blob([copy.buffer.slice(copy.byteOffset, copy.byteOffset + copy.byteLength)]), filename);
 }
 
 function looksLikeTempName(p: string): boolean {
