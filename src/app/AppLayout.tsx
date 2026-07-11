@@ -172,7 +172,7 @@ export function AppLayout() {
     tearOffViaDrag,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
-  // 新建空白草稿标签（多标签语义：等价于 TabBar 的 onNew）
+  // 新建空白草稿标签：工具栏「新建 Markdown」按钮与 Cmd+N 共用此 handler
   const handleNew = useCallback(() => {
     openInNewTab(createEmptyFile());
   }, [openInNewTab]);
@@ -434,6 +434,7 @@ export function AppLayout() {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       if (e.key === 'o' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleOpen(); return; }
+      if (e.key === 'n' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleNew(); return; }
       if (e.key === 's' && e.shiftKey && !e.altKey) { e.preventDefault(); handleSaveAs(); return; }
       if (e.key === 's' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleSave(); return; }
       if (e.key === 'e' && e.shiftKey && !e.altKey) { e.preventDefault(); handleExportWord(); return; }
@@ -453,7 +454,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -854,7 +855,6 @@ export function AppLayout() {
             onSelect={session.switchTab}
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
             onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
-            onNew={() => session.openInNewTab(createEmptyFile())}
             onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
