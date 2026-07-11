@@ -253,4 +253,34 @@ describe('Codex 审查回归（M-B 开工前修复）', () => {
   it('P0 回归：庭审实战 fixture 仍往返保真（修复未破坏既有）', () => {
     expect(serializeMarkdown(parseMarkdown(realisticMd))).toBe(realisticMd);
   });
+
+  it('P0-7: 未缩进 lazy 续行后的缩进子项仍挂父项下（Codex 第三轮反例，pandoc 交叉验证）', () => {
+    // `note` 是 parent 的 lazy 续行（无空行分隔）→ 列表不打断 → `  - child` 嵌到 parent 下
+    const md = '# H\n- parent\nnote\n  - child\n- sibling\n';
+    const doc = parseMarkdown(md);
+    const parent = doc.root.children.find((n) => n.text === 'parent');
+    expect(parent?.children.map((c) => c.text)).toEqual(['child']);
+    expect(parent?.children[0].level).toBe(parent!.level + 1);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['parent', 'sibling']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0-8: 空行后的未缩进段落才打断列表（与 lazy 续行区分）', () => {
+    // 空行关闭 lazy 续行窗口 → note 跳出列表 → b 作为新列表段挂到 H（不嵌到 a 下）
+    const md = '# H\n- a\n\nnote\n  - b\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0-9: 多项 lazy 续行后回兄弟项仍平级（Codex Case C）', () => {
+    const md = '# H\n- a\n- b\nmore\n  - bchild\n- c\n';
+    const doc = parseMarkdown(md);
+    const b = doc.root.children.find((n) => n.text === 'b');
+    expect(b?.children.map((c) => c.text)).toEqual(['bchild']);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b', 'c']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
 });

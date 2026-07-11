@@ -122,6 +122,9 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   /** 当前列表段的内容起始列（基准缩进 + marker + 至少1空格）；段落缩进≥此列=续接。 */
   let listContentCol = 0;
   let listBaseDepth = 0;
+  /** 当前列表项是否仍「敞开」可接收 lazy 续行：自上个列表项起未遇空行即为 true。
+   *  CommonMark：未缩进的段落行若无空行分隔，是上一列表项的 lazy 续行，不打断列表。 */
+  let listItemOpen = false;
   let afterFrontmatter = false;
 
   for (let i = 0; i < lines.length; i++) {
@@ -167,6 +170,13 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       continue;
     }
 
+    // 空行：不产生节点，但关闭当前列表项的 lazy 续行窗口
+    // （其后的未缩进段落才视为跳出列表）。
+    if (line.trim() === '') {
+      listItemOpen = false;
+      continue;
+    }
+
     // ATX 标题
     const h = line.match(ATX_HEADING);
     if (h) {
@@ -208,13 +218,15 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       const node = makeNode('list', depth, text, i);
       parent.children.push(node);
       stack.push(node);
+      listItemOpen = true;
       continue;
     }
 
     // 非大纲有内容行：判定是否打断当前列表。
-    // 缩进 ≥ 列表内容列 = 列表项 lazy 续接（作为该项备注），不打断；
-    // 缩进回到内容列以外 = 段落跳出列表，打断。空行不打断。
-    if (line.trim() !== '' && listBaseIndent !== null) {
+    // (a) 列表项仍敞开（未遇空行）：任意段落行都是 lazy 续行，不打断列表
+    //     —— 含未缩进行（CommonMark 视为上一项段落续行）。
+    // (b) 空行后：缩进 ≥ 内容列 = 松散列表续接，列表保持；缩进 < 内容列 = 跳出列表。
+    if (line.trim() !== '' && listBaseIndent !== null && !listItemOpen) {
       const lineIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
       if (lineIndent < listContentCol) listBaseIndent = null;
     }
