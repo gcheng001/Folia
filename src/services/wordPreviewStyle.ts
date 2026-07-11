@@ -105,7 +105,7 @@ export function createWordPreviewStyle(config: PresetConfig): WordPreviewStyle {
     '--word-inline-code-font-size': `${config.inline_code.size}pt`,
     '--word-inline-code-color': optionalColor(config.inline_code.color),
     '--word-link-color': '#0563C1',
-    '--word-quote-bg': optionalColor(config.quote.background_color),
+    '--word-quote-bg': optionalBackgroundColor(config.quote.background_color),
     '--word-quote-indent': `${config.quote.left_indent}pt`,
     '--word-quote-font-size': `${config.quote.font_size}pt`,
     '--word-quote-line-height': `${config.quote.line_spacing}`,

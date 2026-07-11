@@ -31,7 +31,9 @@ describe('createWordPreviewStyle', () => {
     expect(style['--word-code-font-family']).toBe('"仿宋_GB2312", "Consolas", monospace');
     expect(style['--word-code-indent']).toBe('24pt');
     expect(style['--word-inline-code-color']).toBe('#C7254E');
-    expect(style['--word-quote-bg']).toBe('#EAEAEA');
+    // 法律预设的法条引用无底纹（预览与导出一致），缺省背景映射为 transparent
+    expect(style['--word-quote-bg']).toBe('transparent');
+    expect(style['--word-quote-font-size']).toBe('12pt');
     expect(style['--word-quote-indent']).toBe('24pt');
     expect(style['--word-hr-content']).toMatch(/^"/);
   });
