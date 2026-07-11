@@ -10,7 +10,7 @@
  * 所有操作对非法目标（根节点删除/升级等）返回 null，由调用方忽略。
  */
 import type { MindMapDoc, MindNode } from './types';
-import { collectOutlineNodes } from './parser';
+import { collectOutlineNodes, expandCols } from './parser';
 
 const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/;
 
@@ -111,11 +111,15 @@ function listSiblingLine(refLine: string): string | null {
   return `${m[1]}${m[2]} `;
 }
 
-/** 列表项的空子行：缩进到父项内容列（CommonMark：marker 末列 + min(padding, 4)）。 */
+/** 列表项的空子行：缩进到父项内容列。列宽计算与解析器同一规则
+ *  （tab 按 4 列停靠位展开；padding 1–4 列按实际列数、≥5 列按 marker 末列 +1，Codex R3-P1）。 */
 function listChildLine(parentLine: string): string | null {
   const m = parentLine.match(LIST_ITEM);
   if (!m) return null;
-  const contentCol = m[1].length + m[2].length + Math.min(m[3].length, 4);
+  const markerCol = expandCols(m[1]) + m[2].length;
+  const padEndCol = expandCols(m[3], markerCol);
+  const padLen = padEndCol - markerCol;
+  const contentCol = padLen <= 4 ? padEndCol : markerCol + 1;
   return `${' '.repeat(contentCol)}- `;
 }
 
@@ -171,7 +175,9 @@ export function insertChild(doc: MindMapDoc, lineIndex: number): EditResult | nu
     newLine = line;
     pad = false;
   } else {
-    const childLevel = node.kind === 'root' ? 1 : Math.min(node.level + 1, 6);
+    // H6 无更深标题层级，"七级子节点"重解析会变成兄弟——直接不允许（Codex R3-P2）
+    if (node.kind === 'heading' && node.level >= 6) return null;
+    const childLevel = node.kind === 'root' ? 1 : node.level + 1;
     newLine = headingLine(childLevel, '');
     pad = true;
   }

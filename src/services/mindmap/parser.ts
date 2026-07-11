@@ -41,8 +41,8 @@ const INDENT_INDENT = 4;
 /** tab 展开步长（CommonMark：tab 展开到下一个 4 列停靠位）。 */
 const TAB_STOP = 4;
 
-/** 前导空白按列宽展开（tab → 下一个 4 列停靠位），返回内容起始列。 */
-function expandCols(ws: string, startCol = 0): number {
+/** 前导空白按列宽展开（tab → 下一个 4 列停靠位），返回内容起始列。编辑内核复用同一规则。 */
+export function expandCols(ws: string, startCol = 0): number {
   let col = startCol;
   for (const ch of ws) {
     col = ch === '\t' ? (Math.floor(col / TAB_STOP) + 1) * TAB_STOP : col + 1;

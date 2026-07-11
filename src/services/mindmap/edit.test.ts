@@ -117,12 +117,22 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       assertStable(markdown);
     });
 
-    it('六级标题的子节点仍为六级（层级封顶）', () => {
+    it('六级标题不可再插子节点（七级不存在，伪子节点会解析成兄弟）', () => {
       const md = '###### 最深\n';
       const doc = parseMarkdown(md);
       const deep = collectOutlineNodes(doc.root).find((n) => n.text === '最深')!;
-      const { markdown, newLineIndex } = insertChild(doc, deep.lineIndex);
-      expect(markdown.split('\n')[newLineIndex]).toBe('###### ');
+      expect(insertChild(doc, deep.lineIndex)).toBeNull();
+    });
+
+    it('Tab 缩进的父列表项：子项按 4 列制表位展开的列宽缩进', () => {
+      const md = '# 根\n\n- a\n\t- b\n';
+      const doc = parseMarkdown(md);
+      const b = collectOutlineNodes(doc.root).find((n) => n.text === 'b')!;
+      const { markdown } = insertChild(doc, b.lineIndex);
+      const doc2 = parseMarkdown(markdown);
+      const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'b')!;
+      // b 的内容列 = tab(4 列) + marker(1) + padding(1) = 6，子项必须真的嵌进去
+      expect(b2.children.map((n) => n.text)).toEqual(['']);
       assertStable(markdown);
     });
   });
