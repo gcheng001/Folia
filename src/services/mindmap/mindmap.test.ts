@@ -393,3 +393,37 @@ describe('Codex 第五轮复核回归', () => {
     }
   });
 });
+
+describe('Codex 第六轮复核回归', () => {
+  it('R6-P0-1: 缩进不足以嵌到父项内容列时，独立成同级项而非嵌套子项（pandoc 交叉验证）', () => {
+    // `1. a` 的内容列是 3；`  - child` 缩进 2 < 3 → 不能嵌到 a 下 → 与 a 同级（H 下）
+    const md = '# H\n1. a\n  - child\n2. b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'child', 'b']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    const child = doc.root.children.find((n) => n.text === 'child');
+    expect(child?.level).toBe(a!.level); // child 与 a 同级（depth 相等）
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R6-P0-2: 空行后缩进代码块不重开 lazy 窗口，顶格段落仍打断列表（pandoc 交叉验证）', () => {
+    // `      code` 缩进 6，嵌到 a (内容列 2) 后的 4 列余量刚好是缩进代码块边界；
+    // 它不是段落续接，不应重开 lazy。`top` 缩进 0 仍要打断列表。
+    const md = '- a\n\n      code\ntop\n  - child\n- b\n';
+    const doc = parseMarkdown(md);
+    // 期望结构：a (root) → top (root 下但 top 实际属 root 段落)；child/b 是顶层列表
+    // 实际 list 节点：a, child, b 都应是 root 的直接子列表项
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'child', 'b']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R6 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});

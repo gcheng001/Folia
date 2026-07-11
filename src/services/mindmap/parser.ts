@@ -33,8 +33,10 @@ const TYPE_VOCAB: NodeType[] = ['要件', '争点', '证据', '法条', '事实'
 const EVIDENCE_VERDICTS: EvidenceVerdict[] = ['认可', '不认可', '部分认可'];
 const EVIDENCE_ASPECTS = ['真实性', '合法性', '关联性'] as const;
 
-/** 列表每级缩进步长（标准 2 空格）。4 空格算两级，对真实笔记足够稳健。 */
-const INDENT_STEP = 2;
+/** 缩进代码块的最小余量：行缩进超过所在列表项内容列至少 4 列才是代码块（CommonMark）。
+ *  历史上曾用固定 2-space 步长算嵌套深度，对 `1. a /  - child` 等宽窄不齐的列表
+ *  会把 child 强行挂到 a 下；现按父项内容列判定（见 R6-P0-1）。 */
+const INDENT_INDENT = 4;
 
 /** tab 展开步长（CommonMark：tab 展开到下一个 4 列停靠位）。 */
 const TAB_STOP = 4;
@@ -134,7 +136,6 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   /** 每个打开的列表层级的内容起始列（与栈中 list 节点一一对应，Codex R5-P0-2）。
    *  单一全局内容列会把父层松散续接（缩进只够父层）误判成跳出整段列表。 */
   let listCols: number[] = [];
-  let listBaseDepth = 0;
   /** 当前列表项是否仍「敞开」可接收 lazy 续行：自上个列表项起未遇空行即为 true。
    *  CommonMark：未缩进的段落行若无空行分隔，是上一列表项的 lazy 续行，不打断列表。 */
   let listItemOpen = false;
@@ -254,24 +255,33 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       if (listBaseIndent === null || indent < listBaseIndent) {
         // 新列表段（首项 / 段落打断后重启 / 缩进回退到 base 以下）：
         // 先把栈回退到最近的非列表祖先（标题/根），否则新列表会挂在旧列表项下。
-        while (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
+        while (stack.length > 1 && stack[stack.length - 1].kind === 'list') {
+          if (listCols.length > 0) listCols.pop();
+          stack.pop();
+        }
         listBaseIndent = indent;
         listCols = [];
-        listBaseDepth = stack[stack.length - 1].level + 1;
       }
-      const nest = Math.floor((indent - listBaseIndent) / INDENT_STEP);
-      const depth = listBaseDepth + nest;
-      while (stack.length > 1 && stack[stack.length - 1].level >= depth) {
-        // 弹出同级/更深列表节点时同步弹出其内容列，保持 listCols 与栈对应
-        if (stack[stack.length - 1].kind === 'list') listCols.pop();
+      // 弹栈直到栈顶 list 项的 contentCol <= indent（确定逻辑父节点，Codex R6-P0-1）：
+      // 缩进不足以嵌到最近父项内容列时（如 `1. a / - child(2)` 因 a 内容列=3 > 2），
+      // 退到更浅的父节点，而非按固定 2-space 步长强行当嵌套。
+      while (
+        stack.length > 1 &&
+        stack[stack.length - 1].kind === 'list' &&
+        listCols.length > 0 &&
+        indent < listCols[listCols.length - 1]
+      ) {
+        listCols.pop();
         stack.pop();
       }
-      // 内容列每项都更新（多位序号如 `10.` 比 `1.` 宽一列，不能沿用段首项，Codex R4-P0-4）
-      listCols.push(expandCols(l[3], indent + l[2].length));
+      // 列表项的 depth = 父节点 level + 1；父节点由上面弹栈后的栈顶确定。
       const parent = stack[stack.length - 1];
+      const depth = parent.level + 1;
       const node = makeNode('list', depth, text, i);
       parent.children.push(node);
       stack.push(node);
+      // 内容列每项都更新（多位序号如 `10.` 比 `1.` 宽一列，不能沿用段首项，Codex R4-P0-4）
+      listCols.push(expandCols(l[3], indent + l[2].length));
       listItemOpen = true;
       continue;
     }
@@ -279,11 +289,17 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     // 非大纲有内容行：判定是否打断当前列表。
     // (a) 列表项仍敞开（未遇空行）：任意段落行都是 lazy 续行，不打断列表
     //     —— 含未缩进行（CommonMark 视为上一项段落续行）。
-    // (b) 空行后：只弹出比该行缩进更深的列表层级（Codex R5-P0-2）；
+    // (b) 空行后：缩进代码块（≥ 最深列表内容列 + 4 列，Codex R6-P0-2）不是段落续接，
+    //     不重开 lazy 窗口；否则只弹出比该行缩进更深的列表层级（Codex R5-P0-2），
     //     缩进够到某层内容列 = 该层松散续接，重新敞开 lazy 窗口；全部不够 = 跳出列表段。
     if (line.trim() !== '' && listBaseIndent !== null && !listItemOpen) {
       const lineIndent = expandCols(line.match(/^(\s*)/)?.[1] ?? '');
-      if (popListDeeperThan(lineIndent)) {
+      // 缩进代码块判定：行缩进减去最深列表项内容列 ≥ 4 列。
+      // 列表项下的代码块需至少「内容列 + 4」缩进（CommonMark 规则），不能与段落 lazy 续接混为一谈。
+      const deepestCol = listCols.length > 0 ? listCols[listCols.length - 1] : -1;
+      const isIndentedCodeBlock =
+        listCols.length > 0 && lineIndent - deepestCol >= INDENT_INDENT;
+      if (!isIndentedCodeBlock && popListDeeperThan(lineIndent)) {
         listItemOpen = true;
       }
     }
