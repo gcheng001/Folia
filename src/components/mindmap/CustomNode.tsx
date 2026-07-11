@@ -21,6 +21,8 @@ interface CustomNodeData {
   onStartEdit?: (nodeId: string) => void;
   onCommitEdit?: (lineIndex: number, text: string) => void;
   onCancelEdit?: (lineIndex: number) => void;
+  /** P0-9: per-node 样式，包含颜色覆盖 */
+  perNodeStyle?: { color?: string };
   [key: string]: unknown;
 }
 
@@ -38,9 +40,11 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     onStartEdit,
     onCommitEdit,
     onCancelEdit,
+    perNodeStyle,
   } = data as unknown as CustomNodeData;
   const theme = maybeTheme ?? getTheme(undefined);
-  const color = branchColor(theme, branchIndex ?? -1);
+  // P0-9: per-node 颜色优先于主题分支颜色
+  const color = perNodeStyle?.color ?? branchColor(theme, branchIndex ?? -1);
   const lineIndex = Number(id.slice(1));
   const inputRef = useRef<HTMLInputElement | null>(null);
 

@@ -3,15 +3,17 @@
  * 包围盒由父组件按成员节点的实时位置重新计算，节点移动/框拖动都
  * 走统一的 positions / groups 状态。
  */
-import { memo } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import type { AnnotationGroup, AnnotationStyle } from '../../services/mindmap/canvasSidecar';
 
 export interface GroupNodeData {
   group: AnnotationGroup;
-  /** 实时包围盒 { x, y, width, height }，由父组件按成员坐标算。 */
+  /** 实时包围盒 { x, y, width, number; height: number }，由父组件按成员坐标算。 */
   bbox: { x: number; y: number; width: number; height: number };
   isSelected: boolean;
+  /** P0-6: 标题编辑回调 */
+  onTitleChange?: (newTitle: string) => void;
   [key: string]: unknown;
 }
 
@@ -28,8 +30,47 @@ function styleToCss(style: AnnotationStyle): React.CSSProperties {
 }
 
 export const AnnotationGroupNode = memo(({ data }: NodeProps) => {
-  const { group, bbox, isSelected } = data as unknown as GroupNodeData;
+  const { group, bbox, isSelected, onTitleChange } = data as unknown as GroupNodeData;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(group.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const showTitle = group.title.trim() !== '';
+
+  // P0-6: 双击标题进入编辑态
+  const handleDoubleClick = () => {
+    if (!onTitleChange) return;
+    setIsEditing(true);
+    setEditText(group.title);
+  };
+
+  // P0-6: Enter 保存，Esc 取消
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!onTitleChange) return;
+    if (e.key === 'Enter') {
+      onTitleChange(editText.trim());
+      setIsEditing(false);
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+      setEditText(group.title);
+    }
+  };
+
+  // P0-6: blur 时保存
+  const handleBlur = () => {
+    if (!onTitleChange) return;
+    onTitleChange(editText.trim());
+    setIsEditing(false);
+  };
+
+  // P0-6: 编辑态时自动 focus input
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
   return (
     <div
       className="nowheel nopan"
@@ -57,9 +98,33 @@ export const AnnotationGroupNode = memo(({ data }: NodeProps) => {
             lineHeight: `${TITLE_HEIGHT}px`,
             borderRadius: 4,
             pointerEvents: 'auto',
+            cursor: onTitleChange ? 'text' : 'default',
           }}
+          onDoubleClick={handleDoubleClick}
         >
-          {group.title}
+          {isEditing && onTitleChange ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={handleBlur}
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: group.style.color,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                padding: '0 2px',
+                width: Math.max(60, group.title.length * 8),
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <>{group.title}</>
+          )}
         </div>
       )}
       {isSelected && (
@@ -82,12 +147,21 @@ export const AnnotationGroupNode = memo(({ data }: NodeProps) => {
 
 AnnotationGroupNode.displayName = 'AnnotationGroupNode';
 
-export function makeGroupNode(group: AnnotationGroup, bbox: { x: number; y: number; width: number; height: number }, isSelected: boolean): Node {
+export function makeGroupNode(
+  group: AnnotationGroup,
+  bbox: { x: number; y: number; width: number; height: number },
+  isSelected: boolean,
+  onTitleChange?: (newTitle: string) => void,
+): Node {
   return {
     id: `g:${group.id}`,
     type: 'annotation',
     position: { x: bbox.x, y: bbox.y },
-    data: { group, bbox, isSelected },
+    // P0-4: Node 顶层明确 width/height，确保 React Flow 知道节点尺寸
+    width: bbox.width,
+    height: bbox.height,
+    style: { width: bbox.width, height: bbox.height }, // P0-4: 明确 style
+    data: { group, bbox, isSelected, onTitleChange },
     draggable: true,
     selectable: true,
     zIndex: -1,

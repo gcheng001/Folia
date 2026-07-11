@@ -54,8 +54,15 @@ export const DEFAULT_GROUP_STYLE: AnnotationStyle = {
   corner: 'rounded',
 };
 
+/** 节点样式（per-node override，优先于主题默认） */
+export interface NodeStyle {
+  color?: string;
+}
+
 export interface MindMapCanvasSidecar {
   positions: Record<string, MindMapPosition>;
+  /** P0-9: per-node 样式，key 为 positionKey (node.id) */
+  nodeStyles: Record<string, NodeStyle>;
   customEdges: CustomFlowEdge[];
   groups: AnnotationGroup[];
   edgeMode: EdgeDisplayMode;
@@ -96,6 +103,7 @@ function defaultStorage(): StorageLike | undefined {
 export function emptySidecar(): MindMapCanvasSidecar {
   return {
     positions: {},
+    nodeStyles: {},
     customEdges: [],
     groups: [],
     edgeMode: 'mindmap',
@@ -144,6 +152,13 @@ function isEdgeMode(v: unknown): v is EdgeDisplayMode {
   return v === 'mindmap' || v === 'flow' || v === 'none';
 }
 
+function isNodeStyle(v: unknown): v is NodeStyle {
+  if (!v || typeof v !== 'object') return false;
+  const s = v as Partial<NodeStyle>;
+  if (s.color !== undefined && typeof s.color !== 'string') return false;
+  return true;
+}
+
 export function loadCanvasSidecar(
   documentKey: string,
   storage: StorageLike | undefined = defaultStorage(),
@@ -158,6 +173,12 @@ export function loadCanvasSidecar(
     if (parsed.positions && typeof parsed.positions === 'object') {
       for (const [k, v] of Object.entries(parsed.positions as Record<string, unknown>)) {
         if (isPosition(v)) out.positions[k] = v;
+      }
+    }
+    // P0-9: 加载 per-node 样式
+    if (parsed.nodeStyles && typeof parsed.nodeStyles === 'object') {
+      for (const [k, v] of Object.entries(parsed.nodeStyles as Record<string, unknown>)) {
+        if (isNodeStyle(v)) out.nodeStyles[k] = v;
       }
     }
     if (Array.isArray(parsed.customEdges)) {

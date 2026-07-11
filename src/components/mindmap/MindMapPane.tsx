@@ -322,6 +322,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       const lineIndex = Number(n.id.slice(1));
       const size = sizeByLine.get(lineIndex) ?? { w: 120, h: 40 };
       const isSelected = selectedIds.includes(n.id);
+      // P0-9: 获取 per-node 样式
+      const nodeStyle = sidecar.nodeStyles[positionKey];
       return {
         ...n,
         position: pos,
@@ -339,10 +341,11 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
           onStartEdit: startEdit,
           onCommitEdit: commitEdit,
           onCancelEdit: cancelEdit,
+          perNodeStyle: nodeStyle, // P0-9: 传递 per-node 样式到 CustomNode
         },
       } as Node;
     });
-  }, [doc, theme, onChange, selectedIds, editingId, sidecar.positions, startEdit, commitEdit, cancelEdit]);
+  }, [doc, theme, onChange, selectedIds, editingId, sidecar.positions, sidecar.nodeStyles, startEdit, commitEdit, cancelEdit]);
 
   // 派生 edges：父子边（依 edgeMode）+ 自定义流程边。
   const derivedEdges = useMemo<Edge[]>(() => {
@@ -412,10 +415,20 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         .map((li) => (li === null || li === undefined ? undefined : byLineIndex.get(li)));
       const bbox = computeGroupBbox(memberBoxes);
       if (!bbox) continue; // P0-2: 引用失效时隐藏 dangling group
-      nodes.push(makeGroupNode(g, bbox, selectedIds.includes(`g:${g.id}`))); // P0-5: 使用 g: 前缀
+      // P0-6: 传递标题编辑回调
+      const handleTitleChange = (newTitle: string) => {
+        pushHistory(markdown, sidecar);
+        setSidecar((sc) => ({
+          ...sc,
+          groups: sc.groups.map((grp) =>
+            grp.id === g.id ? { ...grp, title: newTitle } : grp,
+          ),
+        }));
+      };
+      nodes.push(makeGroupNode(g, bbox, selectedIds.includes(`g:${g.id}`), handleTitleChange)); // P0-5: 使用 g: 前缀
     }
     return nodes;
-  }, [sidecar.groups, derivedNodes, selectedIds]);
+  }, [sidecar.groups, derivedNodes, selectedIds, markdown, sidecar, pushHistory]);
 
   const allNodes: Node[] = useMemo(() => [...derivedGroups, ...derivedNodes], [derivedGroups, derivedNodes]);
 
@@ -876,10 +889,14 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         return null;
       }
       if (id.startsWith('n')) {
-        const color = sidecar.positions[id] ? null : null;
-        // 节点颜色由主题决定，没有 per-node 颜色；用 null 标记「无单色」
-        void color;
-        return { kind: 'node', ids: [id], color: null };
+        // P0-9: 从 sidecar.nodeStyles 读取 per-node 颜色
+        const li = lineIndexOf(id);
+        if (li === null) return null;
+        const node = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === li);
+        if (!node) return null;
+        const nodeStyle = sidecar.nodeStyles[node.id];
+        const color = nodeStyle?.color ?? null; // null 表示使用主题默认颜色
+        return { kind: 'node', ids: [id], color };
       }
       if (id.startsWith('e-') || sidecar.customEdges.some((e) => e.id === id)) {
         const e = sidecar.customEdges.find((ee) => ee.id === id);
@@ -890,10 +907,21 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     }
     // 多选：节点
     if (selectedIds.every((id) => id.startsWith('n'))) {
-      return { kind: 'node', ids: selectedIds, color: null };
+      // P0-9: 检查所有选中的节点是否有相同颜色
+      const colors = new Set(selectedIds.map((id) => {
+        const li = lineIndexOf(id);
+        if (li === null) return null;
+        const node = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === li);
+        if (!node) return null;
+        const nodeStyle = sidecar.nodeStyles[node.id];
+        return nodeStyle?.color ?? null;
+      }));
+      // 如果所有节点颜色相同（包括都是 null），显示该颜色；否则显示 null
+      const color = colors.size === 1 ? [...colors][0] : null;
+      return { kind: 'node', ids: selectedIds, color };
     }
     return null;
-  }, [selectedIds, sidecar.groups, sidecar.customEdges, sidecar.positions]);
+  }, [selectedIds, sidecar.groups, sidecar.customEdges, sidecar.positions, sidecar.nodeStyles]);
 
   // 上下文栏动作
   const applyColorToSelected = useCallback((color: string) => {
@@ -919,6 +947,26 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
             styleTarget.ids.includes(g.id) ? { ...g, style: { ...g.style, color } } : g,
           ),
         };
+      });
+    } else if (styleTarget.kind === 'node') {
+      // P0-9: 支持节点颜色
+      pushHistory(markdown, sidecar);
+      setSidecar((sc) => {
+        recordColor(sc, color);
+        const nodeStyles = { ...sc.nodeStyles };
+        for (const id of styleTarget.ids) {
+          const li = lineIndexOf(id);
+          if (li === null) continue;
+          const node = collectOutlineNodes(docRef.current.root).find((n) => n.lineIndex === li);
+          if (!node) continue;
+          // 使用 positionKey (node.id) 作为 key
+          if (color === null || color === 'transparent') {
+            delete nodeStyles[node.id];
+          } else {
+            nodeStyles[node.id] = { color };
+          }
+        }
+        return { ...sc, nodeStyles };
       });
     }
   }, [styleTarget, markdown, sidecar, pushHistory]);
