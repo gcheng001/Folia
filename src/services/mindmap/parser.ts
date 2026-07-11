@@ -280,11 +280,18 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       const node = makeNode('list', depth, text, i);
       parent.children.push(node);
       stack.push(node);
-      // CommonMark：列表项内容列 = marker 结束列 + 1，与 marker 后实际 padding 列数无关。
-      // 曾按 `expandCols(l[3], markerCol)` 算实际末尾列，对 `-     a`（5+ 列 padding）等
-      // 合法 Markdown 会过宽估内容列，导致后续缩进到正常列的子项被误弹出（Codex R7-P2）。
+      // CommonMark 内容列规则（Codex R7-P2 / R8-P1）：
+      // - marker 后 1–4 列 padding：内容列 = marker 结束列 + 实际 padding 列数
+      //   （padding 全算列表项 padding，下一列才是内容）。
+      // - marker 后 ≥ 5 列 padding：内容列 = marker 结束列 + 1（第 5 列起是缩进代码块
+      //   内容，但**列表项本身**的内容列固定为 marker 后那一列）。
+      // 修复前曾把全部 case 统一为 markerCol+1（R7）——对 padding 1–4 列的合法
+      // Markdown 会过窄估内容列，把该平级的子项误挂成父项子节点。
       const markerCol = indent + l[2].length;
-      listCols.push(markerCol + 1);
+      const padEndCol = expandCols(l[3], markerCol);
+      const padLen = padEndCol - markerCol;
+      const contentCol = padLen <= 4 ? padEndCol : markerCol + 1;
+      listCols.push(contentCol);
       listItemOpen = true;
       continue;
     }

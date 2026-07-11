@@ -469,3 +469,55 @@ describe('Codex 第七轮复核回归', () => {
     }
   });
 });
+
+describe('Codex 第八轮复核回归', () => {
+  it('R8-P1: marker 后 2 列 padding 时，内容列按实际 padding 算（不下沉到 marker+1）', () => {
+    // `-  a` 内容列 = 0+1+2 = 3；`   - b` 缩进 3 达到内容列 3 → b 是 a 的子项。
+    // 若统一用 marker+1（2）会误判为同级。
+    const md = '-  a\n   - b\n';
+    const doc = parseMarkdown(md);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R8-P1b: marker 后 3 列 padding 时内容列 = 4，后续缩进 2 的子项应平级而非嵌套', () => {
+    // Codex R8 反例：`-   a` 内容列 = 0+1+3 = 4；`  - b` 缩进 2 < 4 → b 与 a 平级。
+    const md = '-   a\n  - b\n';
+    const doc = parseMarkdown(md);
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'b']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R8-P1c: marker 后 4 列 padding 时内容列 = 5，仍按实际 padding 算', () => {
+    // `-    a` 内容列 = 0+1+4 = 5；`     - b` 缩进 5 达到 5 → b 是 a 的子项。
+    const md = '-    a\n     - b\n';
+    const doc = parseMarkdown(md);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R8-P1d: 5 列 padding 与 4 列 padding 边界对比（5 列走 marker+1=2，4 列走实际=5）', () => {
+    // 5 列 padding：内容列 = markerCol+1 = 2，缩进 2 的子项能嵌。
+    // 4 列 padding：内容列 = 5，缩进 2 的子项不能嵌（与父项平级）。
+    const md5 = '-     a\n  - b\n';
+    const doc5 = parseMarkdown(md5);
+    const a5 = collectOutlineNodes(doc5.root).find((n) => n.text === 'a');
+    expect(a5?.children.map((c) => c.text)).toEqual(['b']);
+
+    const md4 = '-    a\n  - b\n';
+    const doc4 = parseMarkdown(md4);
+    const a4 = collectOutlineNodes(doc4.root).find((n) => n.text === 'a');
+    expect(a4?.children).toHaveLength(0);
+  });
+
+  it('R8 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});
