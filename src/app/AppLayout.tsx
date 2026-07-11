@@ -79,6 +79,10 @@ const HtmlPresentationPane = lazy(() =>
   import('../components/HtmlPresentationPane').then((module) => ({ default: module.HtmlPresentationPane })),
 );
 
+const MindMapPane = lazy(() =>
+  import('../components/mindmap/MindMapPane').then((module) => ({ default: module.MindMapPane })),
+);
+
 const HtmlTableViewerOverlay = lazy(() =>
   import('../components/HtmlTableViewerOverlay').then((module) => ({ default: module.HtmlTableViewerOverlay })),
 );
@@ -353,6 +357,12 @@ export function AppLayout() {
     updateActiveTabMeta({ editorMode: editorMode === 'source' ? 'wysiwyg' : 'source' });
   }, [file.fileType, editorMode, updateActiveTabMeta]);
 
+  const handleToggleMindMapMode = useCallback(() => {
+    if (file.fileType === 'docx') return;
+    setHtmlPresentationVisible(false);
+    updateActiveTabMeta({ editorMode: editorMode === 'mindmap' ? 'wysiwyg' : 'mindmap' });
+  }, [file.fileType, editorMode, updateActiveTabMeta]);
+
   const handleToggleWordPreview = useCallback(() => {
     if (file.fileType === 'docx') return;
     setHtmlPresentationVisible(false);
@@ -439,6 +449,7 @@ export function AppLayout() {
       if (e.key === 's' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleSave(); return; }
       if (e.key === 'e' && e.shiftKey && !e.altKey) { e.preventDefault(); handleExportWord(); return; }
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
+      if (e.key === 'g' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleMindMapMode(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
@@ -454,7 +465,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -778,6 +789,10 @@ export function AppLayout() {
         headingScrollRequest={sourceHeadingScrollRequest}
       />
     </Suspense>
+  ) : editorMode === 'mindmap' ? (
+    <Suspense fallback={<div className="mindmap-pane lazy-pane"><span>脑图加载中</span></div>}>
+      <MindMapPane markdown={file.content} />
+    </Suspense>
   ) : shouldShowHtmlPresentation ? (
     <Suspense fallback={<div className="html-presentation-pane lazy-pane" aria-label={t('htmlPresentationAria')} />}>
       <HtmlPresentationPane
@@ -870,6 +885,7 @@ export function AppLayout() {
         onOpenHtmlAnything={handleOpenHtmlAnything}
         onToggleSplit={handleToggleSplit}
         onToggleEditorMode={handleToggleEditorMode}
+        onToggleMindMapMode={handleToggleMindMapMode}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
         onOpen={handleOpen}

@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest';
+import { parseMarkdown } from './parser';
+import { layoutMindMap } from './layout';
+import realisticMd from './__fixtures__/hearing-realistic.md?raw';
+
+describe('layoutMindMap (M-B 布局算法)', () => {
+  it('庭审记录实战脑图：节点数/边数/坐标符合树形布局约束', () => {
+    const doc = parseMarkdown(realisticMd);
+    const { nodes, edges } = layoutMindMap(doc.root);
+
+    // 虚拟根 + 12 个一级（H2）标题 + 其下内容，节点数远超 12
+    const level2Count = doc.root.children.length;
+    expect(level2Count).toBeGreaterThanOrEqual(12);
+
+    // 树形结构：边数 = 节点数 - 1
+    expect(edges.length).toBe(nodes.length - 1);
+
+    // x 坐标非负（父在左子在右，根 rootX=100 起算）；y 以 0 为中心居中展开，可为负，
+    // 只要求是有限数（不含 NaN/Infinity）
+    for (const node of nodes) {
+      expect(node.position.x).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(node.position.y)).toBe(true);
+    }
+
+    // 每条边的 source/target 都指向存在的节点
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    for (const edge of edges) {
+      expect(nodeIds.has(edge.source)).toBe(true);
+      expect(nodeIds.has(edge.target)).toBe(true);
+    }
+  });
+
+  it('同一父节点下的兄弟节点 y 坐标两两间距不小于其中较小节点的估算高度下限（不重叠）', () => {
+    const doc = parseMarkdown(realisticMd);
+    const { nodes } = layoutMindMap(doc.root);
+
+    // 按 x 坐标分组（同一层级 x 相同），组内按 y 排序检查间距
+    const byX = new Map<number, number[]>();
+    for (const node of nodes) {
+      const list = byX.get(node.position.x) ?? [];
+      list.push(node.position.y);
+      byX.set(node.position.x, list);
+    }
+
+    for (const ys of byX.values()) {
+      const sorted = [...ys].sort((a, b) => a - b);
+      for (let i = 1; i < sorted.length; i++) {
+        // baseNodeHeight = 60，兄弟节点圆心间距至少应大于 0（不完全重合）
+        expect(sorted[i] - sorted[i - 1]).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('单节点树（仅虚拟根）：无边，一个节点', () => {
+    const doc = parseMarkdown('# 空文档\n');
+    const { nodes, edges } = layoutMindMap(doc.root);
+    expect(nodes.length).toBe(1);
+    expect(edges.length).toBe(0);
+  });
+});

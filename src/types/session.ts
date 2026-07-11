@@ -1,10 +1,10 @@
 import type { OpenedFile } from './document';
 
 /**
- * 编辑模式：所见即所得 / 源码。
+ * 编辑模式：所见即所得 / 源码 / 脑图（M-B，只读画布，MD 仍是唯一源）。
  * 与 components/Toolbar.tsx 的 EditorMode 结构一致；Task 4 改造时统一让 Toolbar 从此处 import。
  */
-export type EditorMode = 'wysiwyg' | 'source';
+export type EditorMode = 'wysiwyg' | 'source' | 'mindmap';
 
 /** 右侧面板模式。从 app/AppLayout.tsx:82 迁移。 */
 export type RightPanelMode = 'none' | 'word' | 'wechat';

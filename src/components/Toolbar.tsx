@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Save,
   SaveAll,
+  Share2,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
@@ -42,6 +43,7 @@ type ToolbarProps = {
   onOpenHtmlAnything: () => void;
   onToggleSplit: () => void;
   onToggleEditorMode: () => void;
+  onToggleMindMapMode: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
   onOpen: () => void;
@@ -55,7 +57,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -156,6 +158,16 @@ export function Toolbar({
             aria-label={t('toolbarSourceLabel')}
           >
             <Braces size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={editorMode === 'mindmap' ? 'active' : ''}
+            onClick={onToggleMindMapMode}
+            disabled={editingDisabled}
+            data-no-window-drag="true"
+            title={t('toolbarMindMapTitle')}
+            aria-label={t('toolbarMindMapLabel')}
+          >
+            <Share2 size={iconSize} strokeWidth={strokeWidth} />
           </button>
           <button
             className={wordPreviewVisible ? 'active' : ''}
