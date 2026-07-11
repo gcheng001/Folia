@@ -126,6 +126,29 @@ export async function parseLines(content: string, config: PresetConfig): Promise
   return paragraphs;
 }
 
+// ---------------------------------------------------------------------------
+// 法律文书版式特判（用户常用格式，范本：延长调解期限申请书）
+// ---------------------------------------------------------------------------
+
+/** 落款签名角色行："申请人："（可带姓名）。用于落款右对齐 + 签字留空。 */
+const LEGAL_SIGNER_RE =
+  /^(申请执行人|被申请执行人|申请人|被申请人|上诉人|被上诉人|原告|被告|第三人|具状人|申诉人|异议人|复议申请人|委托诉讼代理人|委托代理人|特别授权代理人|代理人|辩护人)：.{0,20}$/;
+
+/** 中文大写或阿拉伯数字日期行："二〇二六年七月十日" / "2026年7月10日"。 */
+const LEGAL_DATE_RE =
+  /^[〇零一二三四五六七八九十0-9]{2,4}年[〇零一二三四五六七八九十0-9]{1,2}月[〇零一二三四五六七八九十0-9]{1,3}日$/;
+
+/** 书信式抬头："致某某单位："，顶格。 */
+const LETTER_HEAD_RE = /^致.{1,30}[:：]$/;
+
+/** addParagraph 的版式覆盖：仅在法律文书特判位使用，不影响常规段落。 */
+interface ParagraphLayout {
+  align?: 'left' | 'right' | 'center' | 'justify';
+  noFirstLineIndent?: boolean;
+  /** 追加到段尾的文本（如落款签名后的全角空格签字位） */
+  appendText?: string;
+}
+
 async function parseMarkdownLines(content: string, config: PresetConfig): Promise<FileChild[]> {
   const paragraphs: FileChild[] = [];
   const lines = content.split('\n');
@@ -133,6 +156,11 @@ async function parseMarkdownLines(content: string, config: PresetConfig): Promis
   let state: ParserState = 'normal';
   let buffer: string[] = [];
   let codeLanguage = '';
+
+  // 法律文书版式状态：上一条普通段落文本（跨空行保留）、是否进入落款区、是否已有正文段
+  let prevPlainText = '';
+  let inClosing = false;
+  let seenPlainParagraph = false;
 
   // 用于暂存连续引用行和连续表格行
   let quoteBuffer: string[] = [];
@@ -287,8 +315,35 @@ async function parseMarkdownLines(content: string, config: PresetConfig): Promis
       flushTable();
     }
 
-    // 10. 普通段落
-    paragraphs.push(addParagraph(line, config));
+    // 10. 普通段落（含法律文书版式特判）
+    const trimmed = line.trim();
+    const layout: ParagraphLayout = {};
+
+    if (prevPlainText === '此致') {
+      // "此致"下一段是受文法院/单位名，必须顶格
+      layout.noFirstLineIndent = true;
+      inClosing = true;
+    } else if (trimmed === '此致') {
+      inClosing = true;
+    } else if (!seenPlainParagraph && LETTER_HEAD_RE.test(trimmed)) {
+      // 书信式抬头"致某某单位："顶格；后续正文恢复首行缩进
+      layout.noFirstLineIndent = true;
+    } else if (inClosing && LEGAL_SIGNER_RE.test(trimmed)) {
+      // 落款签名行：右对齐；以冒号结尾（未署名）时补全角空格留手写签字位
+      layout.align = 'right';
+      layout.noFirstLineIndent = true;
+      if (/[:：]$/.test(trimmed)) {
+        layout.appendText = '　　　　　　';
+      }
+    } else if (inClosing && LEGAL_DATE_RE.test(trimmed)) {
+      // 落款日期行：右对齐
+      layout.align = 'right';
+      layout.noFirstLineIndent = true;
+    }
+
+    paragraphs.push(addParagraph(line, config, layout));
+    prevPlainText = trimmed;
+    seenPlainParagraph = true;
   }
 
   // 处理末尾残留状态
@@ -543,14 +598,16 @@ function addHeading(
   });
 }
 
-function addParagraph(text: string, config: PresetConfig): Paragraph {
+function addParagraph(text: string, config: PresetConfig, layout?: ParagraphLayout): Paragraph {
   const pc = config.paragraph;
   const styleName = getMarkdownStyleName(config, 'paragraph');
   const style = getStyle(config, styleName);
 
   // 首行缩进：first_line_indent 表示"字符数"
   // 近似公式：字符数 × 字号(pt) × 20 = twips
-  const firstLineIndentValue = style?.first_line_indent ?? pc.first_line_indent;
+  const firstLineIndentValue = layout?.noFirstLineIndent
+    ? 0
+    : (style?.first_line_indent ?? pc.first_line_indent);
   const firstLineIndent =
     firstLineIndentValue > 0
       ? firstLineIndentValue * (style?.size ?? config.fonts.default.size) * 20
@@ -561,7 +618,7 @@ function addParagraph(text: string, config: PresetConfig): Paragraph {
       : undefined;
 
   return new Paragraph({
-    alignment: parseAlignment(style?.align ?? pc.align),
+    alignment: parseAlignment(layout?.align ?? style?.align ?? pc.align),
     spacing: {
       before: style?.space_before !== undefined ? style.space_before * 20 : undefined,
       after: style?.space_after !== undefined ? style.space_after * 20 : undefined,
@@ -569,7 +626,7 @@ function addParagraph(text: string, config: PresetConfig): Paragraph {
     },
     indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
     shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
-    children: createFormattedRuns(text, config, { styleName }),
+    children: createFormattedRuns(layout?.appendText ? text + layout.appendText : text, config, { styleName }),
   });
 }
 

@@ -72,6 +72,18 @@ function allXmlAttrs(xml: string, tag: string, attr: string): string[] {
   return [...xml.matchAll(new RegExp(`<${tag}\\b[^>]*${attr}="([^"]+)"`, 'g'))].map((match) => match[1]);
 }
 
+/** 按 </w:p> 切分后找第一个文本包含 text 的段落（部分匹配，与 xmlParagraphContaining 的整段 <w:t> 精确匹配互补）。 */
+function xmlParagraphWithText(xml: string, text: string): string {
+  const paragraph = xml
+    .split('</w:p>')
+    .find((chunk) => chunk.replace(/<[^>]+>/g, '').includes(text));
+  if (paragraph === undefined) {
+    throw new Error(`Paragraph with text "${text}" not found`);
+  }
+  const start = paragraph.lastIndexOf('<w:p ') >= 0 ? paragraph.lastIndexOf('<w:p ') : paragraph.lastIndexOf('<w:p>');
+  return `${paragraph.slice(Math.max(start, 0))}</w:p>`;
+}
+
 function xmlParagraphContaining(xml: string, text: string): string {
   const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = xml.match(new RegExp(`<w:p\\b[\\s\\S]*?<w:t[^>]*>${escapedText}</w:t>[\\s\\S]*?</w:p>`));
@@ -328,5 +340,92 @@ describe('markdownToDocx XML output', () => {
       '654321',
     ]));
     expect(allXmlAttrs(documentXml, 'w:top', 'w:w')).toEqual(expect.arrayContaining(['40']));
+  });
+});
+
+// 用户法律文书常用格式（范本：延长调解期限申请书）：
+// 此致正常缩进、法院名顶格、落款右对齐留签字空间、书信式抬头顶格。
+describe('legal document layout (此致/顶格/落款)', () => {
+  const 申请书 = [
+    '# 延长调解期限申请书',
+    '',
+    '申请人：张某某',
+    '',
+    '申请事项：',
+    '',
+    '请求法院延长调解期限，延长期限为一个月。',
+    '',
+    '此致',
+    '',
+    '某某县人民法院',
+    '',
+    '申请人：',
+    '',
+    '二〇二六年七月十日',
+  ].join('\n');
+
+  it('uses 仿宋_GB2312 (not bare 仿宋) as eastAsia font everywhere in the legal preset', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+    const eastAsiaFonts = allXmlAttrs(documentXml, 'w:rFonts', 'w:eastAsia');
+    expect(eastAsiaFonts.length).toBeGreaterThan(0);
+    expect([...new Set(eastAsiaFonts)]).toEqual(['仿宋_GB2312']);
+  });
+
+  it('keeps 此致 as a normal indented paragraph but removes first-line indent from the court name after it', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+
+    const cizhiParagraph = xmlParagraphWithText(documentXml, '此致');
+    expect(cizhiParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+
+    const courtParagraph = xmlParagraphWithText(documentXml, '某某县人民法院');
+    expect(courtParagraph).not.toMatch(/<w:ind\b[^>]*w:firstLine=/);
+  });
+
+  it('right-aligns the closing signer line with signature space and the Chinese date line', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+
+    // 落款"申请人："（此致之后的那个）右对齐，且冒号后保留全角空格作手写签字空间
+    const closingChunk = documentXml.slice(documentXml.indexOf('此致'));
+    const signerParagraph = xmlParagraphWithText(closingChunk, '申请人：');
+    expect(signerParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
+    expect(signerParagraph).toMatch(/申请人：　/);
+
+    const dateParagraph = xmlParagraphWithText(documentXml, '二〇二六年七月十日');
+    expect(dateParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
+    expect(dateParagraph).not.toMatch(/<w:ind\b[^>]*w:firstLine=/);
+  });
+
+  it('does not right-align 申请人 lines in the document head (before 此致)', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+    const headSigner = xmlParagraphWithText(documentXml, '申请人：张某某');
+    expect(headSigner).not.toMatch(/<w:jc\b[^>]*w:val="right"/);
+    expect(headSigner).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+  });
+
+  it('letter-style head 致某某单位 is flush left while following body keeps first-line indent', async () => {
+    const documentXml = await readDocumentXml([
+      '致某某市中级人民法院：',
+      '',
+      '现就贵院受理的合同纠纷一案陈述意见如下。',
+    ].join('\n'), getPreset('legal'));
+
+    const headParagraph = xmlParagraphWithText(documentXml, '致某某市中级人民法院：');
+    expect(headParagraph).not.toMatch(/<w:ind\b[^>]*w:firstLine=/);
+
+    const bodyParagraph = xmlParagraphWithText(documentXml, '现就贵院受理的合同纠纷一案陈述意见如下。');
+    expect(bodyParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+  });
+
+  it('Arabic-digit date in closing is also right-aligned', async () => {
+    const documentXml = await readDocumentXml([
+      '此致',
+      '',
+      '某某人民法院',
+      '',
+      '2026年7月10日',
+    ].join('\n'), getPreset('legal'));
+
+    const dateParagraph = xmlParagraphWithText(documentXml, '2026年7月10日');
+    expect(dateParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
   });
 });
