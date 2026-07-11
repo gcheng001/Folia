@@ -303,7 +303,7 @@ describe('MindMapPane (M-B 只读画布)', () => {
     host.remove();
   });
 
-  it('所有节点均使用小圆角完整长方框，不再使用胶囊或仅下划线样式', () => {
+  it('默认经典树使用黑色根节点与浅灰圆角子节点', () => {
     const host = document.createElement('div');
     host.style.width = '800px';
     host.style.height = '600px';
@@ -314,15 +314,40 @@ describe('MindMapPane (M-B 只读画布)', () => {
       root.render(createElement(MindMapPane, { markdown: '# 根\n\n## 子节点\n' }));
     });
 
-    for (const label of ['根', '子节点']) {
-      const text = Array.from(host.querySelectorAll('.react-flow__node span'))
-        .find((element) => element.textContent === label);
-      const box = text?.parentElement;
-      expect(box?.style.borderRadius).toBe('2px');
-      expect(box?.style.borderStyle).toBe('solid');
-      expect(box?.style.borderBottomStyle).toBe('solid');
-      expect(box?.style.borderTopStyle).toBe('solid');
-    }
+    const rootText = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '根');
+    const childText = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    expect(rootText?.parentElement?.style.borderRadius).toBe('16px');
+    expect(rootText?.parentElement?.style.backgroundColor).toContain('var(--text');
+    expect(rootText?.parentElement?.style.color).toContain('var(--surface');
+    expect(childText?.parentElement?.style.borderRadius).toBe('12px');
+    expect(childText?.parentElement?.style.backgroundColor).toContain('color-mix');
+    expect(childText?.parentElement?.style.borderStyle).toBe('none');
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('可编辑脑图节点允许鼠标自由拖动', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        filePath: '/tmp/drag-test.md',
+        onChange: vi.fn(),
+      }));
+    });
+    const node = host.querySelector('.react-flow__node');
+    expect(node?.className).toContain('draggable');
+    const visibleBox = Array.from(node?.querySelectorAll('span') ?? [])
+      .find((element) => element.textContent === '根')?.parentElement;
+    expect(visibleBox?.classList.contains('nodrag')).toBe(false);
 
     act(() => root.unmount());
     host.remove();

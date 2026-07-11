@@ -9,10 +9,13 @@ import {
 } from './themes';
 
 describe('脑图主题（PRD 项 B）', () => {
-  it('内置四套主题：彩色/蓝色/紫色/黑白', () => {
+  it('内置经典树与四套原有主题，经典树为默认', () => {
     expect(MINDMAP_THEMES.map((t) => t.id).sort()).toEqual(
-      ['simple-blue', 'simple-color', 'simple-mono', 'simple-purple'],
+      ['classic-tree', 'simple-blue', 'simple-color', 'simple-mono', 'simple-purple'],
     );
+    expect(DEFAULT_THEME_ID).toBe('classic-tree');
+    expect(getTheme(DEFAULT_THEME_ID).edgeVariant).toBe('classic-branch');
+    expect(getTheme(DEFAULT_THEME_ID).nodeVariant).toBe('classic');
     for (const t of MINDMAP_THEMES) {
       expect(t.branchColors.length).toBeGreaterThan(0);
     }

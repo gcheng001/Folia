@@ -9,11 +9,20 @@
  *   Shift+Tab  节点升一级（成为父节点的后继同级）
  *   Space / F2 / 再次点击 / 双击  编辑节点文字（Enter 提交 / Esc 取消）
  *   Delete     删除节点（有子节点时需确认）
- * 主题（PRD 项 B）：四套简洁直线条主题，右上角切换，localStorage 记住选择。
+ * 主题：默认经典树 + 四套描边直线主题，右上角切换，localStorage 记住选择。
+ * 节点可自由拖动；坐标按文件路径 + 节点内容路径保存为本地布局 sidecar。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, type Node } from '@xyflow/react';
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  useNodesState,
+  type Node,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { parseMarkdown, collectOutlineNodes } from '../../services/mindmap/parser';
 import { layoutMindMap } from '../../services/mindmap/layout';
@@ -27,6 +36,11 @@ import {
 } from '../../services/mindmap/edit';
 import { CustomNode } from './CustomNode';
 import { CustomEdge } from './CustomEdge';
+import {
+  loadMindMapPositions,
+  saveMindMapPositions,
+  type MindMapPositions,
+} from '../../services/mindmap/positionStore';
 import {
   MINDMAP_THEMES,
   branchColor,
@@ -43,6 +57,8 @@ interface MindMapPaneProps {
   markdown: string;
   /** 虚拟根显示名（文档无大标题时的中心节点文本），一般传文件名 */
   fileName?: string;
+  /** 位置 sidecar 的文档稳定键；已落盘文件传绝对路径。 */
+  filePath?: string;
   /** 编辑回写。缺省时画布只读。 */
   onChange?: (markdown: string) => void;
 }
@@ -64,11 +80,15 @@ function lineIndexOf(nodeId: string): number {
   return Number(nodeId.slice(1));
 }
 
-export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPaneProps): React.ReactElement {
+export function MindMapPane({ markdown, fileName = '', filePath = '', onChange }: MindMapPaneProps): React.ReactElement {
   const [themeId, setThemeId] = useState<MindMapThemeId>(loadThemeId);
   const theme = getTheme(themeId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const documentKey = filePath || fileName;
+  const [manualPositions, setManualPositions] = useState<MindMapPositions>(
+    () => loadMindMapPositions(documentKey),
+  );
   /** 新建后尚未提交首次文字的节点行号：Esc/空提交时整节点回收，MD 不留空标题 */
   const pendingNewLineRef = useRef<number | null>(null);
 
@@ -77,6 +97,10 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
   docRef.current = doc;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  useEffect(() => {
+    setManualPositions(loadMindMapPositions(documentKey));
+  }, [documentKey]);
 
   const applyInsert = useCallback((result: EditResult | null) => {
     if (!result || !onChangeRef.current) return;
@@ -121,11 +145,12 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
     setEditingId(nodeId);
   }, []);
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes: derivedNodes, edges } = useMemo(() => {
     const { nodes: rawNodes, edges: rawEdges } = layoutMindMap(doc.root);
     return {
       nodes: rawNodes.map((n) => ({
         ...n,
+        position: manualPositions[String(n.data.positionKey ?? n.id)] ?? n.position,
         type: 'custom',
         data: {
           ...n.data,
@@ -141,13 +166,37 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
       edges: rawEdges.map((e) => ({
         ...e,
         type: 'custom',
+        data: {
+          ...e.data,
+          edgeVariant: theme.edgeVariant,
+        },
         style: {
           stroke: branchColor(theme, (e.data?.branchIndex as number | undefined) ?? -1),
           strokeWidth: theme.edgeWidth,
         },
       })),
     };
-  }, [doc, theme, onChange, selectedId, editingId, startEdit, commitEdit, cancelEdit]);
+  }, [doc, theme, onChange, selectedId, editingId, manualPositions, startEdit, commitEdit, cancelEdit]);
+
+  // React Flow 受控拖动必须维护一份画布节点状态；Markdown 变化时再用派生节点刷新。
+  // 位置 sidecar 仍是可丢弃的布局数据，不成为第二份文档内容源。
+  const [nodes, setNodes, onNodesChange] = useNodesState(derivedNodes);
+  useEffect(() => {
+    setNodes(derivedNodes);
+  }, [derivedNodes, setNodes]);
+
+  const updateDraggedPosition = useCallback((node: Node, persist: boolean) => {
+    const positionKey = String(node.data.positionKey ?? '');
+    if (!positionKey) return;
+    setManualPositions((current) => {
+      const next = {
+        ...current,
+        [positionKey]: { x: node.position.x, y: node.position.y },
+      };
+      if (persist) saveMindMapPositions(documentKey, next);
+      return next;
+    });
+  }, [documentKey]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -268,18 +317,26 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        nodesDraggable={false}
+        nodesDraggable={!!onChange}
         nodesConnectable={false}
         elementsSelectable={false}
+        onNodesChange={onNodesChange}
         zoomOnDoubleClick={false}
         deleteKeyCode={null}
         onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeDragStop={(_, node) => {
+          updateDraggedPosition(node, true);
+          setSelectedId(node.id);
+          setEditingId(null);
+        }}
         onPaneClick={handlePaneClick}
       >
-        <Background variant={BackgroundVariant.Dots} gap={18} size={1.5} color="oklch(89% 0.012 80)" />
+        {theme.nodeVariant !== 'classic' && (
+          <Background variant={BackgroundVariant.Dots} gap={18} size={1.5} color="oklch(89% 0.012 80)" />
+        )}
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable />
+        {theme.nodeVariant !== 'classic' && <MiniMap pannable zoomable />}
       </ReactFlow>
     </div>
   );

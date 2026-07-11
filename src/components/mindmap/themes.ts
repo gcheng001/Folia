@@ -1,10 +1,11 @@
 /**
- * 脑图主题定义（PRD 项 B）。四套内置简洁直线条主题：
- * 彩色（一级分支轮转配色）/ 蓝色 / 紫色 / 黑白。
- * 形态统一：小圆角长方形节点 + 直线连接，无卡片阴影；根节点仅以字重和线宽强调。
+ * 脑图主题定义。默认「经典树」严格复刻参考图的黑色根节点、浅灰子节点与
+ * 共享分叉干线；原有彩色/蓝色/紫色/黑白直线主题作为备选保留。
  */
 
-export type MindMapThemeId = 'simple-color' | 'simple-blue' | 'simple-purple' | 'simple-mono';
+export type MindMapThemeId = 'classic-tree' | 'simple-color' | 'simple-blue' | 'simple-purple' | 'simple-mono';
+export type MindMapNodeVariant = 'classic' | 'outlined';
+export type MindMapEdgeVariant = 'classic-branch' | 'straight';
 
 export interface MindMapTheme {
   id: MindMapThemeId;
@@ -16,9 +17,21 @@ export interface MindMapTheme {
   /** 根节点描边/文字强调色 */
   root: string;
   edgeWidth: number;
+  nodeVariant: MindMapNodeVariant;
+  edgeVariant: MindMapEdgeVariant;
 }
 
 export const MINDMAP_THEMES: MindMapTheme[] = [
+  {
+    id: 'classic-tree',
+    name: '经典树',
+    branchColors: ['var(--text, #111111)'],
+    text: 'var(--text, #171717)',
+    root: 'var(--text, #050505)',
+    edgeWidth: 2.2,
+    nodeVariant: 'classic',
+    edgeVariant: 'classic-branch',
+  },
   // 文字色与黑白主题线条色走应用主题 CSS 变量，深色模式下随 --text 自动翻转
   // （Codex R2 P2：硬编码深色文字在深色画布上不可读）；彩色系分支色为中等饱和度，
   // 深浅两种背景下均可读。
@@ -29,6 +42,8 @@ export const MINDMAP_THEMES: MindMapTheme[] = [
     text: 'var(--text, #1f2937)',
     root: '#3b82f6',
     edgeWidth: 1.5,
+    nodeVariant: 'outlined',
+    edgeVariant: 'straight',
   },
   {
     id: 'simple-color',
@@ -37,6 +52,8 @@ export const MINDMAP_THEMES: MindMapTheme[] = [
     text: 'var(--text, #1f2937)',
     root: 'var(--text, #334155)',
     edgeWidth: 1.5,
+    nodeVariant: 'outlined',
+    edgeVariant: 'straight',
   },
   {
     id: 'simple-purple',
@@ -45,6 +62,8 @@ export const MINDMAP_THEMES: MindMapTheme[] = [
     text: 'var(--text, #1f2937)',
     root: '#8b5cf6',
     edgeWidth: 1.5,
+    nodeVariant: 'outlined',
+    edgeVariant: 'straight',
   },
   {
     id: 'simple-mono',
@@ -53,12 +72,15 @@ export const MINDMAP_THEMES: MindMapTheme[] = [
     text: 'var(--text, #111827)',
     root: 'var(--text, #111827)',
     edgeWidth: 1.5,
+    nodeVariant: 'outlined',
+    edgeVariant: 'straight',
   },
 ];
 
-export const DEFAULT_THEME_ID: MindMapThemeId = 'simple-blue';
+export const DEFAULT_THEME_ID: MindMapThemeId = 'classic-tree';
 
-const STORAGE_KEY = 'folia.mindmap.theme';
+// v2 故意换 key：让已经保存旧默认蓝色的用户升级后也立即看到新的经典树默认样式。
+const STORAGE_KEY = 'folia.mindmap.theme.v2';
 
 export function getTheme(id: string | null | undefined): MindMapTheme {
   return MINDMAP_THEMES.find((t) => t.id === id) ?? MINDMAP_THEMES.find((t) => t.id === DEFAULT_THEME_ID)!;

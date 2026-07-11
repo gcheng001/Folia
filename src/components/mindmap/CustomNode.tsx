@@ -1,6 +1,6 @@
 /**
- * 脑图画布节点。简洁直线条形态（PRD 项 B）：
- * 所有节点统一为小圆角长方形完整边框，根节点仅通过线宽和字重强调。
+ * 经典树主题：黑色实心根节点 + 浅灰无边框圆角子节点，严格对应参考图。
+ * 其余主题保留完整描边长方框。
  * 配色由主题（themes.ts）驱动；编辑态（M-C）渲染行内输入框，
  * Enter 提交 / Esc 取消，事件不冒泡到画布键盘处理器。
  */
@@ -34,6 +34,7 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     theme: maybeTheme,
     isSelected,
     isEditing,
+    editable,
     onStartEdit,
     onCommitEdit,
     onCancelEdit,
@@ -66,18 +67,21 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     };
   }, [isEditing]);
 
+  const classic = theme.nodeVariant === 'classic';
   const nodeStyle: React.CSSProperties = {
     boxSizing: 'border-box',
-    padding: isRoot ? '9px 16px' : '7px 14px',
-    border: `${isRoot ? 2 : 1.5}px solid ${isRoot ? theme.root : color}`,
-    borderRadius: '2px',
-    backgroundColor: 'var(--surface, #fff)',
-    color: isRoot ? theme.root : theme.text,
-    fontSize: isRoot ? '15px' : '14px',
+    padding: isRoot ? '11px 20px' : '9px 16px',
+    border: classic ? 'none' : `${isRoot ? 2 : 1.5}px solid ${isRoot ? theme.root : color}`,
+    borderRadius: classic ? (isRoot ? '16px' : '12px') : '2px',
+    backgroundColor: classic
+      ? (isRoot ? 'var(--text, #050505)' : 'color-mix(in srgb, var(--text, #171717) 8%, var(--surface, #ffffff))')
+      : 'var(--surface, #fff)',
+    color: classic && isRoot ? 'var(--surface, #ffffff)' : (isRoot ? theme.root : theme.text),
+    fontSize: isRoot ? '16px' : '14px',
     fontWeight: isRoot ? 600 : 400,
     fontFamily: 'var(--font-body)',
-    minWidth: '80px',
-    maxWidth: '320px',
+    minWidth: isRoot ? '120px' : '96px',
+    maxWidth: '340px',
     textAlign: 'center',
   };
 
@@ -89,8 +93,8 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     <>
       <Handle type="target" position={Position.Left} style={handleStyle} />
       <div
-        className="nodrag nowheel nopan"
-        style={{ ...nodeStyle, cursor: onStartEdit ? 'text' : 'default' }}
+        className="nowheel nopan"
+        style={{ ...nodeStyle, cursor: isEditing ? 'text' : (editable ? 'grab' : 'default') }}
         onDoubleClick={(event) => {
           event.preventDefault();
           event.stopPropagation();

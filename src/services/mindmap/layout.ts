@@ -13,8 +13,8 @@ import type { Edge, Node } from '@xyflow/react';
 import type { MindNode } from './types';
 
 const LAYOUT_CONFIG = {
-  horizontalSpacing: 50,
-  minVerticalSpacing: 20,
+  horizontalSpacing: 120,
+  minVerticalSpacing: 26,
   baseNodeHeight: 60,
   rootX: 100,
   rootY: 0,
@@ -120,6 +120,8 @@ export function layoutMindMap(root: MindNode): { nodes: Node[]; edges: Edge[] } 
         level: node.level,
         branchIndex,
         isRoot: node === root,
+        /** 手拖布局 sidecar 使用内容路径；重命名失配时自然回退自动布局。 */
+        positionKey: node.id,
       },
     });
 
