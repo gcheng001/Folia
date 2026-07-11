@@ -131,8 +131,9 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   let fenceLen = 0;
   /** 当前列表段的基准缩进（首项缩进）。null=不在列表段。 */
   let listBaseIndent: number | null = null;
-  /** 当前列表段的内容起始列（基准缩进 + marker + 至少1空格）；段落缩进≥此列=续接。 */
-  let listContentCol = 0;
+  /** 每个打开的列表层级的内容起始列（与栈中 list 节点一一对应，Codex R5-P0-2）。
+   *  单一全局内容列会把父层松散续接（缩进只够父层）误判成跳出整段列表。 */
+  let listCols: number[] = [];
   let listBaseDepth = 0;
   /** 当前列表项是否仍「敞开」可接收 lazy 续行：自上个列表项起未遇空行即为 true。
    *  CommonMark：未缩进的段落行若无空行分隔，是上一列表项的 lazy 续行，不打断列表。 */
@@ -144,7 +145,23 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   const breakList = (): void => {
     while (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
     listBaseIndent = null;
+    listCols = [];
     listItemOpen = false;
+  };
+
+  /** 空行后遇到缩进为 indent 的非列表内容行：只弹出比该缩进更深的列表层级
+   *  （Codex R5-P0-2）。返回是否仍留在列表段内（松散续接）。 */
+  const popListDeeperThan = (indent: number): boolean => {
+    // 栈中 list 节点与 listCols 一一对应（同级项入栈前先弹出同级，故每层只留一个）。
+    while (listCols.length > 0 && indent < listCols[listCols.length - 1]) {
+      listCols.pop();
+      if (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
+    }
+    if (listCols.length === 0) {
+      breakList();
+      return false;
+    }
+    return true;
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -175,13 +192,12 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
         inFence = true;
         fenceMarker = marker;
         fenceLen = len;
-        // 缩进达到列表内容列的围栏是列表项内容，不打断列表（Codex R4-P0-2）；
-        // 顶格/不足缩进的围栏才跳出列表。围栏本身不是段落，关闭 lazy 续行窗口。
-        if (listBaseIndent !== null && expandCols(fenceMatch[1]) < listContentCol) {
-          breakList();
-        } else {
-          listItemOpen = false;
+        // 缩进达到所在列表层级内容列的围栏是列表项内容，不打断该层（Codex R4-P0-2）；
+        // 只弹出比围栏缩进更深的层级，顶格围栏才跳出整段。围栏非段落，关闭 lazy 窗口。
+        if (listBaseIndent !== null) {
+          popListDeeperThan(expandCols(fenceMatch[1]));
         }
+        listItemOpen = false;
       } else if (marker === fenceMarker && len >= fenceLen && rest.trim() === '') {
         // CommonMark：闭合围栏须同字符、长度 ≥ 开启长度、且后缀仅空白
         //（```text 带 info string 是开围栏，不能闭合当前围栏）。
@@ -207,7 +223,9 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     if (h) {
       const level = h[1].length;
       const text = h[2].replace(/\s+#+\s*$/, '').trim();
-      listBaseIndent = null;
+      // ATX 标题必然顶格（正则不允许前导空白），一律跳出列表段：
+      // 否则 lazy 续行后的顶格标题会挂到列表项下（Codex R5-P0-1）。
+      breakList();
       while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
       const parent = stack[stack.length - 1];
       const node = makeNode('heading', level, text, i);
@@ -216,9 +234,15 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       continue;
     }
 
-    // 主题分隔线（--- / *** / ___ 三连+，可含空格）：非大纲，按段落打断列表段
-    if (THEMATIC_BREAK.test(line)) {
-      breakList();
+    // 主题分隔线（--- / *** / ___ 三连+，可含空格）：非大纲。
+    // 缩进达到所在列表层级内容列的分隔线是列表项内容，与围栏同判（Codex R5-P0-3）；
+    // 只弹出比其缩进更深的层级，顶格分隔线才跳出整段。关闭 lazy 窗口。
+    const tb = line.match(THEMATIC_BREAK);
+    if (tb) {
+      if (listBaseIndent !== null) {
+        popListDeeperThan(expandCols(tb[1]));
+      }
+      listItemOpen = false;
       continue;
     }
 
@@ -232,13 +256,18 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
         // 先把栈回退到最近的非列表祖先（标题/根），否则新列表会挂在旧列表项下。
         while (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
         listBaseIndent = indent;
+        listCols = [];
         listBaseDepth = stack[stack.length - 1].level + 1;
       }
-      // 内容列每项都更新（多位序号如 `10.` 比 `1.` 宽一列，不能沿用段首项，Codex R4-P0-4）
-      listContentCol = expandCols(l[3], indent + l[2].length);
       const nest = Math.floor((indent - listBaseIndent) / INDENT_STEP);
       const depth = listBaseDepth + nest;
-      while (stack.length > 1 && stack[stack.length - 1].level >= depth) stack.pop();
+      while (stack.length > 1 && stack[stack.length - 1].level >= depth) {
+        // 弹出同级/更深列表节点时同步弹出其内容列，保持 listCols 与栈对应
+        if (stack[stack.length - 1].kind === 'list') listCols.pop();
+        stack.pop();
+      }
+      // 内容列每项都更新（多位序号如 `10.` 比 `1.` 宽一列，不能沿用段首项，Codex R4-P0-4）
+      listCols.push(expandCols(l[3], indent + l[2].length));
       const parent = stack[stack.length - 1];
       const node = makeNode('list', depth, text, i);
       parent.children.push(node);
@@ -250,10 +279,13 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     // 非大纲有内容行：判定是否打断当前列表。
     // (a) 列表项仍敞开（未遇空行）：任意段落行都是 lazy 续行，不打断列表
     //     —— 含未缩进行（CommonMark 视为上一项段落续行）。
-    // (b) 空行后：缩进 ≥ 内容列 = 松散列表续接，列表保持；缩进 < 内容列 = 跳出列表。
+    // (b) 空行后：只弹出比该行缩进更深的列表层级（Codex R5-P0-2）；
+    //     缩进够到某层内容列 = 该层松散续接，重新敞开 lazy 窗口；全部不够 = 跳出列表段。
     if (line.trim() !== '' && listBaseIndent !== null && !listItemOpen) {
       const lineIndent = expandCols(line.match(/^(\s*)/)?.[1] ?? '');
-      if (lineIndent < listContentCol) breakList();
+      if (popListDeeperThan(lineIndent)) {
+        listItemOpen = true;
+      }
     }
   }
 

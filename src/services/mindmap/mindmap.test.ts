@@ -336,3 +336,60 @@ describe('Codex 第四轮复核回归', () => {
     }
   });
 });
+
+describe('Codex 第五轮复核回归', () => {
+  it('R5-P0-1: lazy 续行后的顶格标题跳出列表，挂回上级标题（pandoc 交叉验证）', () => {
+    const md = '# H\n- a\nnote\n### sub\n- b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'sub']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    const sub = doc.root.children.find((n) => n.text === 'sub');
+    // 标题后的列表按 markmap 约定挂标题下
+    expect(sub?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5-P0-2: 缩进只够父层的松散续接不打断父列表，后续同缩进子项仍挂父项下', () => {
+    const md = '# H\n- a\n  - b\n\n  para\n  - c\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b', 'c']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5-P0-3: 缩进到内容列的主题分隔线是列表项内容，不打断列表（pandoc 交叉验证）', () => {
+    const md = '# H\n- a\n  * * *\n  - child\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5 交叉：顶格主题分隔线仍打断列表', () => {
+    const md = '# H\n- a\n\n---\n\n- b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5 交叉：深层子项后的父层松散段落再接更深子项，层级仍正确', () => {
+    const md = '# H\n- a\n  - b\n    - c\n\n  para\n  - d\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b', 'd']);
+    const b = a?.children.find((n) => n.text === 'b');
+    expect(b?.children.map((c) => c.text)).toEqual(['c']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});
