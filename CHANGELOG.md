@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- 脑图节点文字现在可在 macOS WKWebView 中稳定双击进入行内编辑；输入框隔离 React Flow 的拖拽、缩放和平移手势，修改后按 Enter 或点击空白处会同步回 Markdown。
+- 定制构建的应用版本号恢复为原作者当前版本 `0.4.7`，避免本地功能开发擅自占用上游未来的 `0.5.0` 版本号。
+
 ## [0.4.7] - 2026-07-07
 
 ### Fixed

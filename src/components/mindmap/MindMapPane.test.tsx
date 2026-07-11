@@ -3,7 +3,7 @@
  * ResizeObserver/DOMMatrix stub 理由同 MindMapSpike.test.tsx——jsdom 缺口，非
  * 组件本身兼容性问题。
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -70,6 +70,48 @@ describe('MindMapPane (M-B 只读画布)', () => {
     const node = host.querySelector('.react-flow__node');
     expect(node).toBeTruthy();
     expect(node?.className).not.toContain('draggable');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('双击节点文字后可直接增删文字，并将结果回写 Markdown', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 原文字\n',
+        onChange,
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '原文字');
+    expect(label).toBeTruthy();
+
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="编辑节点文字"]');
+    expect(input).toBeTruthy();
+    expect(input?.classList.contains('nodrag')).toBe(true);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, '修改后增加文字');
+      input?.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith('# 根\n\n## 修改后增加文字\n');
 
     act(() => {
       root.unmount();

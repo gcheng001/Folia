@@ -115,6 +115,12 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
     }
   }, []);
 
+  const startEdit = useCallback((nodeId: string) => {
+    if (!onChangeRef.current || lineIndexOf(nodeId) < 0) return;
+    setSelectedId(nodeId);
+    setEditingId(nodeId);
+  }, []);
+
   const { nodes, edges } = useMemo(() => {
     const { nodes: rawNodes, edges: rawEdges } = layoutMindMap(doc.root);
     return {
@@ -127,6 +133,7 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
           editable: !!onChange,
           isSelected: n.id === selectedId,
           isEditing: n.id === editingId,
+          onStartEdit: startEdit,
           onCommitEdit: commitEdit,
           onCancelEdit: cancelEdit,
         },
@@ -140,7 +147,7 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
         },
       })),
     };
-  }, [doc, theme, onChange, selectedId, editingId, commitEdit, cancelEdit]);
+  }, [doc, theme, onChange, selectedId, editingId, startEdit, commitEdit, cancelEdit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -197,10 +204,9 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
   const handleNodeDoubleClick = useCallback(
     (_: ReactMouseEvent, node: Node) => {
       if (!onChangeRef.current) return;
-      setSelectedId(node.id);
-      setEditingId(node.id);
+      startEdit(node.id);
     },
-    [],
+    [startEdit],
   );
 
   const handlePaneClick = useCallback(() => {

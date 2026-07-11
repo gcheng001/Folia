@@ -18,6 +18,7 @@ interface CustomNodeData {
   editable?: boolean;
   isSelected?: boolean;
   isEditing?: boolean;
+  onStartEdit?: (nodeId: string) => void;
   onCommitEdit?: (lineIndex: number, text: string) => void;
   onCancelEdit?: (lineIndex: number) => void;
   [key: string]: unknown;
@@ -33,6 +34,7 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     theme: maybeTheme,
     isSelected,
     isEditing,
+    onStartEdit,
     onCommitEdit,
     onCancelEdit,
   } = data as unknown as CustomNodeData;
@@ -70,9 +72,18 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
   return (
     <>
       <Handle type="target" position={Position.Left} style={handleStyle} />
-      <div style={nodeStyle}>
+      <div
+        className="nodrag nowheel nopan"
+        style={nodeStyle}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onStartEdit?.(id);
+        }}
+      >
         {isEditing ? (
           <input
+            className="nodrag nowheel nopan"
             autoFocus
             defaultValue={label}
             aria-label="编辑节点文字"
@@ -91,7 +102,9 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
               }
             }}
             onBlur={(e) => onCommitEdit?.(lineIndex, e.currentTarget.value)}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             style={{
               font: 'inherit',
               color: 'inherit',
