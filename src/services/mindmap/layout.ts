@@ -106,24 +106,34 @@ export function layoutMindMap(root: MindNode): { nodes: Node[]; edges: Edge[] } 
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  const walk = (node: MindNode): void => {
+  // branchIndex：节点所属一级分支（根的第几个孩子）的下标；根自身为 -1。
+  // 主题按一级分支轮转配色（节点下划线与入边同色）。
+  const walk = (node: MindNode, branchIndex: number): void => {
     const pos = positions.get(node) ?? { x: LAYOUT_CONFIG.rootX, y: LAYOUT_CONFIG.rootY };
     nodes.push({
       id: nodeKey(node),
       position: pos,
-      data: { label: node.text || '(未命名)', kind: node.kind, level: node.level },
+      data: {
+        label: node.text || '(未命名)',
+        kind: node.kind,
+        level: node.level,
+        branchIndex,
+        isRoot: node === root,
+      },
     });
 
-    for (const child of node.children) {
+    node.children.forEach((child, i) => {
+      const childBranch = node === root ? i : branchIndex;
       edges.push({
         id: `e${node.lineIndex}-${child.lineIndex}`,
         source: nodeKey(node),
         target: nodeKey(child),
+        data: { branchIndex: childBranch },
       });
-      walk(child);
-    }
+      walk(child, childBranch);
+    });
   };
 
-  walk(root);
+  walk(root, -1);
   return { nodes, edges };
 }

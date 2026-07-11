@@ -57,4 +57,24 @@ describe('layoutMindMap (M-B 布局算法)', () => {
     expect(nodes.length).toBe(1);
     expect(edges.length).toBe(0);
   });
+
+  it('branchIndex：根为 -1，每个一级分支子树共享该分支下标（主题按分支配色）', () => {
+    const md = '# 根\n\n## 甲\n\n### 甲一\n\n## 乙\n\n### 乙一\n';
+    const doc = parseMarkdown(md);
+    const { nodes, edges } = layoutMindMap(doc.root);
+
+    const byLabel = new Map(nodes.map((n) => [n.data.label as string, n]));
+    expect(byLabel.get('根')?.data.branchIndex).toBe(-1);
+    expect(byLabel.get('根')?.data.isRoot).toBe(true);
+    expect(byLabel.get('甲')?.data.branchIndex).toBe(0);
+    expect(byLabel.get('甲一')?.data.branchIndex).toBe(0);
+    expect(byLabel.get('乙')?.data.branchIndex).toBe(1);
+    expect(byLabel.get('乙一')?.data.branchIndex).toBe(1);
+
+    // 每条边携带 target 所属分支下标
+    for (const edge of edges) {
+      const target = nodes.find((n) => n.id === edge.target);
+      expect(edge.data?.branchIndex).toBe(target?.data.branchIndex);
+    }
+  });
 });

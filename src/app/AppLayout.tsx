@@ -791,7 +791,7 @@ export function AppLayout() {
     </Suspense>
   ) : editorMode === 'mindmap' ? (
     <Suspense fallback={<div className="mindmap-pane lazy-pane"><span>脑图加载中</span></div>}>
-      <MindMapPane markdown={file.content} />
+      <MindMapPane markdown={file.content} fileName={file.name} />
     </Suspense>
   ) : shouldShowHtmlPresentation ? (
     <Suspense fallback={<div className="html-presentation-pane lazy-pane" aria-label={t('htmlPresentationAria')} />}>

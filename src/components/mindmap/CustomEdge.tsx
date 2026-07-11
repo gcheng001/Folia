@@ -1,24 +1,26 @@
 /**
- * M-B 只读画布边（自澄脉 `CustomEdge.tsx` 原样移植，无编辑态改动）。
- * 贝塞尔曲线连接父子节点。
+ * M-B 只读画布边。简洁直线条形态（PRD 项 B）：圆角折线（smoothstep），
+ * 颜色/线宽由 MindMapPane 按分支主题经 style 注入。
  */
 import { memo } from 'react';
-import { type EdgeProps, getBezierPath } from '@xyflow/react';
+import { type EdgeProps, getSmoothStepPath } from '@xyflow/react';
 
 export const CustomEdge = memo(
   ({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style = {}, markerEnd }: EdgeProps) => {
-    const [edgePath] = getBezierPath({
+    const [edgePath] = getSmoothStepPath({
       sourceX,
       sourceY,
       sourcePosition,
       targetX,
       targetY,
       targetPosition,
+      borderRadius: 10,
     });
 
     const edgeStyle: React.CSSProperties = {
       stroke: '#9ca3af',
-      strokeWidth: 2,
+      strokeWidth: 1.5,
+      fill: 'none',
       ...style,
     };
 
