@@ -123,11 +123,27 @@ function listChildLine(parentLine: string): string | null {
   return `${' '.repeat(contentCol)}- `;
 }
 
-/** 改节点文字：只重写该 outline 行，保留层级/缩进/marker。 */
+function documentTitleInsertIndex(lines: string[]): number {
+  if (!/^---\s*$/.test(lines[0] ?? '')) return 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (/^---\s*$/.test(lines[i])) return i + 1;
+  }
+  return 0;
+}
+
+/**
+ * 改节点文字：真实节点只重写该 outline 行，保留层级/缩进/marker；
+ * 文件名虚拟根首次编辑时在 frontmatter 后插入 H1，使修改成为 Markdown 的真实内容。
+ */
 export function editNodeText(doc: MindMapDoc, lineIndex: number, newText: string): string | null {
   const hit = locate(doc.root, lineIndex);
-  if (!hit || lineIndex < 0) return null;
+  if (!hit) return null;
   const lines = [...doc.lines];
+  if (hit.node.kind === 'root') {
+    if (newText.trim() === '') return null;
+    const { out } = insertLines(lines, documentTitleInsertIndex(lines), [headingLine(1, newText)], true);
+    return out.join('\n');
+  }
   if (hit.node.kind === 'heading') {
     lines[lineIndex] = headingLine(hit.node.level, newText);
   } else {

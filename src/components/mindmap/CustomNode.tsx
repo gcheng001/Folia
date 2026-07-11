@@ -74,7 +74,7 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
       <Handle type="target" position={Position.Left} style={handleStyle} />
       <div
         className="nodrag nowheel nopan"
-        style={nodeStyle}
+        style={{ ...nodeStyle, cursor: onStartEdit ? 'text' : 'default' }}
         onDoubleClick={(event) => {
           event.preventDefault();
           event.stopPropagation();

@@ -116,7 +116,7 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
   }, []);
 
   const startEdit = useCallback((nodeId: string) => {
-    if (!onChangeRef.current || lineIndexOf(nodeId) < 0) return;
+    if (!onChangeRef.current) return;
     setSelectedId(nodeId);
     setEditingId(nodeId);
   }, []);
@@ -195,11 +195,17 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
-  const handleNodeClick = useCallback((_: ReactMouseEvent, node: Node) => {
+  const handleNodeClick = useCallback((event: ReactMouseEvent, node: Node) => {
+    // WKWebView / React Flow 组合下，系统双击有时只稳定送达两次 click，
+    // 不再补发 dblclick。第二次 click 的 detail=2，因此在这里直接进入编辑。
+    if (event.detail >= 2 && onChangeRef.current) {
+      startEdit(node.id);
+      return;
+    }
     setSelectedId(node.id);
     // WKWebView 下点击子元素不一定把焦点交给容器，显式聚焦保证键盘可用
     wrapperRef.current?.focus();
-  }, []);
+  }, [startEdit]);
 
   const handleNodeDoubleClick = useCallback(
     (_: ReactMouseEvent, node: Node) => {

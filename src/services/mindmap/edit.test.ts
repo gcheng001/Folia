@@ -33,6 +33,16 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       expect(out).toBe('# 根\n\n- a\n  - b2\n');
       assertStable(out);
     });
+
+    it('改文件名虚拟根时在 frontmatter 后插入真实 H1', () => {
+      const md = '---\ncase: 2026\n---\n\n开篇正文。\n\n## 第一部分\n';
+      const doc = parseMarkdown(md, '案件报告.md');
+      expect(doc.root.kind).toBe('root');
+      const out = editNodeText(doc, doc.root.lineIndex, '案件分析报告');
+      expect(out).toBe('---\ncase: 2026\n---\n\n# 案件分析报告\n\n开篇正文。\n\n## 第一部分\n');
+      expect(parseMarkdown(out ?? '').root.text).toBe('案件分析报告');
+      assertStable(out ?? '');
+    });
   });
 
   describe('insertSibling（Enter：同级空节点）', () => {

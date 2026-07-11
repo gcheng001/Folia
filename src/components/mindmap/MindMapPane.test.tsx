@@ -118,4 +118,77 @@ describe('MindMapPane (M-B 只读画布)', () => {
     });
     host.remove();
   });
+
+  it('双击文件名虚拟根也能编辑，并在 Markdown 顶部落成真实 H1', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '开篇正文。\n\n## 第一部分\n',
+        fileName: '案件报告.md',
+        onChange,
+      }));
+    });
+
+    const rootLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '案件报告.md');
+    expect(rootLabel).toBeTruthy();
+
+    act(() => {
+      rootLabel?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="编辑节点文字"]');
+    expect(input).toBeTruthy();
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, '案件分析报告');
+      input?.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith('# 案件分析报告\n\n开篇正文。\n\n## 第一部分\n');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('WKWebView 仅送达第二次 click(detail=2) 时也进入编辑', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        onChange: vi.fn(),
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    expect(label).toBeTruthy();
+
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+    });
+
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
 });

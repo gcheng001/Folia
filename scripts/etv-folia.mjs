@@ -343,6 +343,44 @@ async function scenarioC_ipc({ page, send, ev, screenshot }) {
   return out;
 }
 
+/**
+ * 场景 D · 真实 WKWebView 脑图虚拟根编辑
+ * 启动应用时通过 FOLIA_MINDMAP_E2E_PATH 指定一份「正文开头 + H2」文档，
+ * Cmd+Alt+G 进入脑图后双击文件名中心节点，输入文字并保存，最后从磁盘
+ * 断言虚拟根已经落成真实 H1。覆盖 jsdom 无法模拟的 WKWebView 指针事件。
+ */
+async function scenarioD_mindmapEdit({ page, send, screenshot }) {
+  const out = {};
+  const filePath = process.env.FOLIA_MINDMAP_E2E_PATH;
+  if (!filePath) return { passed: false, __error: 'FOLIA_MINDMAP_E2E_PATH is required' };
+
+  await page.waitForSelector('.app-root', { timeout: 10_000 });
+  await chord(send, { key: 'g', code: 'KeyG', vk: 71, text: 'g' });
+  await page.waitForSelector('.react-flow', { timeout: 10_000 });
+
+  const rootLabel = filePath.split('/').pop();
+  const rootNode = page.locator('.react-flow__node').filter({ hasText: rootLabel }).first();
+  await rootNode.dblclick();
+
+  const input = page.locator('input[aria-label="编辑节点文字"]');
+  await input.waitFor({ state: 'visible', timeout: 5_000 });
+  out.inputAppeared = await input.isVisible();
+  await input.fill('真机可编辑中心节点');
+  await input.press('Enter');
+
+  const editedNode = page.locator('.react-flow__node').filter({ hasText: '真机可编辑中心节点' }).first();
+  await editedNode.waitFor({ state: 'visible', timeout: 5_000 });
+  out.editedTextVisible = await editedNode.isVisible();
+
+  await chord(send, { extraMod: 0, key: 's', code: 'KeyS', vk: 83, text: 's' });
+  await sleep(500);
+  const { readFileSync } = await import('node:fs');
+  out.diskContent = readFileSync(filePath, 'utf8');
+  await screenshot('d-mindmap-root-edit');
+  out.passed = out.inputAppeared && out.editedTextVisible && out.diskContent.startsWith('# 真机可编辑中心节点\n\n');
+  return out;
+}
+
 /* ──────────────── 入口 ─────────────────────────────────────────────────── */
 
 async function main() {
@@ -375,6 +413,9 @@ async function main() {
     ['A-keyboard', scenarioA_keyboard],
     ['B-drop', scenarioB_drop],
     ['C-ipc', scenarioC_ipc],
+    ...(process.env.FOLIA_MINDMAP_E2E_PATH || SCENARIO_FILTER.includes('mindmap')
+      ? [['D-mindmap-edit', scenarioD_mindmapEdit]]
+      : []),
   ];
 
   for (const [name, fn] of scenarioDefs) {
