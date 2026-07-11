@@ -1,10 +1,10 @@
 /**
  * 脑图画布节点。简洁直线条形态（PRD 项 B）：
- * 非根节点为纯文字 + 分支色下划线；根节点为轻量描边胶囊。
+ * 所有节点统一为小圆角长方形完整边框，根节点仅通过线宽和字重强调。
  * 配色由主题（themes.ts）驱动；编辑态（M-C）渲染行内输入框，
  * Enter 提交 / Esc 取消，事件不冒泡到画布键盘处理器。
  */
-import { memo } from 'react';
+import { memo, useLayoutEffect, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { branchColor, getTheme, type MindMapTheme } from './themes';
 
@@ -41,32 +41,48 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
   const theme = maybeTheme ?? getTheme(undefined);
   const color = branchColor(theme, branchIndex ?? -1);
   const lineIndex = Number(id.slice(1));
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const nodeStyle: React.CSSProperties = isRoot
-    ? {
-        padding: '8px 18px',
-        border: `2px solid ${theme.root}`,
-        borderRadius: '18px',
-        backgroundColor: 'var(--surface, #fff)',
-        color: theme.root,
-        fontSize: '15px',
-        fontWeight: 600,
-        fontFamily: 'var(--font-body)',
-        maxWidth: '300px',
+  useLayoutEffect(() => {
+    if (!isEditing) return;
+    const focusInput = (): void => {
+      const input = inputRef.current;
+      if (!input) return;
+      try {
+        input.focus({ preventScroll: true });
+      } catch {
+        input.focus();
       }
-    : {
-        padding: '2px 10px 4px',
-        borderBottom: `2px solid ${color}`,
-        color: theme.text,
-        fontSize: '14px',
-        fontFamily: 'var(--font-body)',
-        minWidth: '40px',
-        maxWidth: '300px',
-      };
+      input.select();
+    };
+    // autoFocus 在 WKWebView + React Flow 测量重渲染时会被画布容器抢回。
+    // 覆盖挂载、下一帧和节点测量的短周期，直到画布布局稳定。
+    focusInput();
+    const frame = requestAnimationFrame(focusInput);
+    const timers = [0, 50, 150].map((delay) => window.setTimeout(focusInput, delay));
+    return () => {
+      cancelAnimationFrame(frame);
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [isEditing]);
+
+  const nodeStyle: React.CSSProperties = {
+    boxSizing: 'border-box',
+    padding: isRoot ? '9px 16px' : '7px 14px',
+    border: `${isRoot ? 2 : 1.5}px solid ${isRoot ? theme.root : color}`,
+    borderRadius: '2px',
+    backgroundColor: 'var(--surface, #fff)',
+    color: isRoot ? theme.root : theme.text,
+    fontSize: isRoot ? '15px' : '14px',
+    fontWeight: isRoot ? 600 : 400,
+    fontFamily: 'var(--font-body)',
+    minWidth: '80px',
+    maxWidth: '320px',
+    textAlign: 'center',
+  };
 
   if (isSelected && !isEditing) {
     nodeStyle.boxShadow = `0 0 0 2px ${color}55, 0 0 0 4px ${color}22`;
-    nodeStyle.borderRadius = nodeStyle.borderRadius ?? '4px';
   }
 
   return (
@@ -83,6 +99,7 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
       >
         {isEditing ? (
           <input
+            ref={inputRef}
             className="nodrag nowheel nopan"
             autoFocus
             defaultValue={label}

@@ -185,10 +185,146 @@ describe('MindMapPane (M-B 只读画布)', () => {
     });
 
     expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+    expect(document.activeElement).toBe(host.querySelector('input[aria-label="编辑节点文字"]'));
 
     act(() => {
       root.unmount();
     });
+    host.remove();
+  });
+
+  it('单击选中节点后按空格立即进入编辑，即使画布容器没有焦点', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        onChange: vi.fn(),
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+    });
+
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+    expect(document.activeElement).toBe(host.querySelector('input[aria-label="编辑节点文字"]'));
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('连续两次普通 click 同一节点时第二下直接进入编辑', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        onChange: vi.fn(),
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+    expect(document.activeElement).toBe(host.querySelector('input[aria-label="编辑节点文字"]'));
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('根节点按 Enter 新建子节点，普通节点按 Tab 新建下级并进入编辑', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    let markdown = '# 根\n\n## 已有节点\n';
+
+    const render = (): void => {
+      root.render(createElement(MindMapPane, {
+        markdown,
+        onChange: (next: string) => {
+          markdown = next;
+          render();
+        },
+      }));
+    };
+    act(render);
+
+    const rootLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '根');
+    act(() => {
+      rootLabel?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    expect(markdown).toMatch(/^## $/m);
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+
+    act(() => {
+      host.querySelector<HTMLInputElement>('input[aria-label="编辑节点文字"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+
+    const existingLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '已有节点');
+    act(() => {
+      existingLabel?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    });
+    expect(markdown).toContain('### ');
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('所有节点均使用小圆角完整长方框，不再使用胶囊或仅下划线样式', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown: '# 根\n\n## 子节点\n' }));
+    });
+
+    for (const label of ['根', '子节点']) {
+      const text = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === label);
+      const box = text?.parentElement;
+      expect(box?.style.borderRadius).toBe('2px');
+      expect(box?.style.borderStyle).toBe('solid');
+      expect(box?.style.borderBottomStyle).toBe('solid');
+      expect(box?.style.borderTopStyle).toBe('solid');
+    }
+
+    act(() => root.unmount());
     host.remove();
   });
 });

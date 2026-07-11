@@ -7,11 +7,11 @@
  *   Enter      在选中节点后插入同级空节点并进入编辑
  *   Tab        为选中节点追加子节点并进入编辑
  *   Shift+Tab  节点升一级（成为父节点的后继同级）
- *   F2 / 双击   编辑节点文字（Enter 提交 / Esc 取消）
+ *   Space / F2 / 再次点击 / 双击  编辑节点文字（Enter 提交 / Esc 取消）
  *   Delete     删除节点（有子节点时需确认）
  * 主题（PRD 项 B）：四套简洁直线条主题，右上角切换，localStorage 记住选择。
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -150,15 +150,22 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
   }, [doc, theme, onChange, selectedId, editingId, startEdit, commitEdit, cancelEdit]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: KeyboardEvent) => {
       if (!onChangeRef.current || editingId) return;
       if (!selectedId) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const lineIndex = lineIndexOf(selectedId);
       const current = docRef.current;
 
       if (e.key === 'Enter') {
         e.preventDefault();
-        applyInsert(insertSibling(current, lineIndex));
+        // 根节点没有同级；在根上按 Enter 时按主流脑图语义创建第一个子节点。
+        applyInsert(
+          current.root.lineIndex === lineIndex
+            ? insertChild(current, lineIndex)
+            : insertSibling(current, lineIndex),
+        );
       } else if (e.key === 'Tab' && e.shiftKey) {
         e.preventDefault();
         const md = promoteNode(current, lineIndex);
@@ -169,9 +176,9 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
       } else if (e.key === 'Tab') {
         e.preventDefault();
         applyInsert(insertChild(current, lineIndex));
-      } else if (e.key === 'F2') {
+      } else if (e.key === ' ' || e.code === 'Space' || e.key === 'F2') {
         e.preventDefault();
-        setEditingId(selectedId);
+        startEdit(selectedId);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (current.root.lineIndex === lineIndex) return;
@@ -185,8 +192,15 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
         }
       }
     },
-    [selectedId, editingId, applyInsert],
+    [selectedId, editingId, applyInsert, startEdit],
   );
+
+  // 键盘操作属于整个脑图视图，而不是某个偶然获得焦点的 DOM 容器。
+  // 页面级监听消除 React Flow/WKWebView 点击后焦点落点不稳定造成的漏键。
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   const selectTheme = (id: MindMapThemeId): void => {
     setThemeId(id);
@@ -198,14 +212,14 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
   const handleNodeClick = useCallback((event: ReactMouseEvent, node: Node) => {
     // WKWebView / React Flow 组合下，系统双击有时只稳定送达两次 click，
     // 不再补发 dblclick。第二次 click 的 detail=2，因此在这里直接进入编辑。
-    if (event.detail >= 2 && onChangeRef.current) {
+    if ((event.detail >= 2 || selectedId === node.id) && onChangeRef.current) {
       startEdit(node.id);
       return;
     }
     setSelectedId(node.id);
     // WKWebView 下点击子元素不一定把焦点交给容器，显式聚焦保证键盘可用
     wrapperRef.current?.focus();
-  }, [startEdit]);
+  }, [selectedId, startEdit]);
 
   const handleNodeDoubleClick = useCallback(
     (_: ReactMouseEvent, node: Node) => {
@@ -224,7 +238,6 @@ export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPanePr
       ref={wrapperRef}
       style={{ width: '100%', height: '100%', position: 'relative', outline: 'none' }}
       tabIndex={0}
-      onKeyDown={handleKeyDown}
     >
       <div style={switcherStyle} role="radiogroup" aria-label="脑图主题">
         {MINDMAP_THEMES.map((t) => (

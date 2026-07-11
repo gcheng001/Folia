@@ -1,7 +1,7 @@
 /**
  * 脑图主题定义（PRD 项 B）。四套内置简洁直线条主题：
  * 彩色（一级分支轮转配色）/ 蓝色 / 紫色 / 黑白。
- * 形态统一：纯文字节点 + 细线连接，无卡片阴影；根节点仅轻量描边强调。
+ * 形态统一：小圆角长方形节点 + 直线连接，无卡片阴影；根节点仅以字重和线宽强调。
  */
 
 export type MindMapThemeId = 'simple-color' | 'simple-blue' | 'simple-purple' | 'simple-mono';
