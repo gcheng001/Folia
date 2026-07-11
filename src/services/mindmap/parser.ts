@@ -23,9 +23,11 @@ import type {
 
 const ATX_HEADING = /^(#{1,6})\s+(.*)$/;
 /** 无序与有序列表项；有序只取序号占位，深度按缩进算。 */
-const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
-const FENCE_OPEN = /^(\s*)(`{3,}|~{3,})/;
+const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const FENCE_OPEN = /^(\s*)(`{3,}|~{3,})(.*)$/;
 const FRONTMATTER_DELIM = /^---\s*$/;
+/** 主题分隔线：3+ 同字符（- * _）以空格分隔，整行匹配。 */
+const THEMATIC_BREAK = /^(\s*)([-*_])(?:\s*\2){2,}\s*$/;
 
 const TYPE_VOCAB: NodeType[] = ['要件', '争点', '证据', '法条', '事实', '质证'];
 const EVIDENCE_VERDICTS: EvidenceVerdict[] = ['认可', '不认可', '部分认可'];
@@ -86,17 +88,20 @@ function extractTags(text: string, node: Pick<MindNode, 'types' | 'tags'>): void
 /** 识别质证三性行（如「真实性：认可」），命中词表才记录 verdict。 */
 function extractEvidence(text: string): EvidenceStatus | undefined {
   const status: EvidenceStatus = {};
-  let hit = false;
+  let anySet = false;
   for (const aspect of EVIDENCE_ASPECTS) {
     const re = new RegExp(`${aspect}\\s*[:：]\\s*(.+)$`);
     const m = text.match(re);
     if (!m) continue;
-    hit = true;
     const value = m[1].trim();
     const verdict = EVIDENCE_VERDICTS.find((v) => value === v || value.startsWith(v));
-    if (verdict) status[aspect] = verdict;
+    if (verdict) {
+      status[aspect] = verdict;
+      anySet = true;
+    }
   }
-  return hit ? status : undefined;
+  // 仅当至少一项命中词表才返回，避免留空 evidence 对象。
+  return anySet ? status : undefined;
 }
 
 /**
@@ -111,8 +116,11 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
 
   let inFence = false;
   let fenceMarker = '';
-  /** 当前列表连续段的基准缩进；遇到段落等非大纲非空行重置，空行保留。 */
+  let fenceLen = 0;
+  /** 当前列表段的基准缩进（首项缩进）。null=不在列表段。 */
   let listBaseIndent: number | null = null;
+  /** 当前列表段的内容起始列（基准缩进 + marker + 至少1空格）；段落缩进≥此列=续接。 */
+  let listContentCol = 0;
   let listBaseDepth = 0;
   let afterFrontmatter = false;
 
@@ -138,14 +146,20 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     const fenceMatch = line.match(FENCE_OPEN);
     if (fenceMatch) {
       const marker = fenceMatch[2][0];
+      const len = fenceMatch[2].length;
+      const rest = fenceMatch[3];
       if (!inFence) {
         inFence = true;
         fenceMarker = marker;
-      } else if (marker === fenceMarker) {
+        fenceLen = len;
+        listBaseIndent = null; // 开启围栏打断列表
+      } else if (marker === fenceMarker && len >= fenceLen && rest.trim() === '') {
+        // CommonMark：闭合围栏须同字符、长度 ≥ 开启长度、且后缀仅空白
+        //（```text 带 info string 是开围栏，不能闭合当前围栏）。
         inFence = false;
+        listBaseIndent = null;
       }
-      // 围栏行本身是非大纲行，落入所在节点区间，不产生节点。
-      listBaseIndent = null;
+      // 其余（围栏内 content 行、或围栏内出现的带 info 开围栏）不打断列表、不产节点。
       continue;
     }
     if (inFence) {
@@ -167,14 +181,24 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       continue;
     }
 
+    // 主题分隔线（--- / *** / ___ 三连+，可含空格）：非大纲，按段落打断列表段
+    if (THEMATIC_BREAK.test(line)) {
+      listBaseIndent = null;
+      continue;
+    }
+
     // 列表项
     const l = line.match(LIST_ITEM);
     if (l) {
       const indent = l[1].length;
-      const text = l[2].trim();
+      const markerLen = l[2].length;
+      const text = l[3].trim();
       if (listBaseIndent === null || indent < listBaseIndent) {
-        // 新列表段：基准深度 = 当前栈顶（最近上级大纲节点）深度 + 1
+        // 新列表段（首项 / 段落打断后重启 / 缩进回退到 base 以下）：
+        // 先把栈回退到最近的非列表祖先（标题/根），否则新列表会挂在旧列表项下。
+        while (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
         listBaseIndent = indent;
+        listContentCol = indent + markerLen + 1; // marker + 至少 1 空格 = 内容起始列
         listBaseDepth = stack[stack.length - 1].level + 1;
       }
       const nest = Math.floor((indent - listBaseIndent) / INDENT_STEP);
@@ -187,9 +211,12 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       continue;
     }
 
-    // 非大纲行：空行不重置列表基准（允许列表项间空行）；有内容的段落等则重置。
-    if (line.trim() !== '') {
-      listBaseIndent = null;
+    // 非大纲有内容行：判定是否打断当前列表。
+    // 缩进 ≥ 列表内容列 = 列表项 lazy 续接（作为该项备注），不打断；
+    // 缩进回到内容列以外 = 段落跳出列表，打断。空行不打断。
+    if (line.trim() !== '' && listBaseIndent !== null) {
+      const lineIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
+      if (lineIndent < listContentCol) listBaseIndent = null;
     }
   }
 

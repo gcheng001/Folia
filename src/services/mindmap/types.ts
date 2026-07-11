@@ -31,7 +31,11 @@ export interface EvidenceStatus {
 }
 
 export interface MindNode {
-  /** 稳定 id：从根到本节点的文本路径，用于布局 sidecar 匹配。 */
+  /**
+   * 内容路径 id（根→本节点 text 序列），用于布局 sidecar 坐标匹配。
+   * 注意：按方案决策#2，重命名/移动节点会改变此 id（手拖坐标随之失配回退），
+   * 故它【不是】稳定唯一键——React Flow 画布应另用 lineIndex 作节点 key。
+   */
   id: string;
   kind: NodeKind;
   /** outline 深度：标题为 1-6，列表项为相对深度，虚拟根为 0。 */

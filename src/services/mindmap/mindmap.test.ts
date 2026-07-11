@@ -189,3 +189,68 @@ describe('mindmap 解析/序列化内核 (M-A)', () => {
     });
   });
 });
+
+describe('Codex 审查回归（M-B 开工前修复）', () => {
+  it('P0-1: 段落打断列表后，新项挂回标题而非旧列表项', () => {
+    const doc = parseMarkdown('# H\n- a\nnote\n- b\n');
+    expect(doc.root.text).toBe('H');
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    expect(doc.root.children[0].children).toHaveLength(0);
+  });
+
+  it('P0-2: 缩进回退到 base 以下，新项挂回标题', () => {
+    const doc = parseMarkdown('# H\n  - a\n- b\n');
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+  });
+
+  it('P1-3: thematic break（* * *）不识别为列表项', () => {
+    const md = '# H\n* * *\n- item\n';
+    const doc = parseMarkdown(md);
+    const texts = collectOutlineNodes(doc.root).map((n) => n.text);
+    expect(texts).not.toContain('* * *');
+    expect(texts).toContain('item');
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P1-4: 4 反引号围栏不被内部 3 反引号提前关闭', () => {
+    const md = ['````', '```', '````', '- after'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    const texts = collectOutlineNodes(doc.root).map((n) => n.text);
+    expect(texts).not.toContain('```');
+    expect(texts).toContain('after');
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P2-5: 三性行值不在词表时不留空 evidence 对象', () => {
+    const doc = parseMarkdown('- 真实性：待核实\n');
+    const node = collectOutlineNodes(doc.root)[0];
+    expect(node.evidence).toBeUndefined();
+    expect(node.text).toBe('真实性：待核实');
+  });
+
+  it('P0-3: 列表项内缩进段落是 lazy 续接，后续子列表仍挂该项下（Codex 第二轮反例）', () => {
+    const md = '# H\n- parent\n  note\n  - child\n';
+    const doc = parseMarkdown(md);
+    const parent = doc.root.children.find((n) => n.text === 'parent');
+    expect(parent?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0-4: 列表项续接段落后再来同级项，仍为兄弟', () => {
+    const md = '# H\n- a\n  note\n- b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+  });
+
+  it('P1-6: 带 info string 的围栏行（```text）不闭合当前围栏', () => {
+    const md = ['```', '```text', '```', '- after'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    const texts = collectOutlineNodes(doc.root).map((n) => n.text);
+    expect(texts).toContain('after');
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0 回归：庭审实战 fixture 仍往返保真（修复未破坏既有）', () => {
+    expect(serializeMarkdown(parseMarkdown(realisticMd))).toBe(realisticMd);
+  });
+});
