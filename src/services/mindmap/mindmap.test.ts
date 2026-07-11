@@ -427,3 +427,45 @@ describe('Codex 第六轮复核回归', () => {
     }
   });
 });
+
+describe('Codex 第七轮复核回归', () => {
+  it('R7-P2: marker 后 ≥ 4 列 padding 时，内容列仍按 CommonMark 规范为 marker 列后 1 列（pandoc 交叉验证）', () => {
+    // `-     a` 中 marker 后 5 列空白前 4 列属 padding，第 5 列起是缩进代码块内容；
+    // 但**列表项本身**的内容列仍是 marker 后 1 列（列 2），不应被 pad 列数拉宽。
+    // `  - child` 缩进 2 达到父项内容列 2 → 仍应挂为该列表项的子项。
+    const md = '-     a\n  - child\n';
+    const doc = parseMarkdown(md);
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'child']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R7-P2b: 有序列表 marker 后多 padding 同样按 CommonMark 规范化（pandoc 交叉验证）', () => {
+    // `1.     a` marker 长度 2，pad 5 列；列表项内容列 = 0+2+1 = 3（不是 0+2+5=7）。
+    // `   - b` 缩进 3 达到内容列 3 → 仍是 `a` 的子项。
+    const md = '1.     a\n   - b\n';
+    const doc = parseMarkdown(md);
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'b']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R7-P2 对照：常规 marker padding（1 列）下行为不变（不退化）', () => {
+    // 同样缩进到内容列的子项在常规 padding 下也是子项；确认规范化没破坏既有行为。
+    const md = '- a\n  - child\n';
+    const doc = parseMarkdown(md);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R7 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});

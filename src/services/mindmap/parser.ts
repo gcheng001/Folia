@@ -280,8 +280,11 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
       const node = makeNode('list', depth, text, i);
       parent.children.push(node);
       stack.push(node);
-      // 内容列每项都更新（多位序号如 `10.` 比 `1.` 宽一列，不能沿用段首项，Codex R4-P0-4）
-      listCols.push(expandCols(l[3], indent + l[2].length));
+      // CommonMark：列表项内容列 = marker 结束列 + 1，与 marker 后实际 padding 列数无关。
+      // 曾按 `expandCols(l[3], markerCol)` 算实际末尾列，对 `-     a`（5+ 列 padding）等
+      // 合法 Markdown 会过宽估内容列，导致后续缩进到正常列的子项被误弹出（Codex R7-P2）。
+      const markerCol = indent + l[2].length;
+      listCols.push(markerCol + 1);
       listItemOpen = true;
       continue;
     }
