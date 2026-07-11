@@ -1,13 +1,30 @@
 /**
- * M-B 只读脑图画布。接收原始 Markdown，内部 parse → layout → 渲染。
- * 不支持编辑回写、拖拽重排、折叠展开——纯只读可视化（MD 仍是唯一源）。
+ * M-C 可编辑脑图画布。接收原始 Markdown，内部 parse → layout → 渲染；
+ * 编辑操作（edit.ts 行级手术）产出新 Markdown 经 onChange 回写文档模型——
+ * MD 仍是唯一源，画布永远从 MD 重渲染，不持有第二份文档状态。
+ *
+ * 键位（画布聚焦、未在输入态时）：
+ *   Enter      在选中节点后插入同级空节点并进入编辑
+ *   Tab        为选中节点追加子节点并进入编辑
+ *   Shift+Tab  节点升一级（成为父节点的后继同级）
+ *   F2 / 双击   编辑节点文字（Enter 提交 / Esc 取消）
+ *   Delete     删除节点（有子节点时需确认）
  * 主题（PRD 项 B）：四套简洁直线条主题，右上角切换，localStorage 记住选择。
  */
-import { useMemo, useState } from 'react';
-import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap } from '@xyflow/react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
+import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { parseMarkdown } from '../../services/mindmap/parser';
+import { parseMarkdown, collectOutlineNodes } from '../../services/mindmap/parser';
 import { layoutMindMap } from '../../services/mindmap/layout';
+import {
+  deleteNode,
+  editNodeText,
+  insertChild,
+  insertSibling,
+  promoteNode,
+  type EditResult,
+} from '../../services/mindmap/edit';
 import { CustomNode } from './CustomNode';
 import { CustomEdge } from './CustomEdge';
 import {
@@ -26,6 +43,8 @@ interface MindMapPaneProps {
   markdown: string;
   /** 虚拟根显示名（文档无大标题时的中心节点文本），一般传文件名 */
   fileName?: string;
+  /** 编辑回写。缺省时画布只读。 */
+  onChange?: (markdown: string) => void;
 }
 
 const switcherStyle: React.CSSProperties = {
@@ -41,15 +60,77 @@ const switcherStyle: React.CSSProperties = {
   border: '1px solid var(--border, #e5e7eb)',
 };
 
-export function MindMapPane({ markdown, fileName = '' }: MindMapPaneProps): React.ReactElement {
+function lineIndexOf(nodeId: string): number {
+  return Number(nodeId.slice(1));
+}
+
+export function MindMapPane({ markdown, fileName = '', onChange }: MindMapPaneProps): React.ReactElement {
   const [themeId, setThemeId] = useState<MindMapThemeId>(loadThemeId);
   const theme = getTheme(themeId);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  /** 新建后尚未提交首次文字的节点行号：Esc/空提交时整节点回收，MD 不留空标题 */
+  const pendingNewLineRef = useRef<number | null>(null);
+
+  const doc = useMemo(() => parseMarkdown(markdown, fileName), [markdown, fileName]);
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const applyInsert = useCallback((result: EditResult | null) => {
+    if (!result || !onChangeRef.current) return;
+    onChangeRef.current(result.markdown);
+    const id = `n${result.newLineIndex}`;
+    setSelectedId(id);
+    setEditingId(id);
+    pendingNewLineRef.current = result.newLineIndex;
+  }, []);
+
+  const commitEdit = useCallback((lineIndex: number, text: string) => {
+    const current = docRef.current;
+    const trimmed = text.trim();
+    setEditingId(null);
+    if (trimmed === '' && pendingNewLineRef.current === lineIndex) {
+      // 新建节点未输入任何文字：回收，不在 MD 里留空标题行
+      const md = deleteNode(current, lineIndex);
+      pendingNewLineRef.current = null;
+      setSelectedId(null);
+      if (md !== null) onChangeRef.current?.(md);
+      return;
+    }
+    pendingNewLineRef.current = null;
+    const md = editNodeText(current, lineIndex, trimmed);
+    if (md !== null && md !== current.lines.join('\n')) onChangeRef.current?.(md);
+  }, []);
+
+  const cancelEdit = useCallback((lineIndex: number) => {
+    const current = docRef.current;
+    setEditingId(null);
+    if (pendingNewLineRef.current === lineIndex) {
+      const md = deleteNode(current, lineIndex);
+      pendingNewLineRef.current = null;
+      setSelectedId(null);
+      if (md !== null) onChangeRef.current?.(md);
+    }
+  }, []);
 
   const { nodes, edges } = useMemo(() => {
-    const doc = parseMarkdown(markdown, fileName);
     const { nodes: rawNodes, edges: rawEdges } = layoutMindMap(doc.root);
     return {
-      nodes: rawNodes.map((n) => ({ ...n, type: 'custom', data: { ...n.data, theme } })),
+      nodes: rawNodes.map((n) => ({
+        ...n,
+        type: 'custom',
+        data: {
+          ...n.data,
+          theme,
+          editable: !!onChange,
+          isSelected: n.id === selectedId,
+          isEditing: n.id === editingId,
+          onCommitEdit: commitEdit,
+          onCancelEdit: cancelEdit,
+        },
+      })),
       edges: rawEdges.map((e) => ({
         ...e,
         type: 'custom',
@@ -59,15 +140,80 @@ export function MindMapPane({ markdown, fileName = '' }: MindMapPaneProps): Reac
         },
       })),
     };
-  }, [markdown, fileName, theme]);
+  }, [doc, theme, onChange, selectedId, editingId, commitEdit, cancelEdit]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!onChangeRef.current || editingId) return;
+      if (!selectedId) return;
+      const lineIndex = lineIndexOf(selectedId);
+      const current = docRef.current;
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyInsert(insertSibling(current, lineIndex));
+      } else if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault();
+        const md = promoteNode(current, lineIndex);
+        if (md !== null) {
+          onChangeRef.current(md);
+          setSelectedId(null);
+        }
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        applyInsert(insertChild(current, lineIndex));
+      } else if (e.key === 'F2') {
+        e.preventDefault();
+        setEditingId(selectedId);
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        if (current.root.lineIndex === lineIndex) return;
+        const node = collectOutlineNodes(current.root).find((n) => n.lineIndex === lineIndex);
+        if (!node) return;
+        if (node.children.length > 0 && !window.confirm('删除该节点及其全部子节点？')) return;
+        const md = deleteNode(current, lineIndex);
+        if (md !== null) {
+          onChangeRef.current(md);
+          setSelectedId(null);
+        }
+      }
+    },
+    [selectedId, editingId, applyInsert],
+  );
 
   const selectTheme = (id: MindMapThemeId): void => {
     setThemeId(id);
     saveThemeId(id);
   };
 
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const handleNodeClick = useCallback((_: ReactMouseEvent, node: Node) => {
+    setSelectedId(node.id);
+    // WKWebView 下点击子元素不一定把焦点交给容器，显式聚焦保证键盘可用
+    wrapperRef.current?.focus();
+  }, []);
+
+  const handleNodeDoubleClick = useCallback(
+    (_: ReactMouseEvent, node: Node) => {
+      if (!onChangeRef.current) return;
+      setSelectedId(node.id);
+      setEditingId(node.id);
+    },
+    [],
+  );
+
+  const handlePaneClick = useCallback(() => {
+    setSelectedId(null);
+  }, []);
+
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div
+      ref={wrapperRef}
+      style={{ width: '100%', height: '100%', position: 'relative', outline: 'none' }}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <div style={switcherStyle} role="radiogroup" aria-label="脑图主题">
         {MINDMAP_THEMES.map((t) => (
           <button
@@ -100,6 +246,11 @@ export function MindMapPane({ markdown, fileName = '' }: MindMapPaneProps): Reac
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        zoomOnDoubleClick={false}
+        deleteKeyCode={null}
+        onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        onPaneClick={handlePaneClick}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1.5} color="oklch(89% 0.012 80)" />
         <Controls showInteractive={false} />

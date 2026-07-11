@@ -114,7 +114,8 @@ export function layoutMindMap(root: MindNode): { nodes: Node[]; edges: Edge[] } 
       id: nodeKey(node),
       position: pos,
       data: {
-        label: node.text || '(未命名)',
+        // label 保持原始文本（编辑态输入框的初值）；空文本的占位展示由节点组件负责
+        label: node.text,
         kind: node.kind,
         level: node.level,
         branchIndex,
