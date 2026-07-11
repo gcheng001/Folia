@@ -91,6 +91,95 @@ src/components/MindMapPane.tsx 画布组件（自澄脉移植，自包含）
 - 节点类型徽标：节点左侧细色条 + 小字徽标（画布上唯一的低饱和彩色元素）。
 - 关联线：虚线 + 箭头，与父子边明确区分。
 
+## 5.5. 画布扩展实现说明（v0.5+）
+
+围绕 §2 决策点 1（MD 即源）与 §3.4（sidecar 边界）扩展了完整的
+「脑图 + 流程图」画布。所有能力都遵循同一个权威/边界规则：
+
+### 5.5.1 数据流
+
+- **Markdown**：始终是文档/结构的唯一源。任何会改变大纲结构、移动子树、
+  删除节点、改变文字的操作都先调用 `services/mindmap/edit.ts` 中的
+  行级手术函数，返回新 MD → `onChange(md)` → 父组件重解析 → 重渲染。
+  画布从不持有第二份文档状态。
+- **画布 sidecar**（`services/mindmap/canvasSidecar.ts`）：单一 JSON 文档，
+  localStorage 键 `folia.mindmap.canvas.v2:<documentKey>`。包含
+  `positions / customEdges / groups / edgeMode / colorHistory`。
+  按文件隔离，节点重命名/移动导致 content-path 失配时，相关 key 自然
+  失效、自动布局接管（与设计文档 §3.4 一致）。
+- 同时为兼容 v1 positionStore，仍然把 `positions` 镜像写一份到旧 key
+  （`folia.mindmap.positions.v1:`），旧画布切换过来不丢坐标。
+
+### 5.5.2 交互矩阵
+
+| 能力 | 触发 | 数据归属 | 可撤销 |
+|------|------|----------|--------|
+| 节点编辑（Enter/Tab/Shift+Tab/Space/F2/Delete） | 画布聚焦 | MD | 是（历史栈） |
+| 自由拖动 | 鼠标拖到画布空白 / Alt+拖动 | sidecar.positions | 是（拖动产生 position change 也推历史） |
+| 结构拖动 | 拖到目标节点中央停留 400ms | MD（`moveSubtreeAsLastChild`）+ sidecar 清掉被移子树旧坐标 | 是 |
+| 多选 | Shift+单击 / Cmd/Ctrl+A / Shift+拖动 | 画布 transient 状态 | 否（属于选择层） |
+| 对齐/等间距 | 工具栏 → 选中多个 | sidecar.positions | 是 |
+| 自动布局 | 工具栏「自动布局」 | 清空 sidecar.positions | 是 |
+| 连接线模式 | 工具栏「脑图线 / 流程箭头 / 无连接线」 | sidecar.edgeMode | 是 |
+| 自定义流程箭头 | 工具栏「连接」+ 从节点 handle 拖到另一节点 | sidecar.customEdges | 是 |
+| 删除连线 | 选中后 Delete / 上下文栏 ✕ | sidecar.customEdges | 是 |
+| 标注框 | 选中多个 → 工具栏「添加标注框」 | sidecar.groups | 是 |
+| 拖动框 | 框整体拖动 → 平移成员节点 | sidecar.positions | 是 |
+| 删除框 | Delete / 上下文栏 ✕ | sidecar.groups | 是 |
+| 框样式（实/虚/颜色/粗细/填充/圆角） | 上下文栏 SegBtn / 调色板 | sidecar.groups[].style | 是 |
+| 节点/箭头/框颜色 | 上下文栏 6-8 常用色 + 自定义 + 最近用 | 各自 style.color | 是 |
+| 导出 PNG | 工具栏「导出」→ PNG | 一次性 PNG Blob → Tauri 原生 save 写盘 | 否 |
+| 导出 PDF | 工具栏「导出」→ PDF | 一次性 PDF Blob → Tauri 原生 save 写盘 | 否 |
+
+### 5.5.3 撤销/重做
+
+- 内部栈：上限 64 条 `{markdown, sidecar}` 快照。任何会改变 MD 或
+  sidecar 的可撤销操作都先 `pushHistory` 再提交。Cmd/Ctrl+Z 撤销、
+  Cmd/Ctrl+Shift+Z / Cmd/Ctrl+Y 重做。工具栏的撤销/重做按钮同步
+  启用态（`canUndo` / `canRedo`）。
+
+### 5.5.4 结构拖动的合法性护栏
+
+| 条件 | 行为 |
+|------|------|
+| source 是根 | 拒绝（结构不变，坐标自由） |
+| source === target | 拒绝 |
+| target 在 source 子树内（环） | 拒绝 |
+| source.kind !== target.kind（heading↔list 跨种） | 拒绝 |
+| heading 子树平移后最深层级 > 6 | 拒绝（Markdown 上限） |
+| 松手时未在目标中心停留 ≥ 400ms - 30ms 容差 | 退化为自由拖动，仅更新坐标 |
+| 按住 Alt/Option 拖动 | 始终退化为自由拖动，不进入结构预览 |
+
+### 5.5.5 导出实现
+
+- PNG：`html2canvas` 截 `.react-flow__viewport`，2x 高清，可选 1x/2x
+  倍率（实际目前 UI 提供 1x/2x，4x 在 scale 参数上调即可）。背景可
+  选白/透明。
+- PDF：`html2pdf.js`（已在 dependencies）套白底，强制 A4 横向。
+- 两者都走 Tauri 原生 `save` 对话框 + `writeFile` 落盘；浏览器环境
+  fallback 到 a[download]（见 `services/exportTauri.ts`），保证 Web 预览
+  与 Tauri 桌面一致。
+- 导出范围严格按 `computeExportBounds`：取所有节点 + 边的真实包围盒
+  + 16px 余量，不裁切。隐藏线（`edgeMode='none'`）不出现，标注框
+  / 自定义箭头出现。UI 元素（选择框、handle、工具栏、上下文栏、编辑
+  输入框）不在 `react-flow__viewport` 子树里，不被截到。
+
+### 5.5.6 关键文件清单
+
+```
+src/services/mindmap/canvasSidecar.ts        画布 sidecar 存储（v2）
+src/services/mindmap/align.ts                对齐/等间距纯函数
+src/services/mindmap/edit.ts                 +moveSubtreeAsLastChild
+src/services/mindmap/positionStore.ts        v1 兼容（v2 镜像写入）
+src/services/exportTauri.ts                  导出/保存 Tauri 壳
+src/components/mindmap/MindMapPane.tsx       画布主组件（重写）
+src/components/mindmap/MindMapToolbar.tsx    工具栏
+src/components/mindmap/SelectionContextBar.tsx 上下文样式栏
+src/components/mindmap/AnnotationGroupNode.tsx 标注框节点
+src/components/mindmap/CustomFlowEdge.tsx    自定义流程箭头
+src/components/mindmap/exportImage.ts        PNG/PDF 导出
+```
+
 ## 6. 里程碑
 
 | 阶段 | 内容 | 验收 |

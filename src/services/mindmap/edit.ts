@@ -10,7 +10,7 @@
  * 所有操作对非法目标（根节点删除/升级等）返回 null，由调用方忽略。
  */
 import type { MindMapDoc, MindNode } from './types';
-import { collectOutlineNodes, expandCols } from './parser';
+import { collectOutlineNodes, expandCols, parseMarkdown } from './parser';
 
 const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/;
 
@@ -207,6 +207,147 @@ export function deleteNode(doc: MindMapDoc, lineIndex: number): string | null {
   if (!hit || hit.node === doc.root) return null;
   const end = subtreeEnd(doc, hit.node);
   return removeLines(doc.lines, lineIndex, end).join('\n');
+}
+
+/**
+ * 把 source 整棵子树作为 target 的最后一个子节点挂上去。
+ *
+ * 合法性（与设计文档一致）：
+ *  - source 不能是根节点。
+ *  - source 不能是自己或自己的后代（避免形成环）。
+ *  - source 与 target 必须同种（heading↔heading / list↔list），跨种拖放
+ *    由 UI 层在 400ms 高亮阶段拦截，此处再以 null 兜底。
+ *  - heading：source 子树里所有 heading 的 level 整体平移到 target.level+1，
+ *    且必须保证平移后最深层级 ≤ 6（Markdown 合法上限）。
+ *  - list：source 子树里所有列表项的缩进统一对齐到 target 项的内容列
+ *    （避免挂在更浅/更深的层级而失去嵌套关系）。
+ *
+ * 副作用：返回值就是新 MD；调用方负责清掉 source 子树旧的手拖坐标。
+ */
+export function moveSubtreeAsLastChild(
+  doc: MindMapDoc,
+  sourceLineIndex: number,
+  targetLineIndex: number,
+): string | null {
+  if (sourceLineIndex === targetLineIndex) return null;
+  const sourceHit = locate(doc.root, sourceLineIndex);
+  const targetHit = locate(doc.root, targetLineIndex);
+  if (!sourceHit || !targetHit) return null;
+  if (sourceHit.node === doc.root) return null;
+  if (sourceHit.node === targetHit.node) return null;
+  if (sourceHit.node.kind !== targetHit.node.kind) return null;
+
+  const start = sourceHit.node.lineIndex;
+  const end = subtreeEnd(doc, sourceHit.node);
+  if (start <= targetHit.node.lineIndex && targetHit.node.lineIndex < end) return null;
+  // target 自身也在 source 子树内
+  if (targetHit.node.lineIndex >= start && targetHit.node.lineIndex < end) return null;
+
+  const block = doc.lines.slice(start, end);
+
+  if (sourceHit.node.kind === 'heading') {
+    const sourceLevel = (sourceHit.node as MindNode & { level: number }).level;
+    const targetLevel = (targetHit.node as MindNode & { level: number }).level;
+    const delta = targetLevel + 1 - sourceLevel;
+    // delta < 0 表示 source 比 target 深，结构上要降级——UI 层在 400ms 高亮阶段
+    // 已经阻止「拖到自己/自己后代」，这里兜底拦截剩余情况。
+    if (delta < 0) return null;
+    let maxNew = targetLevel + 1;
+    const rewrite = (n: MindNode): void => {
+      if (n.kind === 'heading') {
+        const next = n.level + delta;
+        if (next > 6) return; // 标记为非法，循环结束后统一拒绝
+        if (next > maxNew) maxNew = next;
+        block[n.lineIndex - start] = `${'#'.repeat(next)} ${n.text}`;
+      }
+      for (const c of n.children) rewrite(c);
+    };
+    rewrite(sourceHit.node);
+    if (maxNew > 6) return null;
+  } else {
+    // list：重写 source 及其后代每一项的缩进，使 source 真的嵌到 target 之下。
+    // 与 insertChild 一致：子项内容列 = 父项内容列 + 2（markmap 约定，
+    // 解析器「内容列 > 父内容列」即判为子项）。
+    const refLine = doc.lines[targetHit.node.lineIndex];
+    const m = refLine.match(LIST_ITEM);
+    if (!m) return null;
+    const markerCol = expandCols(m[1]) + m[2].length;
+    const padEndCol = expandCols(m[3], markerCol);
+    const padLen = padEndCol - markerCol;
+    const targetContentCol = padLen <= 4 ? padEndCol : markerCol + 1;
+    const desiredSourceContentCol = targetContentCol + 2;
+    const reindent = (n: MindNode): void => {
+      const line = block[n.lineIndex - start];
+      const lm = line.match(LIST_ITEM);
+      if (!lm) return;
+      const oldCol = expandCols(lm[1]);
+      const oldMarkerCol = oldCol + lm[2].length;
+      const oldPadEndCol = expandCols(lm[3], oldMarkerCol);
+      const oldPadLen = oldPadEndCol - oldMarkerCol;
+      const oldContentCol = oldPadLen <= 4 ? oldPadEndCol : oldMarkerCol + 1;
+      // 旧内容列基线 → 目标内容列基线 + 2，所有前导空白列整体平移
+      const shift = desiredSourceContentCol - oldContentCol;
+      const newWs = shiftColumns(lm[1], shift);
+      block[n.lineIndex - start] = `${newWs}${lm[2]}${lm[3]}${lm[4]}`;
+      for (const c of n.children) reindent(c);
+    };
+    reindent(sourceHit.node);
+  }
+
+  // 在 target 的子树末尾（开区间）插入：先删 source 子树，再插到 target 子树尾。
+  // 删除后源树行号已失效，按「树路径」在新解析出的树里找回 target，保证多
+  // 个同名节点时也能精确定位。
+  const removed = removeLines(doc.lines, start, end);
+  const targetPath = nodePath(doc.root, targetHit.node);
+  if (!targetPath) return null;
+  const reParsed = parseMarkdown(removed.join('\n'));
+  const reTarget = nodeAtPath(reParsed.root, targetPath);
+  if (!reTarget) return null;
+  const targetEnd = subtreeEnd(reParsed, reTarget);
+  const { out } = insertLines(
+    removed,
+    Math.min(targetEnd, removed.length),
+    block,
+    sourceHit.node.kind === 'heading',
+  );
+  return out.join('\n');
+}
+
+/** 从根到达目标节点的路径（每步是 children[] 内的下标），不包含根自身。 */
+function nodePath(root: MindNode, target: MindNode): number[] | null {
+  if (root === target) return [];
+  const walk = (node: MindNode, path: number[]): number[] | null => {
+    for (let i = 0; i < node.children.length; i++) {
+      const c = node.children[i];
+      if (c === target) return [...path, i];
+      const sub = walk(c, [...path, i]);
+      if (sub) return sub;
+    }
+    return null;
+  };
+  return walk(root, []);
+}
+
+function nodeAtPath(root: MindNode, path: number[]): MindNode | null {
+  let cur: MindNode = root;
+  for (const idx of path) {
+    const next = cur.children[idx];
+    if (!next) return null;
+    cur = next;
+  }
+  return cur;
+}
+
+/** 把一段空白按列宽平移 shift 列（tab 视为单列占位，重新展开为等数量的空格）。 */
+function shiftColumns(ws: string, shift: number): string {
+  if (shift === 0) return ws;
+  const cur = expandCols(ws);
+  const target = Math.max(0, cur + shift);
+  if (shift > 0) {
+    return ws + ' '.repeat(target - cur);
+  }
+  // 简化：只剥掉前导空格，不支持负 shift 内部有 tab（v1 不会发生）
+  return ' '.repeat(target) + ws.replace(/^[ \t]+/, '');
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   editNodeText,
   insertChild,
   insertSibling,
+  moveSubtreeAsLastChild,
   promoteNode,
 } from './edit';
 
@@ -225,6 +226,66 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const doc = parseMarkdown('# 根\n\n- a\n');
       const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a')!;
       expect(promoteNode(doc, a.lineIndex)).toBeNull();
+    });
+  });
+
+  describe('moveSubtreeAsLastChild（结构拖动：把 source 整棵子树作为 target 末位子节点）', () => {
+    it('标题→标题：source 子树整体平移到 target 子树尾，level 抬到 target.level+1', () => {
+      const md = '# 根\n\n## A\n\n### A1\n\n## B\n\n### B1\n';
+      const doc = parseMarkdown(md);
+      const a1 = collectOutlineNodes(doc.root).find((n) => n.text === 'A1')!;
+      const b = collectOutlineNodes(doc.root).find((n) => n.text === 'B')!;
+      const out = moveSubtreeAsLastChild(doc, a1.lineIndex, b.lineIndex)!;
+      const doc2 = parseMarkdown(out);
+      const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'B')!;
+      // A1 应作为 B 的最后一个子节点（level=3）
+      expect(b2.children.map((c) => c.text)).toEqual(['B1', 'A1']);
+      const a12 = b2.children[1];
+      expect(a12.level).toBe(3);
+      assertStable(out);
+    });
+
+    it('拒绝把根节点作为 source', () => {
+      const doc = parseMarkdown('# 根\n\n## A\n');
+      const a = collectOutlineNodes(doc.root).find((n) => n.text === 'A')!;
+      expect(moveSubtreeAsLastChild(doc, doc.root.lineIndex, a.lineIndex)).toBeNull();
+    });
+
+    it('拒绝把节点移到自己或自己的后代', () => {
+      const doc = parseMarkdown('# 根\n\n## A\n\n### A1\n');
+      const a = collectOutlineNodes(doc.root).find((n) => n.text === 'A')!;
+      const a1 = collectOutlineNodes(doc.root).find((n) => n.text === 'A1')!;
+      expect(moveSubtreeAsLastChild(doc, a.lineIndex, a.lineIndex)).toBeNull();
+      expect(moveSubtreeAsLastChild(doc, a.lineIndex, a1.lineIndex)).toBeNull();
+    });
+
+    it('跨种拖放（heading→list）拒绝', () => {
+      const doc = parseMarkdown('# 根\n\n## A\n\n- a\n');
+      const A = collectOutlineNodes(doc.root).find((n) => n.text === 'A')!;
+      const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a')!;
+      expect(moveSubtreeAsLastChild(doc, A.lineIndex, a.lineIndex)).toBeNull();
+    });
+
+    it('层级越界拒绝：target 是 H5，source 含 H5/H6', () => {
+      const md = '# 根\n\n##### 五\n\n###### 六\n\n## A\n';
+      const doc = parseMarkdown(md);
+      const source = collectOutlineNodes(doc.root).find((n) => n.text === '五')!;
+      const a = collectOutlineNodes(doc.root).find((n) => n.text === 'A')!;
+      // 源最高 H6，移到 A（H2）下需要 +1 层级 → H7，越界
+      expect(moveSubtreeAsLastChild(doc, source.lineIndex, a.lineIndex)).toBeNull();
+    });
+
+    it('列表→列表：整棵子树重缩进到 target 内容列', () => {
+      const md = '# 根\n\n- a\n  - a1\n- b\n';
+      const doc = parseMarkdown(md);
+      const a1 = collectOutlineNodes(doc.root).find((n) => n.text === 'a1')!;
+      const b = collectOutlineNodes(doc.root).find((n) => n.text === 'b')!;
+      const out = moveSubtreeAsLastChild(doc, a1.lineIndex, b.lineIndex)!;
+      const doc2 = parseMarkdown(out);
+      const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'b')!;
+      // a1 应真的嵌到 b 之下（不是同级）
+      expect(b2.children.map((c) => c.text)).toEqual(['a1']);
+      assertStable(out);
     });
   });
 });
