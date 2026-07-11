@@ -501,5 +501,48 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 卸载后 sanitize 不应再触发 onChange
       expect(onChange).not.toHaveBeenCalled();
     });
+
+    it('鼠标点击（mouseup）后停顿也折叠展开的 IR marker（ISS-151 补充：井号/星号跳出）', async () => {
+      vi.useFakeTimers();
+      let root: Root | null = null;
+
+      try {
+        await act(async () => {
+          root = createRoot(host);
+          root.render(
+            React.createElement(WysiwygEditorPane, {
+              source: '# 标题\n\n**加粗**\n',
+              onChange: () => undefined,
+            }),
+          );
+          await vi.runAllTimersAsync();
+        });
+
+        expect(vditorCalls).toHaveLength(1);
+        const ir = vditorCalls[0].host.querySelector<HTMLElement>('.vditor-ir pre');
+        expect(ir).not.toBeNull();
+
+        // 模拟 Vditor IR：光标点进加粗节点后 marker 展开（--expand 挂上）
+        ir!.innerHTML = [
+          '<p data-block="0">',
+          '<span data-type="strong" class="vditor-ir__node vditor-ir__node--expand">',
+          '<span class="vditor-ir__marker">**</span>加粗<span class="vditor-ir__marker">**</span>',
+          '</span></p>',
+        ].join('');
+
+        // 只有 mouseup（无 keydown/input）——修复前没有任何折叠路径
+        await act(async () => {
+          ir!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          await vi.advanceTimersByTimeAsync(300); // > IR_MARKER_COLLAPSE_DELAY_MS(220)
+        });
+
+        expect(ir!.querySelector('.vditor-ir__node--expand')).toBeNull();
+      } finally {
+        await act(async () => {
+          root?.unmount();
+        });
+        vi.useRealTimers();
+      }
+    });
   });
 });

@@ -263,6 +263,22 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     host.addEventListener('paste', markUserInteracted, true);
     host.addEventListener('drop', markUserInteracted, true);
 
+    // ISS-151 补充：Vditor IR 在光标"进入"格式化节点时也会展开 marker
+    //（vditor-ir__node--expand），不止输入时。原方案只在 keydown/input 后
+    // 安排折叠，鼠标点击移动光标展开的 `#`/`**` 无人折叠，一直挂在屏上
+    //（用户反馈"编辑文字时经常跳出井号星号"的主因）。mouseup 后同样安排
+    // 停顿折叠，与键盘路径共用定时器。
+    const scheduleCollapseOnMouseUp = () => {
+      if (collapseTimerRef.current !== null) {
+        window.clearTimeout(collapseTimerRef.current);
+      }
+      collapseTimerRef.current = window.setTimeout(() => {
+        collapseTimerRef.current = null;
+        collapseExpandedMarkers(editorRef.current);
+      }, IR_MARKER_COLLAPSE_DELAY_MS);
+    };
+    host.addEventListener('mouseup', scheduleCollapseOnMouseUp, true);
+
     void Promise.all([
       import('vditor/dist/index.css'),
       import('vditor'),
@@ -499,6 +515,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       host.removeEventListener('beforeinput', markUserInteracted, true);
       host.removeEventListener('paste', markUserInteracted, true);
       host.removeEventListener('drop', markUserInteracted, true);
+      host.removeEventListener('mouseup', scheduleCollapseOnMouseUp, true);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
