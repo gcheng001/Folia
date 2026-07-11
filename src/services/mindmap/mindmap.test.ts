@@ -160,12 +160,68 @@ describe('mindmap 解析/序列化内核 (M-A)', () => {
     });
   });
 
-  describe('多 H1 → 虚拟根', () => {
-    it('两个 H1 时保留虚拟根，两者均作一级节点', () => {
+  describe('多 H1：首 H1 提升为根，其余作一级分支', () => {
+    it('edge-cases 的首 H1（frontmatter 后）提升为根，第二个 H1 挂到根下', () => {
       const doc = parseMarkdown(edgeMd);
-      // edge-cases 有两个 H1（根节点 + 第二个 H1），不提升、保留虚拟根
-      const h1s = collectOutlineNodes(doc.root).filter((n) => n.level === 1 && n.kind === 'heading');
-      expect(h1s.length).toBe(2);
+      expect(doc.root.kind).toBe('heading');
+      expect(doc.root.text).toBe('边缘用例根节点');
+      const second = doc.root.children.find((n) => n.level === 1 && n.kind === 'heading');
+      expect(second?.text).toBe('第二个 H1 应作为虚拟根下的一级节点');
+    });
+  });
+
+  describe('根节点提升与目录排除（PRD：脑图体验升级 项 A）', () => {
+    const reportMd = [
+      '# 鉴定式案例分析报告',
+      '',
+      '# 目录',
+      '',
+      '- 第一部分',
+      '- 第二部分',
+      '',
+      '# 第一部分 案情概述',
+      '',
+      '正文一。',
+      '',
+      '# 第二部分 争点分析',
+      '',
+      '## 争点一',
+      '',
+      '# 第三部分 结论',
+      '',
+    ].join('\n');
+
+    it('文档大标题（首 H1）成为根节点，各部分成为一级分支', () => {
+      const doc = parseMarkdown(reportMd, '肖永吉案.md');
+      expect(doc.root.kind).toBe('heading');
+      expect(doc.root.text).toBe('鉴定式案例分析报告');
+      expect(doc.root.children.map((n) => n.text)).toEqual([
+        '第一部分 案情概述',
+        '第二部分 争点分析',
+        '第三部分 结论',
+      ]);
+    });
+
+    it('目录章节整节不入图，但序列化往返保留原文', () => {
+      const doc = parseMarkdown(reportMd, '肖永吉案.md');
+      expect(collectOutlineNodes(doc.root).map((n) => n.text)).not.toContain('目录');
+      expect(serializeMarkdown(doc)).toBe(reportMd);
+    });
+
+    it('首 H1 前有实质内容时不提升，保留虚拟根（文件名）', () => {
+      const md = '开篇引言一段。\n\n# 第一部分\n\n# 第二部分\n';
+      const doc = parseMarkdown(md, '报告.md');
+      expect(doc.root.kind).toBe('root');
+      expect(doc.root.text).toBe('报告.md');
+      expect(doc.root.children.map((n) => n.text)).toEqual(['第一部分', '第二部分']);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+
+    it('英文 TOC 标题（大小写不敏感、任意层级）同样排除且往返无损', () => {
+      const md = '# Title\n\n## Table of Contents\n\n- item\n\n## Chapter 1\n\ntext\n';
+      const doc = parseMarkdown(md);
+      expect(collectOutlineNodes(doc.root).map((n) => n.text)).not.toContain('Table of Contents');
+      expect(serializeMarkdown(doc)).toBe(md);
     });
   });
 

@@ -315,20 +315,55 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     }
   }
 
-  // 抽取领域字段 + 生成 id（内容路径）
-  assignFieldsAndIds(syntheticRoot);
+  // 目录章节（目录/TOC/Contents）不入图：脑图本身就是目录。
+  // 序列化按行区间回填，被排除节的原文行归入前驱节点区间，往返无损。
+  removeTocSections(syntheticRoot);
 
-  // 单个 H1 提升为根（匹配方案 3.1）；否则保留虚拟根。
+  // 首标题为 H1 且其前只有空行/frontmatter 时提升为根（文档大标题即中心节点），
+  // 其余 H1 作为一级分支挂到根下——先序仍与文档顺序一致，序列化不受影响。
   let root = syntheticRoot;
+  const first = syntheticRoot.children[0];
   if (
-    syntheticRoot.children.length === 1 &&
-    syntheticRoot.children[0].kind === 'heading' &&
-    syntheticRoot.children[0].level === 1
+    first &&
+    first.kind === 'heading' &&
+    first.level === 1 &&
+    onlyPrefaceBefore(lines, first.lineIndex)
   ) {
-    root = syntheticRoot.children[0];
+    root = first;
+    root.children.push(...syntheticRoot.children.slice(1));
   }
 
+  // 抽取领域字段 + 生成 id（内容路径）
+  assignFieldsAndIds(root);
+
   return { root, lines };
+}
+
+const TOC_HEADING_TITLES = new Set(['目录', 'toc', 'contents', 'table of contents']);
+
+/** 从树中整节移除标题为「目录/TOC/Contents」的 heading 子树（任意层级、大小写不敏感）。 */
+function removeTocSections(node: MindNode): void {
+  node.children = node.children.filter((child) => {
+    if (child.kind === 'heading' && TOC_HEADING_TITLES.has(child.text.trim().toLowerCase())) {
+      return false;
+    }
+    removeTocSections(child);
+    return true;
+  });
+}
+
+/** lineIndex 之前是否只有空行与 frontmatter，即该标题位于文档开头（是文档大标题）。 */
+function onlyPrefaceBefore(lines: string[], lineIndex: number): boolean {
+  let i = 0;
+  if (lineIndex > 0 && FRONTMATTER_DELIM.test(lines[0])) {
+    let j = 1;
+    while (j < lineIndex && !FRONTMATTER_DELIM.test(lines[j])) j++;
+    if (j < lineIndex) i = j + 1;
+  }
+  for (; i < lineIndex; i++) {
+    if (lines[i].trim() !== '') return false;
+  }
+  return true;
 }
 
 function assignFieldsAndIds(root: MindNode): void {
