@@ -284,3 +284,55 @@ describe('Codex 审查回归（M-B 开工前修复）', () => {
     expect(serializeMarkdown(doc)).toBe(md);
   });
 });
+
+describe('Codex 第四轮复核回归', () => {
+  it('R4-P0-1: 段落打断列表后弹出列表栈，更深标题挂回原标题而非旧列表项', () => {
+    const md = '# H\n- a\n\nnote\n### sub\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'sub']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-2: 列表项内缩进围栏不打断列表，其后子项仍挂原项下', () => {
+    const md = ['# H', '- a', '  ```', '  code', '  ```', '  - child'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-2b: 顶格围栏仍打断列表（对照组）', () => {
+    const md = ['# H', '- a', '```', 'code', '```', '- b'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-3: tab 缩进的子项挂父项下（tab 按 4 列展开）', () => {
+    const md = '# H\n- a\n\t- child\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-4: 内容列按最近一项计算（多位序号），不足缩进的段落跳出列表', () => {
+    const md = '# H\n1. a\n10. b\n\n   para\n   - c\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b', 'c']);
+    const b = doc.root.children.find((n) => n.text === 'b');
+    expect(b?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});

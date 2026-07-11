@@ -22,8 +22,8 @@ import type {
 } from './types';
 
 const ATX_HEADING = /^(#{1,6})\s+(.*)$/;
-/** 无序与有序列表项；有序只取序号占位，深度按缩进算。 */
-const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+/** 无序与有序列表项；有序只取序号占位，深度按缩进算。捕获 marker 后空白以精确算内容列。 */
+const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/;
 const FENCE_OPEN = /^(\s*)(`{3,}|~{3,})(.*)$/;
 const FRONTMATTER_DELIM = /^---\s*$/;
 /** 主题分隔线：3+ 同字符（- * _）以空格分隔，整行匹配。 */
@@ -35,6 +35,18 @@ const EVIDENCE_ASPECTS = ['真实性', '合法性', '关联性'] as const;
 
 /** 列表每级缩进步长（标准 2 空格）。4 空格算两级，对真实笔记足够稳健。 */
 const INDENT_STEP = 2;
+
+/** tab 展开步长（CommonMark：tab 展开到下一个 4 列停靠位）。 */
+const TAB_STOP = 4;
+
+/** 前导空白按列宽展开（tab → 下一个 4 列停靠位），返回内容起始列。 */
+function expandCols(ws: string, startCol = 0): number {
+  let col = startCol;
+  for (const ch of ws) {
+    col = ch === '\t' ? (Math.floor(col / TAB_STOP) + 1) * TAB_STOP : col + 1;
+  }
+  return col;
+}
 
 function makeNode(kind: MindNode['kind'], level: number, text: string, lineIndex: number): MindNode {
   return {
@@ -127,6 +139,14 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   let listItemOpen = false;
   let afterFrontmatter = false;
 
+  /** 跳出列表段：弹出栈中残留的列表节点并清基准缩进。
+   *  只清 listBaseIndent 不弹栈会让后续更深标题挂到旧列表项下（Codex R4-P0-1）。 */
+  const breakList = (): void => {
+    while (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
+    listBaseIndent = null;
+    listItemOpen = false;
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
@@ -155,12 +175,17 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
         inFence = true;
         fenceMarker = marker;
         fenceLen = len;
-        listBaseIndent = null; // 开启围栏打断列表
+        // 缩进达到列表内容列的围栏是列表项内容，不打断列表（Codex R4-P0-2）；
+        // 顶格/不足缩进的围栏才跳出列表。围栏本身不是段落，关闭 lazy 续行窗口。
+        if (listBaseIndent !== null && expandCols(fenceMatch[1]) < listContentCol) {
+          breakList();
+        } else {
+          listItemOpen = false;
+        }
       } else if (marker === fenceMarker && len >= fenceLen && rest.trim() === '') {
         // CommonMark：闭合围栏须同字符、长度 ≥ 开启长度、且后缀仅空白
         //（```text 带 info string 是开围栏，不能闭合当前围栏）。
         inFence = false;
-        listBaseIndent = null;
       }
       // 其余（围栏内 content 行、或围栏内出现的带 info 开围栏）不打断列表、不产节点。
       continue;
@@ -193,24 +218,24 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
 
     // 主题分隔线（--- / *** / ___ 三连+，可含空格）：非大纲，按段落打断列表段
     if (THEMATIC_BREAK.test(line)) {
-      listBaseIndent = null;
+      breakList();
       continue;
     }
 
     // 列表项
     const l = line.match(LIST_ITEM);
     if (l) {
-      const indent = l[1].length;
-      const markerLen = l[2].length;
-      const text = l[3].trim();
+      const indent = expandCols(l[1]); // 缩进按列宽算（tab → 4 列停靠位，Codex R4-P0-3）
+      const text = l[4].trim();
       if (listBaseIndent === null || indent < listBaseIndent) {
         // 新列表段（首项 / 段落打断后重启 / 缩进回退到 base 以下）：
         // 先把栈回退到最近的非列表祖先（标题/根），否则新列表会挂在旧列表项下。
         while (stack.length > 1 && stack[stack.length - 1].kind === 'list') stack.pop();
         listBaseIndent = indent;
-        listContentCol = indent + markerLen + 1; // marker + 至少 1 空格 = 内容起始列
         listBaseDepth = stack[stack.length - 1].level + 1;
       }
+      // 内容列每项都更新（多位序号如 `10.` 比 `1.` 宽一列，不能沿用段首项，Codex R4-P0-4）
+      listContentCol = expandCols(l[3], indent + l[2].length);
       const nest = Math.floor((indent - listBaseIndent) / INDENT_STEP);
       const depth = listBaseDepth + nest;
       while (stack.length > 1 && stack[stack.length - 1].level >= depth) stack.pop();
@@ -227,8 +252,8 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     //     —— 含未缩进行（CommonMark 视为上一项段落续行）。
     // (b) 空行后：缩进 ≥ 内容列 = 松散列表续接，列表保持；缩进 < 内容列 = 跳出列表。
     if (line.trim() !== '' && listBaseIndent !== null && !listItemOpen) {
-      const lineIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
-      if (lineIndent < listContentCol) listBaseIndent = null;
+      const lineIndent = expandCols(line.match(/^(\s*)/)?.[1] ?? '');
+      if (lineIndent < listContentCol) breakList();
     }
   }
 
