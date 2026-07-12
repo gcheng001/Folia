@@ -423,7 +423,7 @@ export function AppLayout() {
   const handleRequestAiExtract = useCallback(() => {
     if (file.fileType !== 'markdown') return;
     if (!file.path) {
-      window.alert(t('toolbarVisualizationTitle') /* fallback i18n */);
+      window.alert(t('aiExtractionNeedsSave'));
       return;
     }
     setAiExtractionPhase('awaitingConfirmation');
