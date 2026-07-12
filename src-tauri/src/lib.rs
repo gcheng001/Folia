@@ -1,8 +1,11 @@
 use std::{
   collections::HashMap,
+  io::Read as _,
   path::{Path, PathBuf},
+  process::Stdio,
   sync::Mutex,
-  time::Instant,
+  thread,
+  time::{Duration, Instant},
 };
 
 use tauri::Emitter;
@@ -16,6 +19,15 @@ struct OpenedPaths(Mutex<Vec<String>>);
 
 const HTML_ANYTHING_URL: &str = "http://localhost:3000";
 const HTML_ANYTHING_IMPORT_KEY: &str = "folia-import-markdown";
+
+/// Agent 抽取规格 v1（bundled）。修改请同步升级规格版本号常量。
+const EXTRACTION_SPEC_V1: &str = include_str!("../extraction/spec-v1.md");
+#[allow(dead_code)] // 保留以备将来 build-info / 自描述 UI 使用
+const EXTRACTION_SPEC_VERSION: &str = "1";
+/// claude CLI 抽取运行总超时（5 分钟）。该上限和 html-anything 默认保持一致。
+const AGENT_EXTRACTION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// 抽取完成后 .foliaviz 落盘轮询间隔（agent 子进程退出 → 文件可能尚未 sync）。
+const AGENT_OUTPUT_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// 全局监听状态：路径 → (watcher, 最近一次事件时间戳)
 ///
@@ -583,6 +595,236 @@ async fn export_pdf_via_chrome(html: String, save_path: String) -> Result<(), St
   Ok(())
 }
 
+/// Agent 抽取通道的运行结果。前端用 kind 路由不同提示文案。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExtractionResult {
+  /// 成功时为 `<source>.foliaviz` 的绝对路径；失败/取消时为 null。
+  pub output_path: Option<String>,
+  /// 实际运行耗时（毫秒），含落盘等待。
+  pub duration_ms: u64,
+  /// 错误分类。前端按分类映射本地化文案。
+  /// ok | cli_not_found | spawn_failed | timeout | agent_failed | cancelled
+  pub kind: String,
+  /// 错误时的辅助诊断文本（stderr 摘要或解释）。
+  pub message: String,
+}
+
+/// 计算给定源 Markdown 路径对应的 `.foliaviz` 输出路径。
+/// 规则：`<源文件>.foliaviz`，与源文件同目录。Folia 端 `WatchPath` 也会据此订阅。
+fn derive_output_path(source: &Path) -> PathBuf {
+  let mut name = source
+    .file_name()
+    .map(|n| n.to_os_string())
+    .unwrap_or_default();
+  name.push(".foliaviz");
+  source
+    .parent()
+    .map(|p| p.join(&name))
+    .unwrap_or_else(|| PathBuf::from(&name))
+}
+
+/// 在 $PATH 里查找 `claude` 可执行文件。返回完整路径，未找到则 None。
+///
+/// 不直接调用 `which` crate——spawn 阶段的 PATH 解析依赖 std::process::Command，
+/// 这里只是给前端一个"先提示用户去装"的友好错误。
+fn locate_claude_cli() -> Option<PathBuf> {
+  let path_var = std::env::var_os("PATH")?;
+  for dir in std::env::split_paths(&path_var) {
+    for name in ["claude", "claude.exe"] {
+      let candidate = dir.join(name);
+      if candidate.is_file() {
+        return Some(candidate);
+      }
+    }
+  }
+  None
+}
+
+/// 拼出本次任务的 claude CLI prompt：把规格 + 源文路径 + 输出路径注入。
+fn build_agent_prompt(source: &Path, output: &Path) -> String {
+  format!(
+    "{spec}\n\n---\n\n# 本次任务参数\n\n- 源 Markdown 绝对路径：`{src}`\n- 输出 `.foliaviz` 绝对路径：`{out}`\n\n请读取源 Markdown，按上述规格把抽取结果写入输出路径。完成后不需要返回总结，直接退出即可。",
+    spec = EXTRACTION_SPEC_V1,
+    src = source.display(),
+    out = output.display(),
+  )
+}
+
+/// 在 `timeout` 范围内轮询 `path` 是否出现且非空。返回是否在超时前看到。
+fn wait_for_output(path: &Path, timeout: Duration) -> bool {
+  let deadline = Instant::now() + timeout;
+  loop {
+    if let Ok(meta) = std::fs::metadata(path) {
+      if meta.len() > 0 {
+        return true;
+      }
+    }
+    if Instant::now() >= deadline {
+      return false;
+    }
+    thread::sleep(AGENT_OUTPUT_POLL_INTERVAL);
+  }
+}
+
+/// ADR-0004 落地：spawn claude CLI 离线抽取源 Markdown，写出 .foliaviz。
+///
+/// 流程：探测 CLI → 校验源路径（已打开的 Markdown 文件）→ 算输出路径 →
+/// 把规格+源文路径拼成 prompt 喂给 `claude -p` → 等子进程退出 → 轮询 .foliaviz 落盘 → 返回。
+///
+/// v1 故意把 prompt 一次性塞给 `-p` 而非流式喂入 markdown：抽取是单次离线任务、
+/// 不需要交互、不需要中间进度；前端只关心"开始 / 完成 / 失败"三个状态。
+#[tauri::command]
+fn spawn_agent_extraction(source_path: String) -> Result<AgentExtractionResult, String> {
+  let started = Instant::now();
+  let source = PathBuf::from(&source_path);
+
+  // 路径白名单与现有 read_opened_document 保持一致，扩展名之外还要过黑名单，
+  // 避免前端在「AI 可视化」按钮里塞 /etc/passwd 类路径让 claude 误读。
+  if !is_openable_document_path(&source) {
+    return Err("只能对 Markdown / Folia 受支持文档调用 AI 抽取".into());
+  }
+  if is_denied_root(&source) {
+    return Err(format!(
+      "源路径命中黑名单，拒绝抽取：{}",
+      source.display()
+    ));
+  }
+  let source_meta = std::fs::metadata(&source)
+    .map_err(|error| format!("源文件不存在或不可读：{error}"))?;
+  if !source_meta.is_file() {
+    return Err(format!("源路径不是文件：{}", source.display()));
+  }
+
+  let output = derive_output_path(&source);
+  // 重新抽取前清理旧产物，避免前端的 WatchPath 误以为是"未变化"。
+  let _ = std::fs::remove_file(&output);
+
+  let cli = match locate_claude_cli() {
+    Some(p) => p,
+    None => {
+      return Ok(AgentExtractionResult {
+        output_path: None,
+        duration_ms: started.elapsed().as_millis() as u64,
+        kind: "cli_not_found".into(),
+        message: "未在 PATH 中找到 claude CLI。请先安装 Claude Code 并登录后重试。".into(),
+      });
+    }
+  };
+
+  let prompt = build_agent_prompt(&source, &output);
+  let mut child = match std::process::Command::new(&cli)
+    .arg("--permission-mode")
+    .arg("bypassPermissions")
+    .arg("--output-format")
+    .arg("text")
+    .arg("-p")
+    .arg(&prompt)
+    .stdin(Stdio::null())
+    .stdout(Stdio::null())
+    .stderr(Stdio::piped())
+    .current_dir(source.parent().unwrap_or_else(|| Path::new(".")))
+    .spawn()
+  {
+    Ok(child) => child,
+    Err(error) => {
+      return Ok(AgentExtractionResult {
+        output_path: None,
+        duration_ms: started.elapsed().as_millis() as u64,
+        kind: "spawn_failed".into(),
+        message: format!("启动 claude CLI 失败：{error}"),
+      });
+    }
+  };
+
+  // 阻塞轮询 try_wait 直到子进程退出或超时。stdout 不在前端呈现，直接丢弃。
+  let exit_status = loop {
+    match child.try_wait() {
+      Ok(Some(status)) => break Ok(status),
+      Ok(None) => {
+        if started.elapsed() >= AGENT_EXTRACTION_TIMEOUT {
+          let _ = child.kill();
+          let _ = child.wait();
+          break Err(AgentExtractionResult {
+            output_path: None,
+            duration_ms: started.elapsed().as_millis() as u64,
+            kind: "timeout".into(),
+            message: format!(
+              "AI 抽取超过 {} 秒未返回，已取消。",
+              AGENT_EXTRACTION_TIMEOUT.as_secs()
+            ),
+          });
+        }
+        thread::sleep(Duration::from_millis(200));
+      }
+      Err(error) => {
+        break Err(AgentExtractionResult {
+          output_path: None,
+          duration_ms: started.elapsed().as_millis() as u64,
+          kind: "spawn_failed".into(),
+          message: format!("等待 claude CLI 退出失败：{error}"),
+        });
+      }
+    }
+  };
+
+  let exit_status = match exit_status {
+    Ok(s) => s,
+    Err(early) => return Ok(early),
+  };
+  let stderr_text = match child.stderr.take() {
+    Some(mut pipe) => {
+      let mut buf = String::new();
+      let _ = pipe.read_to_string(&mut buf);
+      buf
+    }
+    None => String::new(),
+  };
+  let exit_ok = exit_status.success();
+
+  if !exit_ok {
+    return Ok(AgentExtractionResult {
+      output_path: None,
+      duration_ms: started.elapsed().as_millis() as u64,
+      kind: "agent_failed".into(),
+      message: if stderr_text.trim().is_empty() {
+        "claude CLI 退出码非零，无 stderr 输出".into()
+      } else {
+        format!("claude CLI 失败：{}", stderr_text.trim())
+      },
+    });
+  }
+
+  // 退出成功 → 等待 .foliaviz 落盘（最多 2 秒，覆盖 editor atomic-save 的小延迟）。
+  if !wait_for_output(&output, Duration::from_secs(2)) {
+    return Ok(AgentExtractionResult {
+      output_path: None,
+      duration_ms: started.elapsed().as_millis() as u64,
+      kind: "agent_failed".into(),
+      message: "claude CLI 已退出但未在源目录写入 .foliaviz。请查看终端输出。".into(),
+    });
+  }
+
+  Ok(AgentExtractionResult {
+    output_path: Some(output.to_string_lossy().into_owned()),
+    duration_ms: started.elapsed().as_millis() as u64,
+    kind: "ok".into(),
+    message: String::new(),
+  })
+}
+
+/// 占位命令：后续可扩展成「轮询当前正在跑的抽取任务进度」。
+/// v1 用 spawn_agent_extraction 同步返回足够，前端无需再 ping。
+#[tauri::command]
+fn agent_extraction_status() -> AgentExtractionResult {
+  AgentExtractionResult {
+    output_path: None,
+    duration_ms: 0,
+    kind: "idle".into(),
+    message: "空闲".into(),
+  }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let app_state = AppState {
@@ -608,7 +850,9 @@ pub fn run() {
       update_tab_window_tabs,
       close_tab_window,
       open_html_anything,
-      export_pdf_via_chrome
+      export_pdf_via_chrome,
+      spawn_agent_extraction,
+      agent_extraction_status
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -1218,5 +1462,36 @@ mod tests {
       url,
       "index.html?mode=tab-window&label=tab-window-1&tabIds=tab-a,tab-b"
     );
+  }
+
+  // ===== Agent 抽取通道：路径与命令输出形状测试 =====
+
+  #[test]
+  fn derive_output_path_appends_foliaviz_suffix() {
+    let source = PathBuf::from("/tmp/案件.md");
+    assert_eq!(
+      derive_output_path(&source),
+      PathBuf::from("/tmp/案件.md.foliaviz")
+    );
+  }
+
+  #[test]
+  fn derive_output_path_works_for_relative_source() {
+    let source = PathBuf::from("notes.md");
+    assert_eq!(
+      derive_output_path(&source),
+      PathBuf::from("notes.md.foliaviz")
+    );
+  }
+
+  #[test]
+  fn build_agent_prompt_includes_spec_and_paths() {
+    let prompt = build_agent_prompt(
+      Path::new("/abs/case.md"),
+      Path::new("/abs/case.md.foliaviz"),
+    );
+    assert!(prompt.contains("Folia 可视化抽取规格"));
+    assert!(prompt.contains("源 Markdown 绝对路径：`/abs/case.md`"));
+    assert!(prompt.contains("输出 `.foliaviz` 绝对路径：`/abs/case.md.foliaviz`"));
   }
 }
