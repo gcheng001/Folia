@@ -3997,3 +3997,107 @@ html[data-theme='dark'] .word-paper-content th,
 html[data-theme='dark'] .word-paper-content td {
   border-color: var(--border-soft);
 }
+
+/* ===== ADR-0004：AI 抽取确认遮罩 ===== */
+.ai-extraction-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-bg);
+  padding: 28px;
+}
+
+.ai-extraction-dialog {
+  width: min(520px, calc(100vw - 56px));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 8px 36px var(--shadow-soft);
+  padding: 20px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ai-extraction-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-extraction-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.ai-extraction-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+
+.ai-extraction-privacy {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg-soft, var(--hover-bg, rgba(0, 0, 0, 0.04)));
+  border-left: 3px solid var(--accent, #b58a4f);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.ai-extraction-privacy strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.ai-extraction-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.ai-extraction-cancel,
+.ai-extraction-confirm {
+  font: inherit;
+  padding: 7px 18px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ai-extraction-cancel:hover {
+  background: var(--control-hover-bg);
+}
+
+.ai-extraction-confirm {
+  background: var(--accent, #b58a4f);
+  border-color: var(--accent, #b58a4f);
+  color: var(--on-accent, #fff);
+  font-weight: 600;
+}
+
+.ai-extraction-confirm:hover {
+  filter: brightness(1.05);
+}
+
+.ai-extraction-confirm:focus-visible,
+.ai-extraction-cancel:focus-visible {
+  outline: 2px solid var(--accent, #b58a4f);
+  outline-offset: 2px;
+}
+
+.ai-extract-running {
+  color: var(--accent, #b58a4f);
+}

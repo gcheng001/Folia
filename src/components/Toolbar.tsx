@@ -13,6 +13,7 @@ import {
   SaveAll,
   Share2,
   SlidersHorizontal,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -45,6 +46,10 @@ type ToolbarProps = {
   newDraftActive: boolean;
   /** 是否处于分屏视图（高亮分屏按钮）。 */
   splitViewActive: boolean;
+  /** AI 抽取正在进行（按钮显示为不可点的旋转图标）。 */
+  aiExtractionRunning: boolean;
+  /** AI 抽取按钮的禁用态：非 Markdown、未保存或正在抽取时为 true。 */
+  aiExtractionDisabled: boolean;
   onNew: () => void;
   onDiscardNewDraft: () => void;
   onOpenHtmlAnything: () => void;
@@ -52,6 +57,7 @@ type ToolbarProps = {
   onToggleEditorMode: () => void;
   onToggleMindMapMode: () => void;
   onCreateVisualization: () => void;
+  onRequestAiExtract: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
   onOpen: () => void;
@@ -65,7 +71,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, aiExtractionRunning, aiExtractionDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onRequestAiExtract, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -186,6 +192,20 @@ export function Toolbar({
             aria-label={t('toolbarVisualizationLabel')}
           >
             <Share2 size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={aiExtractionRunning ? 'ai-extract-running' : ''}
+            onClick={onRequestAiExtract}
+            disabled={aiExtractionDisabled}
+            data-no-window-drag="true"
+            title={aiExtractionRunning
+              ? t('aiExtractionRunning')
+              : t('toolbarAiVisualizationTitle')}
+            aria-label={aiExtractionRunning
+              ? t('aiExtractionRunning')
+              : t('toolbarAiVisualizationLabel')}
+          >
+            <Sparkles size={iconSize} strokeWidth={strokeWidth} className={aiExtractionRunning ? 'spinning' : ''} />
           </button>
           <button
             className={wordPreviewVisible ? 'active' : ''}

@@ -25,6 +25,7 @@ import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
 import { TabBar } from '../components/TabBar';
+import { AiExtractionOverlay } from '../components/AiExtractionOverlay';
 import type { TabDragPayload } from '../components/tabDragPayload';
 import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
@@ -263,6 +264,12 @@ export function AppLayout() {
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  // ADR-0004：AI 抽取 UI 状态。
+  // - awaitingConfirmation：用户点了按钮但还没确认隐私说明。
+  // - running：已发起 spawn_agent_extraction，等 Rust 端返回。
+  // - null：空闲。错误与完成用临时 toast 走状态栏，不留在 aiExtractionPhase。
+  type AiExtractionPhase = 'awaitingConfirmation' | 'running' | null;
+  const [aiExtractionPhase, setAiExtractionPhase] = useState<AiExtractionPhase>(null);
   const editorMode = session.editorMode;
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
   const rightPanelMode = session.rightPanelMode;
@@ -409,6 +416,78 @@ export function AppLayout() {
     });
   }, [file.content, file.fileType, file.name, file.path, openInNewTab]);
 
+  // ADR-0004：AI 抽取通道。
+  // 用户先看到隐私说明 → 确认后 → 调 Rust spawn_agent_extraction → 读 .foliaviz →
+  // 经宽容导入（按 excerpt 重定位）→ 在新标签打开为可编辑工作簿。
+  // 三类中断：未保存（无 path）/ 未确认（不调命令）/ 用户点关闭。
+  const handleRequestAiExtract = useCallback(() => {
+    if (file.fileType !== 'markdown') return;
+    if (!file.path) {
+      window.alert(t('toolbarVisualizationTitle') /* fallback i18n */);
+      return;
+    }
+    setAiExtractionPhase('awaitingConfirmation');
+  }, [file.fileType, file.path, t]);
+
+  const handleCancelAiExtract = useCallback(() => {
+    setAiExtractionPhase(null);
+  }, []);
+
+  const handleConfirmAiExtract = useCallback(async () => {
+    if (file.fileType !== 'markdown' || !file.path) {
+      setAiExtractionPhase(null);
+      return;
+    }
+    setAiExtractionPhase('running');
+    const tStatus = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{
+        outputPath: string | null;
+        durationMs: number;
+        kind: string;
+        message: string;
+      }>('spawn_agent_extraction', { sourcePath: file.path });
+      if (result.kind !== 'ok' || !result.outputPath) {
+        const prefix = result.kind === 'cli_not_found'
+          ? tStatus('aiExtractionCliMissing')
+          : result.kind === 'timeout'
+            ? tStatus('aiExtractionTimedOut')
+            : result.kind === 'spawn_failed'
+              ? tStatus('aiExtractionSpawnFailed')
+              : tStatus('aiExtractionAgentFailed');
+        window.alert(`${prefix}${result.message}`);
+        return;
+      }
+      // 读取并宽容导入 agent 产出的 .foliaviz，按 excerpt 重定位锚点。
+      const [{ readTextWithEncoding }, { importExternalWorkbook, serializeVisualWorkbook }] = await Promise.all([
+        import('../services/fileService'),
+        import('../services/visualization/schema'),
+      ]);
+      const rawJson = await readTextWithEncoding(result.outputPath, 'UTF-8');
+      const { workbook, demotedCount } = importExternalWorkbook(rawJson, file.content);
+      const name = result.outputPath.split(/[\\/]/).pop() ?? `${file.name}.foliaviz`;
+      openInNewTab({
+        path: result.outputPath,
+        name,
+        content: serializeVisualWorkbook(workbook),
+        dirty: false,
+        lastSavedContent: serializeVisualWorkbook(workbook),
+        fileType: 'visualization',
+      });
+      const doneMsg = demotedCount > 0
+        ? tStatus('aiExtractionDoneWithDemoted').replace('{count}', String(demotedCount))
+        : tStatus('aiExtractionDone');
+      window.alert(doneMsg);
+    } catch (error) {
+      console.warn('ai extraction failed:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      window.alert(`${tStatus('aiExtractionAgentFailed')}${detail}`);
+    } finally {
+      setAiExtractionPhase(null);
+    }
+  }, [file.content, file.fileType, file.name, file.path, openInNewTab, settings.locale]);
+
   const handleToggleWordPreview = useCallback(() => {
     if (file.fileType === 'docx' || file.fileType === 'visualization') return;
     setHtmlPresentationVisible(false);
@@ -497,6 +576,7 @@ export function AppLayout() {
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
       if (e.key === 'b' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleMindMapMode(); return; }
       if (e.key === 'g' && e.altKey && !e.shiftKey) { e.preventDefault(); handleCreateVisualization(); return; }
+      if (e.key === 'g' && e.altKey && e.shiftKey) { e.preventDefault(); handleRequestAiExtract(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
@@ -512,7 +592,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleCreateVisualization, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleCreateVisualization, handleRequestAiExtract, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -982,6 +1062,8 @@ export function AppLayout() {
         viewActionsDisabled={isDocx || isVisualization}
         visualizationActive={isVisualization}
         visualizationDisabled={file.fileType !== 'markdown'}
+        aiExtractionRunning={aiExtractionPhase === 'running'}
+        aiExtractionDisabled={file.fileType !== 'markdown' || !file.path || aiExtractionPhase === 'running'}
         newDraftActive={newDraftActive}
         splitViewActive={splitView}
         onNew={handleNew}
@@ -991,6 +1073,7 @@ export function AppLayout() {
         onToggleEditorMode={handleToggleEditorMode}
         onToggleMindMapMode={handleToggleMindMapMode}
         onCreateVisualization={handleCreateVisualization}
+        onRequestAiExtract={handleRequestAiExtract}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
         onOpen={handleOpen}
@@ -1086,6 +1169,12 @@ export function AppLayout() {
           onCloseToRight={() => session.closeToRight(contextMenu.tabId)}
           onCloseAll={() => session.closeAll()}
           isPlaceholder={session.tabs.find((t) => t.id === contextMenu.tabId)?.isPlaceholder ?? false}
+        />
+      )}
+      {aiExtractionPhase === 'awaitingConfirmation' && (
+        <AiExtractionOverlay
+          onConfirm={() => void handleConfirmAiExtract()}
+          onCancel={handleCancelAiExtract}
         />
       )}
       {settingsVisible && (
