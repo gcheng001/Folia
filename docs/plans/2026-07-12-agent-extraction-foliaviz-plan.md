@@ -73,6 +73,29 @@ cd src-tauri && cargo test --offline --lib                   # 33 / 33
 3. `AiExtractionOverlay` / AI 按钮状态无专属单元测试（641/641 通过是因为没有测试覆盖它）。
 4. GUI 点击链路（按钮→遮罩→自动开标签）未在真实窗口验证——已安装的 `/Applications` 包早于本轮 commit，需重新打包后由用户点验。
 
+## 真机点验发现（2026-07-12 晚）
+
+用户真机点击暴露 headless 验收测不到的环境 bug：**Finder/Dock 启动的 GUI app 只继承
+launchd 精简 PATH，`locate_claude_cli` 只扫 env PATH 必然 `cli_not_found`**（claude 装在
+`~/.npm-global/bin`，且该路径配在 `.zshrc`，连登录 shell 都看不到）。
+
+修复（commit 见 git log `fix(ai-extract): GUI 启动时 PATH 精简`）：候选目录 = 登录 shell
+PATH + 继承 PATH + 兜底目录（`~/.npm-global/bin`、`~/.claude/local`、`~/.local/bin`、
+`/opt/homebrew/bin`、`/usr/local/bin`），locate 与 spawn 子进程 env 共用，OnceLock 缓存。
+新增 4 个单测（37/37）。
+
+## 用户体感反馈（2026-07-12 晚，二期优化输入）
+
+修复 PATH 后链路已通，但用户反馈：**点「开始抽取」后只有转圈，约一分钟以上无任何进度
+反馈，体验差**。v1 设计上只有「开始/完成/失败」三态（见 ADR-0004 与本计划"明确不做"），
+真实使用证明这不够。二期候选方向（按预估收益排序）：
+
+1. 流式进度：用 `--output-format stream-json` 消费 claude 的中间事件，在遮罩上显示
+   「正在读取源文 / 正在生成时间线…」级别的阶段文案。
+2. 后台化 + 可取消：抽取转入后台，状态条挂在标签页角落，随时可取消（Rust 端已有
+   `cancelled` 分类，缺前端入口）。
+3. 缩短感知时长：prompt 里直接内嵌源文内容省掉 agent 读盘往返；或允许选择更快的模型。
+
 ## 明确不做（v1）
 
 - html-anything 宿主入口（C3，二期候选）、MyAgents 派发。
