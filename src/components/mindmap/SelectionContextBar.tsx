@@ -3,10 +3,12 @@
  * 高频样式项，避免主工具栏臃肿。
  */
 import { useMemo } from 'react';
-import { DEFAULT_PALETTE, type CustomFlowEdge, type AnnotationGroup } from '../../services/mindmap/canvasSidecar';
+import { DEFAULT_PALETTE, type CustomFlowEdge, type AnnotationGroup, type NodeStyle } from '../../services/mindmap/canvasSidecar';
+
+type NodeSizeLevel = NonNullable<NodeStyle['sizeLevel']>;
 
 export type StyleTarget =
-  | { kind: 'node'; ids: string[]; color: string | null }
+  | { kind: 'node'; ids: string[]; color: string | null; sizeLevel: NodeSizeLevel | null }
   | { kind: 'edge'; ids: string[]; style: CustomFlowEdge }
   | { kind: 'group'; ids: string[]; style: AnnotationGroup['style'] };
 
@@ -15,11 +17,52 @@ interface SelectionContextBarProps {
   colorHistory: string[];
   onPickColor: (color: string) => void;
   onPickCustomColor: (color: string) => void;
+  onNodeSizeChange: (sizeLevel: NodeSizeLevel) => void;
   onEdgeStyleChange: (patch: Partial<CustomFlowEdge>) => void;
   onGroupStyleChange: (patch: Partial<AnnotationGroup['style']>) => void;
   onGroupTitleChange: (title: string) => void;
   onDeleteEdges: () => void;
   onDeleteGroups: () => void;
+}
+
+function NodeSizeRow({ value, onChange }: {
+  value: NodeSizeLevel | null;
+  onChange: (sizeLevel: NodeSizeLevel) => void;
+}): React.ReactElement {
+  const sizes: readonly (readonly [NodeSizeLevel, string])[] = [
+    ['xs', 'XS'],
+    ['s', 'S'],
+    ['m', 'M'],
+    ['l', 'L'],
+    ['xl', 'XL'],
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11, color: 'var(--text, #6b7280)' }}>尺寸</span>
+      <div style={{ display: 'inline-flex', border: '1px solid var(--border, #e5e7eb)', borderRadius: 4, overflow: 'hidden' }}>
+        {sizes.map(([size, label]) => (
+          <button
+            key={size}
+            type="button"
+            aria-pressed={value === size}
+            data-testid={`mm-size-${size}`}
+            onClick={() => onChange(size)}
+            style={{
+              minWidth: 28,
+              fontSize: 11,
+              padding: '2px 6px',
+              border: 'none',
+              background: value === size ? 'var(--accent, #3b82f6)' : 'transparent',
+              color: value === size ? 'var(--surface, #fff)' : 'var(--text, #1f2937)',
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 const SWATCH: React.CSSProperties = {
@@ -180,6 +223,9 @@ export function SelectionContextBar(props: SelectionContextBarProps): React.Reac
           <span style={{ fontSize: 14, lineHeight: 1, color: 'var(--text, #6b7280)' }}>＋</span>
         </label>
       </div>
+      {target.kind === 'node' && (
+        <NodeSizeRow value={target.sizeLevel} onChange={props.onNodeSizeChange} />
+      )}
       {target.kind === 'edge' && (
         <EdgeStyleRow
           edge={target.style}

@@ -83,6 +83,10 @@ const MindMapPane = lazy(() =>
   import('../components/mindmap/MindMapPane').then((module) => ({ default: module.MindMapPane })),
 );
 
+const VisualWorkbookPane = lazy(() =>
+  import('../components/visualization/VisualWorkbookPane').then((module) => ({ default: module.VisualWorkbookPane })),
+);
+
 const HtmlTableViewerOverlay = lazy(() =>
   import('../components/HtmlTableViewerOverlay').then((module) => ({ default: module.HtmlTableViewerOverlay })),
 );
@@ -136,6 +140,19 @@ function extractToc(content: string): TocItem[] {
   return headings;
 }
 
+function visualSourceInfo(content: string): { name: string; path?: string } | null {
+  try {
+    const value = JSON.parse(content) as { source?: { relativePath?: unknown; absolutePath?: unknown } };
+    if (typeof value.source?.relativePath !== 'string') return null;
+    return {
+      name: value.source.relativePath,
+      path: typeof value.source.absolutePath === 'string' ? value.source.absolutePath : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function toUpdateErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -167,6 +184,7 @@ export function AppLayout() {
     closeTab,
     activeTabId,
     updateActiveFile,
+    updateTabFile,
     updateActiveTabMeta,
     splitFile,
     splitView,
@@ -181,20 +199,21 @@ export function AppLayout() {
     openInNewTab(createEmptyFile());
   }, [openInNewTab]);
   // 当前 active 标签是未命名草稿（无 path）时显示“放弃新建”按钮
-  const newDraftActive = !!(activeTab && !activeTab.file.path);
+  const newDraftActive = !!(activeTab && !activeTab.file.path && activeTab.file.fileType === 'markdown');
   // 放弃新建草稿 = 关闭当前标签，active 自动回到前一个标签
   const handleDiscardNewDraft = useCallback(() => {
     if (activeTabId) closeTab(activeTabId);
   }, [activeTabId, closeTab]);
   // Anything HTML：把当前内容发到本地 localhost:3000 窗口
   const handleOpenHtmlAnything = useCallback(() => {
+    if (file.fileType === 'visualization') return;
     void import('@tauri-apps/api/core').then(({ invoke }) => {
       invoke('open_html_anything', {
         content: file.content,
         fileName: file.name,
       }).catch((error) => console.warn('open_html_anything failed:', error));
     });
-  }, [file.content, file.name]);
+  }, [file.content, file.fileType, file.name]);
   // 分屏开关：开启时自动选第一个非 active、非占位标签作为右侧分屏；关闭时清分屏。
   const handleToggleSplit = useCallback(() => {
     if (splitView) {
@@ -233,7 +252,9 @@ export function AppLayout() {
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
   const [toc, setToc] = useState<TocItem[]>(() => {
     const initial = activeTab;
-    return initial?.file.fileType === 'docx' ? [] : extractToc(initial?.file.content ?? '');
+    return initial?.file.fileType === 'docx' || initial?.file.fileType === 'visualization'
+      ? []
+      : extractToc(initial?.file.content ?? '');
   });
   // 跟踪最近一次已为其生成 TOC 的 activeTabId；切换 tab 时与当前 activeTabId 不一致
   // 就在 render 阶段同步重置 toc 与挂起的防抖刷新（ISS-163）。详见下方 if 分支。
@@ -249,6 +270,7 @@ export function AppLayout() {
   const [resizing, setResizing] = useState(false);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
   const [htmlTableViewer, setHtmlTableViewer] = useState<{ block: HtmlTableBlock } | null>(null);
+  const [detachedVisualSource, setDetachedVisualSource] = useState<{ path: string; content: string } | null>(null);
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
   const [updateState, setUpdateState] = useState<UpdateInstallState>({ phase: 'idle' });
 
@@ -259,7 +281,9 @@ export function AppLayout() {
   // 不会造成级联渲染。
   if (lastTocTabId !== activeTabId) {
     setLastTocTabId(activeTabId);
-    setToc(activeTab?.file.fileType === 'docx' ? [] : extractToc(activeTab?.file.content ?? ''));
+    setToc(activeTab?.file.fileType === 'docx' || activeTab?.file.fileType === 'visualization'
+      ? []
+      : extractToc(activeTab?.file.content ?? ''));
   }
 
   useEffect(() => {
@@ -293,7 +317,7 @@ export function AppLayout() {
     if (opened) {
       openInNewTab(opened);
       cancelPendingTocRefresh();
-      setToc(extractToc(opened.content));
+      setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' ? [] : extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       setHtmlPresentationVisible(false);
     }
@@ -304,7 +328,7 @@ export function AppLayout() {
     const opened = await openPath(path, settings.defaultEncoding);
     openInNewTab(opened);
     cancelPendingTocRefresh();
-    setToc(opened.fileType === 'docx' ? [] : extractToc(opened.content));
+    setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
@@ -326,7 +350,7 @@ export function AppLayout() {
   }, [file, updateActiveFile]);
 
   const handleExportWord = useCallback(async () => {
-    if (!file.path || file.fileType === 'docx') return;
+    if (!file.path || file.fileType !== 'markdown') return;
     try {
       const { exportToWord } = await import('../services/wordExportService');
       await exportToWord(file.content, file.name, getExportPresetConfig());
@@ -341,6 +365,10 @@ export function AppLayout() {
       content: value,
       dirty: value !== prev.lastSavedContent,
     }));
+    if (file.fileType === 'visualization') {
+      setToc([]);
+      return;
+    }
     // extractToc 是全文正则扫描，超长文档每键都跑会卡顿；防抖到输入停顿后刷新（ISS-159）。
     if (tocRefreshTimerRef.current !== null) {
       window.clearTimeout(tocRefreshTimerRef.current);
@@ -349,28 +377,46 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
       setToc(extractToc(value));
     }, TOC_REFRESH_DEBOUNCE_MS);
-  }, [updateActiveFile]);
+  }, [file.fileType, updateActiveFile]);
 
   const handleToggleEditorMode = useCallback(() => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ editorMode: editorMode === 'source' ? 'wysiwyg' : 'source' });
   }, [file.fileType, editorMode, updateActiveTabMeta]);
 
-  const handleToggleMindMapMode = useCallback(() => {
-    if (file.fileType === 'docx') return;
+  const handleToggleMindMapMode = useCallback(async () => {
+    if (file.fileType !== 'markdown') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ editorMode: editorMode === 'mindmap' ? 'wysiwyg' : 'mindmap' });
-  }, [file.fileType, editorMode, updateActiveTabMeta]);
+  }, [editorMode, file.fileType, updateActiveTabMeta]);
+
+  const handleCreateVisualization = useCallback(async () => {
+    if (file.fileType !== 'markdown') return;
+    setHtmlPresentationVisible(false);
+    const [{ createVisualWorkbookDraft, visualizationDraftName }, { serializeVisualWorkbook }] = await Promise.all([
+      import('../services/visualization/draft'),
+      import('../services/visualization/schema'),
+    ]);
+    const workbook = createVisualWorkbookDraft({ markdown: file.content, sourceName: file.name, sourcePath: file.path });
+    openInNewTab({
+      path: '',
+      name: visualizationDraftName(file.name),
+      content: serializeVisualWorkbook(workbook),
+      dirty: true,
+      lastSavedContent: '',
+      fileType: 'visualization',
+    });
+  }, [file.content, file.fileType, file.name, file.path, openInNewTab]);
 
   const handleToggleWordPreview = useCallback(() => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'word' ? 'none' : 'word' });
   }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleToggleWechatPreview = useCallback(() => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'wechat' ? 'none' : 'wechat' });
   }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
@@ -449,7 +495,8 @@ export function AppLayout() {
       if (e.key === 's' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleSave(); return; }
       if (e.key === 'e' && e.shiftKey && !e.altKey) { e.preventDefault(); handleExportWord(); return; }
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
-      if (e.key === 'g' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleMindMapMode(); return; }
+      if (e.key === 'b' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleMindMapMode(); return; }
+      if (e.key === 'g' && e.altKey && !e.shiftKey) { e.preventDefault(); handleCreateVisualization(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
@@ -465,7 +512,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleCreateVisualization, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -661,6 +708,29 @@ export function AppLayout() {
   }, [file.dirty, file.name, isTauriRuntime]);
 
   const isDocx = file.fileType === 'docx';
+  const isVisualization = file.fileType === 'visualization';
+  const visualSource = isVisualization ? visualSourceInfo(file.content) : null;
+  const boundSourceTab = isVisualization
+    ? session.tabs.find((tab) => tab.file.fileType === 'markdown'
+      && ((visualSource?.path && tab.file.path === visualSource.path) || tab.file.name === visualSource?.name))
+    : undefined;
+  useEffect(() => {
+    let cancelled = false;
+    if (!isVisualization || boundSourceTab || !visualSource?.path) {
+      return () => { cancelled = true; };
+    }
+    void import('../services/fileService').then(({ openPath }) => openPath(visualSource.path!, settings.defaultEncoding))
+      .then((opened) => {
+        if (!cancelled && opened.fileType === 'markdown') setDetachedVisualSource({ path: visualSource.path!, content: opened.content });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [boundSourceTab, isVisualization, settings.defaultEncoding, visualSource?.path]);
+  const splitVisualSource = splitFile?.fileType === 'visualization' ? visualSourceInfo(splitFile.content) : null;
+  const splitBoundSourceTab = splitFile?.fileType === 'visualization'
+    ? session.tabs.find((tab) => tab.file.fileType === 'markdown'
+      && ((splitVisualSource?.path && tab.file.path === splitVisualSource.path) || tab.file.name === splitVisualSource?.name))
+    : undefined;
   const updateToolbarStatus = updateState.phase === 'ready' || updateState.phase === 'installing'
     ? { phase: updateState.phase, version: updateState.update.version }
     : undefined;
@@ -670,7 +740,7 @@ export function AppLayout() {
   const rightPanelEffective = splitView ? 'none' : rightPanelMode;
   const mainContentClassName = [
     'main-content',
-    isDocx ? 'docx-layout' : 'writing-layout',
+    isDocx ? 'docx-layout' : isVisualization ? 'visualization-layout' : 'writing-layout',
     rightPanelEffective !== 'none' && !isDocx ? 'right-panel-open' : '',
     rightPanelEffective === 'word' && !isDocx ? 'word-preview-open' : '',
     rightPanelEffective === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
@@ -781,6 +851,19 @@ export function AppLayout() {
     <div className="editor-pane readonly-pane">
       <span>Word 文件为只读</span>
     </div>
+  ) : isVisualization ? (
+    <Suspense fallback={<div className="visual-workbook lazy-pane"><span>可视化工作簿加载中</span></div>}>
+      <VisualWorkbookPane
+        content={file.content}
+        onChange={handleContentChange}
+        sourceMarkdown={boundSourceTab?.file.content ?? (detachedVisualSource && detachedVisualSource.path === visualSource?.path ? detachedVisualSource.content : undefined)}
+        onApplySourceChange={boundSourceTab ? (content) => updateTabFile(boundSourceTab.id, (opened) => ({
+          ...opened,
+          content,
+          dirty: content !== opened.lastSavedContent,
+        })) : undefined}
+      />
+    </Suspense>
   ) : editorMode === 'source' ? (
     <Suspense fallback={<div className="editor-pane lazy-pane"><span>源码编辑器加载中</span></div>}>
       <EditorPane
@@ -816,6 +899,19 @@ export function AppLayout() {
   const splitEditorPane = splitFile ? (
     splitFile.fileType === 'docx' ? (
       <div className="editor-pane readonly-pane"><span>Word 文件为只读</span></div>
+    ) : splitFile.fileType === 'visualization' ? (
+      <Suspense fallback={<div className="visual-workbook lazy-pane"><span>可视化工作簿加载中</span></div>}>
+        <VisualWorkbookPane
+          content={splitFile.content}
+          onChange={(value) => updateSplitTabFile((f) => ({ ...f, content: value, dirty: value !== f.lastSavedContent }))}
+          sourceMarkdown={splitBoundSourceTab?.file.content}
+          onApplySourceChange={splitBoundSourceTab ? (content) => updateTabFile(splitBoundSourceTab.id, (opened) => ({
+            ...opened,
+            content,
+            dirty: content !== opened.lastSavedContent,
+          })) : undefined}
+        />
+      </Suspense>
     ) : (
       <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>分屏编辑器加载中</span></div>}>
         <WysiwygEditorPane
@@ -883,6 +979,9 @@ export function AppLayout() {
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
         editingDisabled={isDocx}
+        viewActionsDisabled={isDocx || isVisualization}
+        visualizationActive={isVisualization}
+        visualizationDisabled={file.fileType !== 'markdown'}
         newDraftActive={newDraftActive}
         splitViewActive={splitView}
         onNew={handleNew}
@@ -891,6 +990,7 @@ export function AppLayout() {
         onToggleSplit={handleToggleSplit}
         onToggleEditorMode={handleToggleEditorMode}
         onToggleMindMapMode={handleToggleMindMapMode}
+        onCreateVisualization={handleCreateVisualization}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
         onOpen={handleOpen}

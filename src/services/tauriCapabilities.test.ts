@@ -63,6 +63,11 @@ describe('Tauri capabilities', () => {
         ext: expect.arrayContaining(['docx']),
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       }),
+      expect.objectContaining({
+        description: 'Folia visualization workbook',
+        ext: expect.arrayContaining(['foliaviz']),
+        mimeType: 'application/vnd.folia.visualization+json',
+      }),
     ]));
 
     for (const association of associations) {

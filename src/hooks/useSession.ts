@@ -167,6 +167,10 @@ export function useSession() {
     dispatch({ type: 'updateActiveFile', updater });
   }, []);
 
+  const updateTabFile = useCallback((id: string, updater: (f: OpenedFile) => OpenedFile) => {
+    dispatch({ type: 'updateTabFile', id, updater });
+  }, []);
+
   const updateActiveTabMeta = useCallback(
     (meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>>) => {
       dispatch({ type: 'updateActiveTabMeta', meta });
@@ -297,6 +301,7 @@ export function useSession() {
     updateSplitTabFile,
     markPathInvalid,
     updateActiveFile,
+    updateTabFile,
     updateActiveTabMeta,
     recordRecentFile,
     removeRecentFile,

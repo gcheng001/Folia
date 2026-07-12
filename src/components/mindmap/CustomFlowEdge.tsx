@@ -33,7 +33,7 @@ function safeEdgeId(id: string | undefined): string {
 }
 
 export const CustomFlowEdge = memo((props: EdgeProps) => {
-  const { id, sourceX, sourceY, targetX, targetY, data } = props;
+  const { id, sourceX, sourceY, targetX, targetY, data, selected } = props;
   const { edge } = (data as unknown as CustomFlowEdgeData) ?? { edge: null };
   if (!edge) return null;
 
@@ -52,18 +52,33 @@ export const CustomFlowEdge = memo((props: EdgeProps) => {
   const markerEnd = edge.arrow === 'none' ? undefined : endId;
 
   return (
-    <BaseEdge
-      id={id}
-      path={path}
-      markerEnd={markerEnd}
-      markerStart={markerStart}
-      style={{
-        stroke: edge.color,
-        strokeWidth: edge.width,
-        strokeDasharray: dasharray,
-        fill: 'none',
-      }}
-    />
+    <>
+      {selected && (
+        <path
+          d={path}
+          className="mindmap-selection-ring"
+          stroke="#2563eb"
+          strokeWidth={Math.max(edge.width + 7, 8)}
+          strokeLinecap="round"
+          fill="none"
+          opacity={0.22}
+          pointerEvents="none"
+        />
+      )}
+      <BaseEdge
+        id={id}
+        path={path}
+        className="customFlow"
+        markerEnd={markerEnd}
+        markerStart={markerStart}
+        style={{
+          stroke: edge.color,
+          strokeWidth: edge.width,
+          strokeDasharray: dasharray,
+          fill: 'none',
+        }}
+      />
+    </>
   );
 });
 
@@ -114,4 +129,3 @@ export function EdgeMarkerDefs(props: EdgeMarkerDefsProps): React.ReactElement {
     </g>
   );
 }
-

@@ -106,6 +106,7 @@ export async function openFile(encoding: DefaultEncoding = 'UTF-8'): Promise<Ope
       { name: 'Markdown', extensions: ['md', 'markdown'] },
       { name: 'HTML', extensions: ['html', 'htm'] },
       { name: 'Word 文档', extensions: ['docx'] },
+      { name: 'Folia 可视化', extensions: ['foliaviz'] },
       { name: 'All', extensions: ['*'] },
     ],
   });
@@ -128,6 +129,13 @@ export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'
       return { path, name, content: '', dirty: false, lastSavedContent: '', fileType: 'docx', docxHtml };
     }
 
+    if (ext === 'foliaviz') {
+      const content = await readTextWithEncoding(path, 'UTF-8');
+      const { parseVisualWorkbook } = await import('./visualization/schema');
+      parseVisualWorkbook(content);
+      return { path, name, content, dirty: false, lastSavedContent: content, fileType: 'visualization' };
+    }
+
     const content = await readTextWithEncoding(path, encoding);
     const fileType = ext === 'html' || ext === 'htm' ? 'html' as const : 'markdown' as const;
 
@@ -145,6 +153,10 @@ export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
   if (!file.path) return saveFileAs(file);
 
   try {
+    if (file.fileType === 'visualization') {
+      const { parseVisualWorkbook } = await import('./visualization/schema');
+      parseVisualWorkbook(file.content);
+    }
     if (isTauriRuntime()) {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('write_opened_document', { path: file.path, content: file.content });
@@ -161,16 +173,23 @@ export async function saveFile(file: OpenedFile): Promise<OpenedFile> {
 }
 
 export async function saveFileAs(file: OpenedFile): Promise<OpenedFile> {
+  const isVisualization = file.fileType === 'visualization';
   const path = await save({
-    defaultPath: file.name || 'untitled.md',
-    filters: [
-      { name: 'Markdown', extensions: ['md'] },
-      { name: 'HTML', extensions: ['html', 'htm'] },
-    ],
+    defaultPath: file.name || (isVisualization ? 'untitled.foliaviz' : 'untitled.md'),
+    filters: isVisualization
+      ? [{ name: 'Folia 可视化', extensions: ['foliaviz'] }]
+      : [
+          { name: 'Markdown', extensions: ['md'] },
+          { name: 'HTML', extensions: ['html', 'htm'] },
+        ],
   });
 
   if (!path) return file;
 
+  if (isVisualization) {
+    const { parseVisualWorkbook } = await import('./visualization/schema');
+    parseVisualWorkbook(file.content);
+  }
   await writeTextFile(path, file.content);
   const name = fileNameFromPath(path);
 

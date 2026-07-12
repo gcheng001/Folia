@@ -258,6 +258,59 @@ describe('AppLayout update flow', () => {
     expect(host.textContent).toContain('original.md');
     expect(host.textContent).not.toContain('未命名');
   });
+
+  it('creates an independent dirty visualization tab without changing the source Markdown', async () => {
+    const content = '# 案件经过\n2024年1月2日 签订合同。\n2024年2月3日 完成交付。';
+    fileServiceMock.openFile.mockResolvedValue({
+      path: '/tmp/case.md',
+      name: 'case.md',
+      content,
+      dirty: false,
+      lastSavedContent: content,
+      fileType: 'markdown',
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', metaKey: true }));
+      for (let i = 0; i < 3; i += 1) await flushPromises();
+    });
+
+    const visualizeButton = host.querySelector<HTMLButtonElement>('button[aria-label="一键可视化"]');
+    expect(visualizeButton).toBeTruthy();
+    const mindMapButton = host.querySelector<HTMLButtonElement>('button[aria-label="脑图"]');
+    expect(mindMapButton).toBeTruthy();
+
+    await act(async () => {
+      visualizeButton?.click();
+      await vi.dynamicImportSettled();
+      for (let i = 0; i < 6; i += 1) await flushPromises();
+    });
+    await act(async () => {
+      await vi.dynamicImportSettled();
+      await flushPromises();
+    });
+
+    const visualTab = host.querySelector<HTMLElement>('[role="tab"][title="case.foliaviz"]');
+    expect(visualTab).toBeTruthy();
+    expect(visualTab?.querySelector('[data-dirty]')).toBeTruthy();
+    expect(host.querySelector('[aria-label="可视化工作簿"]')).toBeTruthy();
+    expect(host.querySelector('[aria-label="放弃新建 Markdown"]')).toBeNull();
+
+    const sourceTab = host.querySelector<HTMLElement>('[role="tab"][title="/tmp/case.md"]');
+    await act(async () => {
+      sourceTab?.click();
+      await flushPromises();
+      host.querySelector<HTMLButtonElement>('button[aria-label="源码模式"]')?.click();
+      for (let i = 0; i < 3; i += 1) await flushPromises();
+    });
+
+    expect(editorPaneMock.source).toBe(content);
+  });
 });
 
 describe('AppLayout settings first-open', () => {

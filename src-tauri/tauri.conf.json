@@ -81,6 +81,14 @@
         "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "role": "Viewer",
         "rank": "Alternate"
+      },
+      {
+        "ext": ["foliaviz"],
+        "name": "Folia Visualization",
+        "description": "Folia visualization workbook",
+        "mimeType": "application/vnd.folia.visualization+json",
+        "role": "Editor",
+        "rank": "Default"
       }
     ],
     "android": {

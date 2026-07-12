@@ -371,3 +371,25 @@ describe('sessionReducer split-view', () => {
     expect(next.splitView).toBe(false);
   });
 });
+
+describe('sessionReducer.updateTabFile', () => {
+  it('updates a bound background tab without changing the active tab', () => {
+    const source = makeTabFromFile(file('source.md', '# 原文'));
+    const visual = makeTabFromFile(file('source.foliaviz', '{}'));
+    const start: SessionState = {
+      tabs: [source, visual],
+      activeTabId: visual.id,
+      recentFiles: [],
+      splitTabId: null,
+      splitView: false,
+    };
+    const next = sessionReducer(start, {
+      type: 'updateTabFile',
+      id: source.id,
+      updater: (opened) => ({ ...opened, content: '# 修正', dirty: true }),
+    });
+    expect(next.activeTabId).toBe(visual.id);
+    expect(next.tabs[0].file.content).toBe('# 修正');
+    expect(next.tabs[1].file.content).toBe('{}');
+  });
+});

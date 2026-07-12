@@ -8,6 +8,8 @@ import type { EdgeDisplayMode } from '../../services/mindmap/canvasSidecar';
 
 export type MindMapTool =
   | 'select'
+  | 'draw-arrow'
+  | 'draw-line'
   | 'connect'
   | 'auto-layout'
   | 'align'
@@ -26,6 +28,8 @@ interface MindMapToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   onAutoLayout: () => void;
+  onTidyCanvas: () => void;
+  onClearFreeLines: () => void;
   onUndo: () => void;
   onRedo: () => void;
   // P1-5: 导出参数包含format, scale, background
@@ -109,8 +113,9 @@ export function MindMapToolbar(props: MindMapToolbarProps): React.ReactElement {
     activeTool, onToolChange,
     edgeMode, onEdgeModeChange,
     canUndo, canRedo,
-    onAutoLayout, onUndo, onRedo,
-    onExport, selectedCount, onCreateGroup,
+    onAutoLayout, onTidyCanvas, onUndo, onRedo,
+  onExport, selectedCount, onCreateGroup,
+    onClearFreeLines,
     onAlign, onToggleThemePanel, showThemePanel,
   } = props;
   const [exportOpen, setExportOpen] = useState(false);
@@ -169,7 +174,28 @@ export function MindMapToolbar(props: MindMapToolbarProps): React.ReactElement {
           </svg>
         </ToolButton>
         <ToolButton
-          label="连接模式（Esc 退出）"
+          label="画箭头（Esc 退出）"
+          active={activeTool === 'draw-arrow'}
+          onClick={() => onToolChange(activeTool === 'draw-arrow' ? 'select' : 'draw-arrow')}
+          testId="mm-tool-draw-arrow"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+            <path d="M2 12 L13 3" stroke="currentColor" strokeWidth="1.6" fill="none" />
+            <path d="M9 3 H13 V7" stroke="currentColor" strokeWidth="1.6" fill="none" />
+          </svg>
+        </ToolButton>
+        <ToolButton
+          label="画线段（Esc 退出）"
+          active={activeTool === 'draw-line'}
+          onClick={() => onToolChange(activeTool === 'draw-line' ? 'select' : 'draw-line')}
+          testId="mm-tool-draw-line"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+            <path d="M2 12 L14 4" stroke="currentColor" strokeWidth="1.8" fill="none" />
+          </svg>
+        </ToolButton>
+        <ToolButton
+          label="节点连接（Esc 退出）"
           active={activeTool === 'connect'}
           onClick={() => onToolChange(activeTool === 'connect' ? 'select' : 'connect')}
           testId="mm-tool-connect"
@@ -299,6 +325,27 @@ export function MindMapToolbar(props: MindMapToolbarProps): React.ReactElement {
             </div>
           )}
         </div>
+        <ToolButton
+          label="一键规整"
+          onClick={onTidyCanvas}
+          testId="mm-tool-tidy"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+            <path d="M2 4 H14 M2 8 H10 M2 12 H14" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            <path d="M11 6 L13 8 L11 10" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          </svg>
+        </ToolButton>
+        <ToolButton
+          label="清除手动画线"
+          onClick={onClearFreeLines}
+          testId="mm-tool-clear-free-lines"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+            <path d="M3 12 L12 3" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            <path d="M10 3 H12 V5" stroke="currentColor" strokeWidth="1.5" fill="none" />
+            <path d="M4 4 L12 12 M12 4 L4 12" stroke="currentColor" strokeWidth="1.4" fill="none" opacity="0.75" />
+          </svg>
+        </ToolButton>
         <ToolButton
           label="添加标注框"
           disabled={groupButtonDisabled}

@@ -6,6 +6,7 @@ import {
   FilePlus,
   FolderOpen,
   Globe,
+  GitFork,
   Newspaper,
   RefreshCw,
   Save,
@@ -34,6 +35,12 @@ type ToolbarProps = {
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
+  /** 当前文件不能进入源码/预览等文档视图时为 true；不影响保存。 */
+  viewActionsDisabled: boolean;
+  /** 当前标签本身是可视化工作簿。 */
+  visualizationActive: boolean;
+  /** 当前文件不能作为一键可视化的 Markdown 来源。 */
+  visualizationDisabled: boolean;
   /** 当前 active 标签是未命名草稿时为 true，用于显示“放弃新建”按钮。 */
   newDraftActive: boolean;
   /** 是否处于分屏视图（高亮分屏按钮）。 */
@@ -44,6 +51,7 @@ type ToolbarProps = {
   onToggleSplit: () => void;
   onToggleEditorMode: () => void;
   onToggleMindMapMode: () => void;
+  onCreateVisualization: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
   onOpen: () => void;
@@ -57,7 +65,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -152,7 +160,7 @@ export function Toolbar({
           <button
             className={editorMode === 'source' ? 'active' : ''}
             onClick={onToggleEditorMode}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarSourceTitle')}
             aria-label={t('toolbarSourceLabel')}
@@ -162,17 +170,27 @@ export function Toolbar({
           <button
             className={editorMode === 'mindmap' ? 'active' : ''}
             onClick={onToggleMindMapMode}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarMindMapTitle')}
             aria-label={t('toolbarMindMapLabel')}
+          >
+            <GitFork size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={visualizationActive ? 'active' : ''}
+            onClick={onCreateVisualization}
+            disabled={visualizationDisabled}
+            data-no-window-drag="true"
+            title={t('toolbarVisualizationTitle')}
+            aria-label={t('toolbarVisualizationLabel')}
           >
             <Share2 size={iconSize} strokeWidth={strokeWidth} />
           </button>
           <button
             className={wordPreviewVisible ? 'active' : ''}
             onClick={onToggleWordPreview}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarWordPreviewTitle')}
             aria-label={t('toolbarWordPreviewLabel')}
@@ -182,14 +200,14 @@ export function Toolbar({
           <button
             className={wechatPreviewVisible ? 'active' : ''}
             onClick={onToggleWechatPreview}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarWechatPreviewTitle')}
             aria-label={t('toolbarWechatPreviewLabel')}
           >
             <Newspaper size={iconSize} strokeWidth={strokeWidth} />
           </button>
-          <button data-no-window-drag="true" onClick={onOpenHtmlAnything} title="Anything HTML" aria-label="Anything HTML">
+          <button data-no-window-drag="true" onClick={onOpenHtmlAnything} disabled={viewActionsDisabled} title="Anything HTML" aria-label="Anything HTML">
             <Globe size={iconSize} strokeWidth={strokeWidth} />
           </button>
           <button

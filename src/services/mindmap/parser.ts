@@ -367,16 +367,18 @@ function onlyPrefaceBefore(lines: string[], lineIndex: number): boolean {
 }
 
 function assignFieldsAndIds(root: MindNode): void {
-  const walk = (node: MindNode, idPath: string): void => {
-    const segment = node.kind === 'root' ? '' : node.text;
+  const walk = (node: MindNode, idPath: string, siblings: MindNode[]): void => {
+    const sameName = siblings.filter((sibling) => sibling.kind === node.kind && sibling.text === node.text);
+    const occurrence = sameName.indexOf(node) + 1;
+    const segment = node.kind === 'root' ? '' : `${node.kind}:${node.text}${sameName.length > 1 ? `#${occurrence}` : ''}`;
     node.id = idPath ? `${idPath}/${segment}` : segment;
     extractTags(node.text, node);
     extractWiki(node.text, node);
     const ev = extractEvidence(node.text);
     if (ev) node.evidence = ev;
-    for (const child of node.children) walk(child, node.id);
+    for (const child of node.children) walk(child, node.id, node.children);
   };
-  walk(root, '');
+  walk(root, '', [root]);
 }
 
 /** 统计文档中所有真实节点（先序 DFS，跳过虚拟根），用于序列化与渲染。 */

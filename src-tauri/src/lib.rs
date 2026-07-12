@@ -733,7 +733,7 @@ fn is_openable_document_path(path: &Path) -> bool {
       .and_then(|extension| extension.to_str())
       .map(|extension| extension.to_ascii_lowercase())
       .as_deref(),
-    Some("md" | "markdown" | "html" | "htm" | "docx")
+    Some("md" | "markdown" | "html" | "htm" | "docx" | "foliaviz")
   )
 }
 
@@ -744,7 +744,7 @@ fn is_writable_document_path(path: &Path) -> bool {
       .and_then(|extension| extension.to_str())
       .map(|extension| extension.to_ascii_lowercase())
       .as_deref(),
-    Some("md" | "markdown" | "html" | "htm")
+    Some("md" | "markdown" | "html" | "htm" | "foliaviz")
   )
 }
 
@@ -792,6 +792,26 @@ mod tests {
     assert!(
       error.contains("file too large"),
       "expected size-limit error, got: {error}"
+    );
+    let _ = std::fs::remove_file(path);
+  }
+
+  #[test]
+  fn read_and_write_opened_document_support_foliaviz() {
+    let path = temp_path("workbook.foliaviz");
+    std::fs::write(&path, b"{\"kind\":\"folia.visual.workbook\"}").unwrap();
+
+    let bytes = read_opened_document_bytes(&path).unwrap();
+    assert_eq!(bytes, b"{\"kind\":\"folia.visual.workbook\"}");
+
+    write_opened_document(
+      path.to_string_lossy().to_string(),
+      "{\"kind\":\"folia.visual.workbook\",\"updated\":true}".into(),
+    )
+    .unwrap();
+    assert_eq!(
+      std::fs::read_to_string(&path).unwrap(),
+      "{\"kind\":\"folia.visual.workbook\",\"updated\":true}"
     );
     let _ = std::fs::remove_file(path);
   }

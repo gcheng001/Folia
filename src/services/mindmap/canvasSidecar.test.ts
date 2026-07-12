@@ -55,6 +55,37 @@ describe('canvasSidecar', () => {
     expect(got.colorHistory).toEqual(['#000', '#fff']);
   });
 
+  it('读取并保留自由流程线和节点尺寸档位', () => {
+    storage.setItem('folia.mindmap.canvas.v2:free-lines', JSON.stringify({
+      schemaVersion: 4,
+      nodeStyles: {
+        A: { color: '#ef4444', sizeLevel: 'xl' },
+        B: { sizeLevel: 'xs' },
+        bad: { sizeLevel: 'xxl' },
+      },
+      freeLines: [{
+        id: 'fl-1',
+        start: { kind: 'free', x: 10, y: 20 },
+        end: { kind: 'bound', nodeId: 'n1', anchor: 'right', x: 100, y: 40 },
+        arrow: 'one-way',
+        shape: 'straight',
+        dash: 'solid',
+        color: '#475569',
+        width: 1.8,
+      }, {
+        id: 'fl-bad',
+        start: { kind: 'free', x: 0, y: 0 },
+      }],
+    }));
+
+    const got = loadCanvasSidecar('free-lines', storage);
+    expect(got.nodeStyles.A).toEqual({ color: '#ef4444', sizeLevel: 'xl' });
+    expect(got.nodeStyles.B).toEqual({ sizeLevel: 'xs' });
+    expect(got.nodeStyles.bad).toBeUndefined();
+    expect(got.freeLines).toHaveLength(1);
+    expect(got.freeLines[0].id).toBe('fl-1');
+  });
+
   it('默认调色板为 8 色', () => {
     expect(DEFAULT_PALETTE).toHaveLength(8);
   });

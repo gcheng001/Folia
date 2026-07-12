@@ -63,6 +63,7 @@ export type SessionAction =
   | { type: 'closeToRight'; id: string }
   | { type: 'closeAll' }
   | { type: 'updateActiveFile'; updater: (f: OpenedFile) => OpenedFile }
+  | { type: 'updateTabFile'; id: string; updater: (f: OpenedFile) => OpenedFile }
   | { type: 'updateActiveTabMeta'; meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>> }
   | { type: 'recordRecentFile'; file: OpenedFile }
   | { type: 'removeRecentFile'; path: string }
@@ -157,6 +158,11 @@ function reduceInternal(state: SessionState, action: SessionAction): SessionStat
       return {
         ...state,
         tabs: state.tabs.map((t) => (t.id === state.activeTabId ? { ...t, file: action.updater(t.file) } : t)),
+      };
+    case 'updateTabFile':
+      return {
+        ...state,
+        tabs: state.tabs.map((tab) => tab.id === action.id ? { ...tab, file: action.updater(tab.file) } : tab),
       };
     case 'updateActiveTabMeta':
       return {

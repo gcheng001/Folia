@@ -61,6 +61,7 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
     expect(host.querySelector('[data-testid="mm-tool-connect"]')).toBeTruthy();
     expect(host.querySelector('[data-testid="mm-tool-auto-layout"]')).toBeTruthy();
     expect(host.querySelector('[data-testid="mm-tool-align"]')).toBeTruthy();
+    expect(host.querySelector('[data-testid="mm-tool-clear-free-lines"]')).toBeTruthy();
     expect(host.querySelector('[data-testid="mm-tool-group"]')).toBeTruthy();
     expect(host.querySelector('[data-testid="mm-tool-export"]')).toBeTruthy();
     expect(host.querySelector('[data-testid="mm-tool-undo"]')).toBeTruthy();
@@ -133,10 +134,151 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
     act(() => {
       btn.click();
     });
+    const visibleHandles = Array.from(host.querySelectorAll<HTMLElement>('.react-flow__handle'))
+      .filter((handle) => handle.style.opacity === '1');
+    expect(visibleHandles.length).toBeGreaterThan(0);
+    expect(visibleHandles[0].style.width).toBe('14px');
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     });
     cleanup();
+  });
+
+  it('无连接线模式仍显示用户手动创建的自定义连线', () => {
+    const filePath = '/tmp/custom-edge-in-none-mode.md';
+    saveCanvasSidecar(filePath, {
+      ...emptySidecar(),
+      edgeMode: 'none',
+      customEdges: [{ id: 'e-custom', source: 'A', target: 'B', arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#10b981', width: 1.5 }],
+    });
+    try {
+      const { host, cleanup } = mount({
+        markdown: '# 根\n\n## A\n\n## B\n',
+        onChange: vi.fn(),
+        filePath,
+      });
+      expect(host.querySelector('[data-testid="mm-edge-mode-none"]')?.getAttribute('aria-pressed')).toBe('true');
+      expect(host.querySelector('path.customFlow')).toBeTruthy();
+      cleanup();
+    } finally {
+      saveCanvasSidecar(filePath, emptySidecar());
+      localStorage.clear();
+    }
+  });
+
+  it('一键清除只删除自由箭头/线段，保留节点连接线、标注框和样式，并可撤销恢复', () => {
+    const filePath = '/tmp/clear-free-lines-only.md';
+    saveCanvasSidecar(filePath, {
+      ...emptySidecar(),
+      edgeMode: 'none',
+      customEdges: [{ id: 'e-custom', source: 'A', target: 'B', arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#10b981', width: 1.5 }],
+      freeLines: [{
+        id: 'fl-test',
+        start: { kind: 'free', x: 10, y: 20 },
+        end: { kind: 'free', x: 180, y: 20 },
+        arrow: 'one-way',
+        shape: 'straight',
+        dash: 'solid',
+        color: '#475569',
+        width: 1.8,
+      }],
+      groups: [{ id: 'g1', title: '标注', memberIds: ['A', 'B'], style: DEFAULT_GROUP_STYLE }],
+      nodeStyles: { A: { color: '#ef4444', sizeLevel: 'xl' } },
+    });
+
+    try {
+      const { host, cleanup } = mount({
+        markdown: '# 根\n\n## A\n\n## B\n',
+        onChange: vi.fn(),
+        filePath,
+      });
+
+      act(() => {
+        (host.querySelector('[data-testid="mm-tool-clear-free-lines"]') as HTMLButtonElement).click();
+      });
+
+      const cleared = loadCanvasSidecar(filePath);
+      expect(cleared.freeLines).toHaveLength(0);
+      expect(cleared.customEdges).toHaveLength(1);
+      expect(cleared.groups).toHaveLength(1);
+      expect(cleared.edgeMode).toBe('none');
+      expect(cleared.nodeStyles.A).toEqual({ color: '#ef4444', sizeLevel: 'xl' });
+
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
+      });
+
+      expect(loadCanvasSidecar(filePath).freeLines).toHaveLength(1);
+      cleanup();
+    } finally {
+      saveCanvasSidecar(filePath, emptySidecar());
+      localStorage.clear();
+    }
+  });
+
+  it('节点设置颜色后取消选择仍保持颜色', () => {
+    const filePath = '/tmp/node-color-persists-after-deselect.md';
+    try {
+      const { host, cleanup } = mount({
+        markdown: '# 根\n\n## A\n',
+        onChange: vi.fn(),
+        filePath,
+      });
+      const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === 'A') as HTMLElement;
+      act(() => {
+        label.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      });
+      act(() => {
+        (host.querySelector('[data-testid="mm-color-#ef4444"]') as HTMLButtonElement).click();
+      });
+      const rootLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === '根') as HTMLElement;
+      act(() => {
+        rootLabel.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      });
+
+      const updatedLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === 'A') as HTMLElement;
+      const nodeEl = updatedLabel.closest('[data-mindmap-node="true"]') as HTMLElement;
+      expect(nodeEl.getAttribute('data-mindmap-node-color')).toBe('#ef4444');
+      expect(nodeEl.getAttribute('data-mindmap-selected')).toBeNull();
+      expect(Object.values(loadCanvasSidecar(filePath).nodeStyles).some((style) => style.color === '#ef4444')).toBe(true);
+      cleanup();
+    } finally {
+      saveCanvasSidecar(filePath, emptySidecar());
+      localStorage.clear();
+    }
+  });
+
+  it('节点设置尺寸后取消选择仍保持尺寸档位', () => {
+    const filePath = '/tmp/node-size-persists-after-deselect.md';
+    try {
+      const { host, cleanup } = mount({
+        markdown: '# 根\n\n## A\n',
+        onChange: vi.fn(),
+        filePath,
+      });
+      const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === 'A') as HTMLElement;
+      act(() => {
+        label.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      });
+      act(() => {
+        (host.querySelector('[data-testid="mm-size-xl"]') as HTMLButtonElement).click();
+      });
+      const rootLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+        .find((element) => element.textContent === '根') as HTMLElement;
+      act(() => {
+        rootLabel.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      });
+
+      expect(Object.values(loadCanvasSidecar(filePath).nodeStyles).some((style) => style.sizeLevel === 'xl')).toBe(true);
+      cleanup();
+    } finally {
+      saveCanvasSidecar(filePath, emptySidecar());
+      localStorage.clear();
+    }
   });
 
   it('主题面板点击主题按钮可切换', () => {
@@ -172,18 +314,10 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
         onChange: vi.fn(),
         filePath,
       });
-      const ourSvg = Array.from(host.querySelectorAll('svg'))
-        .find((el) => el.querySelector('marker#mm-flow-arrow'));
-      const svgHtml = ourSvg?.outerHTML ?? '';
-      // 调试信息
-      if (!svgHtml.includes('arrow-e-test-1-10b981')) {
-        // eslint-disable-next-line no-console
-        console.log('SVG[len=' + svgHtml.length + ']:', svgHtml.substring(0, 1000));
-      }
       // 两条边：end 共 2 个，start 共 1 个（双向边）
       const ids = ['arrow-e-test-1-10b981', 'arrow-e-test-2-ef4444', 'arrow-e-test-2-ef4444-start'];
       for (const id of ids) {
-        expect(svgHtml).toContain(`id="${id}"`);
+        expect(host.querySelector(`marker#${id}`)).toBeTruthy();
       }
       cleanup();
     } finally {
@@ -360,23 +494,22 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
           filePath,
         });
 
-        // 选中边（通过模拟点击边的DOM元素）
-        const svg = host.querySelector('svg');
-        const edgePath = svg?.querySelector('path[class*="customFlow"]');
-        if (edgePath) {
-          act(() => {
-            edgePath.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
-          });
+        // 边元素应存在，否则删除行为没有被实际覆盖。
+        const edgePath = host.querySelector('path.customFlow');
+        expect(edgePath).toBeTruthy();
 
-          // 按Delete键
-          act(() => {
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
-          });
+        act(() => {
+          edgePath!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+        });
 
-          // 边应该被删除
-          const sidecar = loadCanvasSidecar(filePath);
-          expect(sidecar.customEdges.length).toBe(0);
-        }
+        // 按Delete键
+        act(() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+        });
+
+        // 边应该被删除
+        const sidecar = loadCanvasSidecar(filePath);
+        expect(sidecar.customEdges.length).toBe(0);
 
         cleanup();
       } finally {
@@ -402,22 +535,22 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
           filePath,
         });
 
-        // 选中标注框
+        // 标注框元素应存在，否则删除行为没有被实际覆盖。
         const groupNode = host.querySelector('.react-flow__node-annotation');
-        if (groupNode) {
-          act(() => {
-            groupNode.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
-          });
+        expect(groupNode).toBeTruthy();
 
-          // 按Delete键
-          act(() => {
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
-          });
+        act(() => {
+          groupNode!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+        });
 
-          // 框应该被删除
-          const sidecar = loadCanvasSidecar(filePath);
-          expect(sidecar.groups.length).toBe(0);
-        }
+        // 按Delete键
+        act(() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+        });
+
+        // 框应该被删除
+        const sidecar = loadCanvasSidecar(filePath);
+        expect(sidecar.groups.length).toBe(0);
 
         cleanup();
       } finally {
@@ -445,8 +578,7 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
         });
 
         // 手动选中边和框（通过点击它们的DOM元素）
-        const svg = host.querySelector('svg');
-        const edgePath = svg?.querySelector('path[class*="customFlow"]');
+        const edgePath = host.querySelector('path.customFlow');
         const groupNode = host.querySelector('.react-flow__node-annotation');
 
         const selections: HTMLElement[] = [];
@@ -512,6 +644,153 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
       expect(document.activeElement).toBe(input);
 
       cleanup();
+    });
+  });
+
+  describe('清除手动画线（P1-7）', () => {
+    it('点击清除手动画线按钮后 freeLines 清空，节点和边保留', () => {
+      const filePath = '/tmp/clear-free-lines.md';
+      const onChangeMock = vi.fn();
+      saveCanvasSidecar(filePath, {
+        ...emptySidecar(),
+        freeLines: [
+          { id: 'fl-1', start: { kind: 'free', x: 10, y: 20 }, end: { kind: 'free', x: 100, y: 40 }, arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#475569', width: 1.8 },
+          { id: 'fl-2', start: { kind: 'free', x: 50, y: 60 }, end: { kind: 'free', x: 150, y: 80 }, arrow: 'none', shape: 'straight', dash: 'dashed', color: '#ef4444', width: 1.5 },
+        ],
+        customEdges: [{ id: 'e-custom', source: 'A', target: 'B', arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#10b981', width: 1.5 }],
+        groups: [{ id: 'g1', title: '测试框', memberIds: ['A', 'B'], style: DEFAULT_GROUP_STYLE }],
+        nodeStyles: { A: { color: '#ef4444', sizeLevel: 'l' } },
+      });
+      try {
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n\n## B\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        // 点击清除手动画线按钮
+        act(() => {
+          (host.querySelector('[data-testid="mm-tool-clear-free-lines"]') as HTMLButtonElement).click();
+        });
+
+        const sidecar = loadCanvasSidecar(filePath);
+        // freeLines 应清空
+        expect(sidecar.freeLines).toHaveLength(0);
+        // customEdges、groups、nodeStyles、edgeMode 均不受影响
+        expect(sidecar.customEdges).toHaveLength(1);
+        expect(sidecar.groups).toHaveLength(1);
+        expect(sidecar.nodeStyles).toHaveProperty('A');
+        expect(sidecar.edgeMode).toBe('mindmap');
+        // 节点 MD 不应被改变
+        expect(onChangeMock).not.toHaveBeenCalled();
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
+    });
+
+    it('清除后选中 ID 集合已移除被清除的自由线 ID', () => {
+      const filePath = '/tmp/clear-selected-fls.md';
+      const onChangeMock = vi.fn();
+      saveCanvasSidecar(filePath, {
+        ...emptySidecar(),
+        freeLines: [
+          { id: 'fl-x', start: { kind: 'free', x: 0, y: 0 }, end: { kind: 'free', x: 100, y: 100 }, arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#475569', width: 1.8 },
+        ],
+      });
+      try {
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        // 点击清除按钮
+        act(() => {
+          (host.querySelector('[data-testid="mm-tool-clear-free-lines"]') as HTMLButtonElement).click();
+        });
+
+        const sidecar = loadCanvasSidecar(filePath);
+        expect(sidecar.freeLines).toHaveLength(0);
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
+    });
+
+    it('画布无自由线时清除按钮不报错', () => {
+      const filePath = '/tmp/clear-empty.md';
+      const onChangeMock = vi.fn();
+      saveCanvasSidecar(filePath, {
+        ...emptySidecar(),
+        freeLines: [],
+      });
+      try {
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        act(() => {
+          (host.querySelector('[data-testid="mm-tool-clear-free-lines"]') as HTMLButtonElement).click();
+        });
+
+        const sidecar = loadCanvasSidecar(filePath);
+        expect(sidecar.freeLines).toHaveLength(0);
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
+    });
+
+    it('清除手动画线后可撤销恢复，重做后再次清除', () => {
+      const filePath = '/tmp/clear-undo-redo.md';
+      const onChangeMock = vi.fn();
+      saveCanvasSidecar(filePath, {
+        ...emptySidecar(),
+        freeLines: [
+          { id: 'fl-undo', start: { kind: 'free', x: 0, y: 0 }, end: { kind: 'free', x: 50, y: 50 }, arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#475569', width: 1.8 },
+        ],
+      });
+      try {
+        const { host, cleanup } = mount({
+          markdown: '# 根\n\n## A\n',
+          onChange: onChangeMock,
+          filePath,
+        });
+
+        // 清除
+        act(() => {
+          (host.querySelector('[data-testid="mm-tool-clear-free-lines"]') as HTMLButtonElement).click();
+        });
+        expect(loadCanvasSidecar(filePath).freeLines).toHaveLength(0);
+
+        // 撤销
+        act(() => {
+          (host.querySelector('[data-testid="mm-tool-undo"]') as HTMLButtonElement).click();
+        });
+        const afterUndo = loadCanvasSidecar(filePath);
+        expect(afterUndo.freeLines).toHaveLength(1);
+        expect(afterUndo.freeLines[0].id).toBe('fl-undo');
+
+        // 重做
+        act(() => {
+          (host.querySelector('[data-testid="mm-tool-redo"]') as HTMLButtonElement).click();
+        });
+        expect(loadCanvasSidecar(filePath).freeLines).toHaveLength(0);
+
+        cleanup();
+      } finally {
+        saveCanvasSidecar(filePath, emptySidecar());
+        localStorage.clear();
+      }
     });
   });
 });

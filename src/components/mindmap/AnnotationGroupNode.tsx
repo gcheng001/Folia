@@ -25,7 +25,6 @@ function styleToCss(style: AnnotationStyle): React.CSSProperties {
     border: `${style.width}px ${style.borderStyle === 'dashed' ? 'dashed' : 'solid'} ${style.color}`,
     borderRadius: style.corner === 'rounded' ? 10 : 0,
     background: style.fill === 'light' ? `${style.color}11` : 'transparent',
-    pointerEvents: 'none',
   };
 }
 
@@ -73,15 +72,17 @@ export const AnnotationGroupNode = memo(({ data }: NodeProps) => {
 
   return (
     <div
+      data-mindmap-selected={isSelected ? 'true' : undefined}
       className="nowheel nopan"
       style={{
         position: 'absolute',
-        left: bbox.x,
-        top: bbox.y,
+        left: 0,
+        top: 0,
         width: bbox.width,
         height: bbox.height,
         ...styleToCss(group.style),
         zIndex: -1,
+        pointerEvents: 'auto',
       }}
     >
       {showTitle && (
@@ -132,8 +133,9 @@ export const AnnotationGroupNode = memo(({ data }: NodeProps) => {
           style={{
             position: 'absolute',
             inset: -3,
-            border: '1.5px solid var(--accent, #3b82f6)',
+            border: '2px solid #2563eb',
             borderRadius: group.style.corner === 'rounded' ? 12 : 0,
+            boxShadow: '0 0 0 2px #ffffff, 0 8px 20px rgba(37,99,235,0.2)',
             pointerEvents: 'none',
           }}
         />

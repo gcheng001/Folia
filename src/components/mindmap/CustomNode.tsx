@@ -4,7 +4,7 @@
  * 配色由主题（themes.ts）驱动；编辑态（M-C）渲染行内输入框，
  * Enter 提交 / Esc 取消，事件不冒泡到画布键盘处理器。
  */
-import { memo, useLayoutEffect, useRef } from 'react';
+import { memo, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { branchColor, getTheme, type MindMapTheme } from './themes';
 
@@ -18,11 +18,12 @@ interface CustomNodeData {
   editable?: boolean;
   isSelected?: boolean;
   isEditing?: boolean;
+  isConnectMode?: boolean;
   onStartEdit?: (nodeId: string) => void;
   onCommitEdit?: (lineIndex: number, text: string) => void;
   onCancelEdit?: (lineIndex: number) => void;
-  /** P0-9: per-node 样式，包含颜色覆盖 */
-  perNodeStyle?: { color?: string };
+  /** P0-9: per-node 样式，包含颜色和尺寸覆盖 */
+  perNodeStyle?: { color?: string; sizeLevel?: 'xs' | 's' | 'm' | 'l' | 'xl' };
   /** P1-1: 结构拖动目标状态 */
   isStructureTarget?: boolean;
   /** P1-1: 结构拖动确认状态（>=400ms） */
@@ -30,7 +31,31 @@ interface CustomNodeData {
   [key: string]: unknown;
 }
 
-const handleStyle: React.CSSProperties = { opacity: 0, width: 1, height: 1, border: 'none' };
+function readableTextColor(hex: string): string {
+  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : null;
+  if (!normalized) return '#111827';
+  const r = Number.parseInt(normalized.slice(0, 2), 16);
+  const g = Number.parseInt(normalized.slice(2, 4), 16);
+  const b = Number.parseInt(normalized.slice(4, 6), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.62 ? '#111827' : '#ffffff';
+}
+
+function connectHandleStyle(visible: boolean, side: 'left' | 'right'): CSSProperties {
+  return visible
+    ? {
+        width: 14,
+        height: 14,
+        border: '2px solid #2563eb',
+        background: '#ffffff',
+        opacity: 1,
+        boxShadow: '0 1px 4px rgba(37,99,235,0.35)',
+        [side]: -7,
+      }
+    : { opacity: 0, width: 1, height: 1, border: 'none' };
+}
+
+const SIZE_SCALE = { xs: 0.78, s: 0.9, m: 1, l: 1.16, xl: 1.34 } as const;
 
 export const CustomNode = memo(({ id, data }: NodeProps) => {
   const {
@@ -40,6 +65,7 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     theme: maybeTheme,
     isSelected,
     isEditing,
+    isConnectMode,
     editable,
     onStartEdit,
     onCommitEdit,
@@ -50,7 +76,9 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
   } = data as unknown as CustomNodeData;
   const theme = maybeTheme ?? getTheme(undefined);
   // P0-9: per-node 颜色优先于主题分支颜色
-  const color = perNodeStyle?.color ?? branchColor(theme, branchIndex ?? -1);
+  const customColor = perNodeStyle?.color;
+  const color = customColor ?? branchColor(theme, branchIndex ?? -1);
+  const sizeScale = SIZE_SCALE[perNodeStyle?.sizeLevel ?? 'm'];
   const lineIndex = Number(id.slice(1));
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -78,22 +106,31 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
   }, [isEditing]);
 
   const classic = theme.nodeVariant === 'classic';
+  const baseFontSize = isRoot ? 16 : 14;
   const nodeStyle: React.CSSProperties = {
     boxSizing: 'border-box',
-    padding: isRoot ? '11px 20px' : '9px 16px',
+    padding: isRoot
+      ? `${Math.round(11 * sizeScale)}px ${Math.round(20 * sizeScale)}px`
+      : `${Math.round(9 * sizeScale)}px ${Math.round(16 * sizeScale)}px`,
     border: classic ? 'none' : `${isRoot ? 2 : 1.5}px solid ${isRoot ? theme.root : color}`,
     borderRadius: classic ? (isRoot ? '16px' : '12px') : '2px',
     backgroundColor: classic
       ? (isRoot ? 'var(--text, #050505)' : 'color-mix(in srgb, var(--text, #171717) 8%, var(--surface, #ffffff))')
       : 'var(--surface, #fff)',
     color: classic && isRoot ? 'var(--surface, #ffffff)' : (isRoot ? theme.root : theme.text),
-    fontSize: isRoot ? '16px' : '14px',
+    fontSize: `${Math.max(11, Math.round(baseFontSize * Math.min(sizeScale, 1.22)))}px`,
     fontWeight: isRoot ? 600 : 400,
     fontFamily: 'var(--font-body)',
-    minWidth: isRoot ? '120px' : '96px',
-    maxWidth: '340px',
+    minWidth: `${Math.round((isRoot ? 120 : 96) * sizeScale)}px`,
+    maxWidth: `${Math.round(340 * Math.max(1, sizeScale))}px`,
     textAlign: 'center',
   };
+
+  if (customColor) {
+    nodeStyle.backgroundColor = customColor;
+    nodeStyle.border = `${isRoot ? 2 : 1.5}px solid ${customColor}`;
+    nodeStyle.color = readableTextColor(customColor);
+  }
 
   // P1-1: 结构拖动高亮：确认前后不同样式
   if (isStructureConfirmed) {
@@ -104,13 +141,22 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     // 预告状态（<400ms）：轻微高亮
     nodeStyle.boxShadow = `0 0 0 2px ${color}88, 0 0 0 4px ${color}44`;
   } else if (isSelected && !isEditing) {
-    nodeStyle.boxShadow = `0 0 0 2px ${color}55, 0 0 0 4px ${color}22`;
+    nodeStyle.boxShadow = `0 0 0 2px #ffffff, 0 0 0 5px #2563eb, 0 8px 20px rgba(37,99,235,0.24)`;
+    nodeStyle.outline = '2px solid #1d4ed8';
+    nodeStyle.outlineOffset = 2;
   }
 
   return (
     <>
-      <Handle type="target" position={Position.Left} style={handleStyle} />
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={connectHandleStyle(!!isConnectMode, 'left')}
+      />
       <div
+        data-mindmap-node="true"
+        data-mindmap-selected={isSelected && !isEditing ? 'true' : undefined}
+        data-mindmap-node-color={customColor ?? undefined}
         className="nowheel nopan"
         style={{ ...nodeStyle, cursor: isEditing ? 'text' : (editable ? 'grab' : 'default') }}
         onDoubleClick={(event) => {
@@ -158,7 +204,11 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
           <span>{label || '(未命名)'}</span>
         )}
       </div>
-      <Handle type="source" position={Position.Right} style={handleStyle} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={connectHandleStyle(!!isConnectMode, 'right')}
+      />
     </>
   );
 });

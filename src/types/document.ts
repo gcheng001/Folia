@@ -4,7 +4,7 @@ export interface OpenedFile {
   content: string;
   dirty: boolean;
   lastSavedContent: string;
-  fileType: 'markdown' | 'html' | 'docx';
+  fileType: 'markdown' | 'html' | 'docx' | 'visualization';
   docxHtml?: string;
 }
 
