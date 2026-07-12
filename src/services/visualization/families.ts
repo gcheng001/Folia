@@ -15,12 +15,31 @@ function anchor(source: string, block: MarkdownBlock, start = block.start, end =
   return createSourceAnchor({ source, start, end, blockKind: block.kind, headingPath: block.headingPath });
 }
 
+// 反复剥离成对行内强调：加粗、斜体、行内代码、删除线（支持嵌套，外层先剥）
+function stripInlineEmphasis(label: string): string {
+  let prev: string;
+  do {
+    prev = label;
+    label = label
+      .replace(/\*\*([\s\S]+?)\*\*/g, '$1')
+      .replace(/__([\s\S]+?)__/g, '$1')
+      .replace(/~~([\s\S]+?)~~/g, '$1')
+      .replace(/`([^`\n]+)`/g, '$1')
+      .replace(/\*([^*\n]+)\*/g, '$1')
+      .replace(/_([^_\n]+)_/g, '$1');
+  } while (label !== prev);
+  return label;
+}
+
 function cleanBlockLabel(block: MarkdownBlock): string {
-  return block.text
-    .replace(/^#{1,6}\s+/, '')
-    .replace(/^\s*(?:[-+*]|\d+[.)、])\s+/, '')
-    .replace(/\s+#+\s*$/, '')
-    .trim();
+  return stripInlineEmphasis(
+    block.text
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^\s*(?:[-+*]|\d+[.)、])\s+/, '')
+      .replace(/\s+#+\s*$/, '')
+      .replace(/[:：][^:：\n]*$/, '')
+      .trim(),
+  );
 }
 
 function preferSemanticSection(blocks: MarkdownBlock[], headingPattern: RegExp): MarkdownBlock[] {
@@ -70,7 +89,7 @@ function timeline(source: string, blocks: MarkdownBlock[]): Extraction {
       const match = line.match(DATE);
       if (match) {
         const start = block.start + relative;
-        const label = line.replace(DATE, '').replace(/^\s*[-#>|*+：:,，。]+\s*/, '').trim() || '待补充事件';
+        const label = stripInlineEmphasis(line.replace(DATE, '').replace(/^\s*[-#>|+：:,，]+\s*/, '').trim()) || '待补充事件';
         const dateParts = match[0].replace(/[年月/.]/g, '-').replace(/日$/, '').split('-').filter(Boolean).map(Number);
         const year = dateParts[0];
         const month = dateParts[1] ?? 1;
@@ -177,7 +196,7 @@ function flow(source: string, blocks: MarkdownBlock[]): Extraction {
   let previous: string | null = null;
   preferSemanticSection(blocks, /(?:流程|步骤|检视程式|解题大纲|检索顺序)/)
     .filter((block) => !['fenced-code', 'frontmatter'].includes(block.kind)).forEach((block) => {
-    const normalized = cleanBlockLabel(block).replace(/^\*+|\*+$/g, '').trim();
+    const normalized = cleanBlockLabel(block);
     const stepText = block.text.replace(/^#{1,6}\s+/, '').replace(/\*+/g, '').trim();
     const decision = normalized.match(DECISION);
     if (!NUMBERED_STEP.test(stepText) && !decision) return;
@@ -235,7 +254,7 @@ function matrix(source: string, blocks: MarkdownBlock[]): Extraction {
       elements.push({
         id: `matrix-${block.start}-${column}`,
         kind: 'matrix-cell',
-        label: cell.text,
+        label: stripInlineEmphasis(cell.text),
         anchor: anchor(source, block, start, start + cell.text.length),
         data: { row, column, header: header[column] ?? `第${column + 1}列` },
       });

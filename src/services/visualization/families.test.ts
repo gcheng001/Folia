@@ -92,6 +92,44 @@ describe('visualization families', () => {
     expect(result.elements.filter((element) => element.kind === 'edge')).toHaveLength(2);
   });
 
+  it('strips paired bold markers from flow step labels', () => {
+    const source = '# 大纲\n## 检视程式大纲\n- **第一层**检视\n- **第二层**审查';
+    const result = extract('flow', source);
+    const labels = result.elements.filter((element) => element.kind === 'node').map((element) => element.label);
+    expect(labels).toEqual(['第一层检视', '第二层审查']);
+  });
+
+  it('strips paired inline emphasis from timeline event labels', () => {
+    const source = '2024年1月2日 **签订**劳动合同。\n2024年2月3日 *发放*首月工资。';
+    const result = extract('timeline', source);
+    expect(result.elements.map((element) => element.label)).toEqual(['签订劳动合同。', '发放首月工资。']);
+  });
+
+  it('strips nested paired emphasis completely', () => {
+    // 外层加粗包裹内层斜体，剥完后内层斜体也被剥净；且符合第…层格式，能被 flow 识别
+    const source = '# 大纲\n## 检视程式大纲\n- **第*一*层**：审查权利产生\n- **第*二*层**：审查消灭事由';
+    const result = extract('flow', source);
+    const labels = result.elements.filter((element) => element.kind === 'node').map((element) => element.label);
+    expect(labels).toEqual(['第一层', '第二层']);
+  });
+
+  it('strips strikethrough and inline code paired markers', () => {
+    const source = '| ~~作废~~主体 | `代码`人 |\n| --- | --- |\n| 甲 | 乙 |';
+    const result = extract('matrix', source);
+    const labels = result.elements.filter((element) => element.kind === 'matrix-cell').map((element) => element.label);
+    // ~~作废~~主体 → 作废主体；`代码`人 → 代码人
+    expect(labels).toContain('作废主体');
+    expect(labels).toContain('代码人');
+  });
+
+  it('does not strip isolated markdown characters that are not paired emphasis', () => {
+    // 审查产品*标识：单侧 * 不成对，保留星号；1. 前缀能被 NUMBERED_STEP 识别
+    const source = '# 流程\n## 步骤\n1. 审查产品*标识\n2. 确认完成';
+    const result = extract('flow', source);
+    const labels = result.elements.filter((element) => element.kind === 'node').map((element) => element.label);
+    expect(labels).toContain('审查产品*标识');
+  });
+
   it('extracts non-empty matrix cells with cell-level anchors', () => {
     const source = '| 主体 | 金额 |\n| --- | --- |\n| 甲方 | 100元 |\n| 乙方 | 200元 |';
     const result = extract('matrix', source);
