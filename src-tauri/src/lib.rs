@@ -624,13 +624,77 @@ fn derive_output_path(source: &Path) -> PathBuf {
     .unwrap_or_else(|| PathBuf::from(&name))
 }
 
-/// 在 $PATH 里查找 `claude` 可执行文件。返回完整路径，未找到则 None。
+/// 合并「登录 shell 的 PATH + 继承的 PATH + 常见安装目录」为候选目录列表，去重保序。
 ///
-/// 不直接调用 `which` crate——spawn 阶段的 PATH 解析依赖 std::process::Command，
-/// 这里只是给前端一个"先提示用户去装"的友好错误。
-fn locate_claude_cli() -> Option<PathBuf> {
-  let path_var = std::env::var_os("PATH")?;
-  for dir in std::env::split_paths(&path_var) {
+/// Finder/Dock 启动的 GUI app 只继承 launchd 的精简 PATH（/usr/bin:/bin:…），
+/// 看不到 npm-global / homebrew / nvm 等 shell 目录——claude CLI 恰恰装在那里。
+/// 终端启动时继承 PATH 本身就全，合并后行为不变。
+fn candidate_path_dirs(login_path: Option<&str>) -> Vec<PathBuf> {
+  let mut dirs: Vec<PathBuf> = Vec::new();
+  let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+  let mut push = |dir: PathBuf| {
+    if !dir.as_os_str().is_empty() && seen.insert(dir.clone()) {
+      dirs.push(dir);
+    }
+  };
+  if let Some(login) = login_path {
+    for dir in std::env::split_paths(login.trim()) {
+      push(dir);
+    }
+  }
+  if let Some(inherited) = std::env::var_os("PATH") {
+    for dir in std::env::split_paths(&inherited) {
+      push(dir);
+    }
+  }
+  // 登录 shell 可能因 dotfile 出错拿不到 PATH，再兜底几个常见安装位置。
+  if let Some(home) = std::env::var_os("HOME") {
+    let home = PathBuf::from(home);
+    for sub in [".npm-global/bin", ".claude/local", ".local/bin", "bin"] {
+      push(home.join(sub));
+    }
+  }
+  for well_known in ["/opt/homebrew/bin", "/usr/local/bin"] {
+    push(PathBuf::from(well_known));
+  }
+  dirs
+}
+
+/// 进程级缓存的有效 PATH：候选目录列表拼回 PATH 形态，给 locate 和子进程 env 共用。
+/// 登录 shell 解析需要几百毫秒（取决于用户 dotfile），OnceLock 只做一次。
+fn effective_path_var() -> &'static std::ffi::OsString {
+  static CACHE: std::sync::OnceLock<std::ffi::OsString> = std::sync::OnceLock::new();
+  CACHE.get_or_init(|| {
+    let login_path = query_login_shell_path();
+    let dirs = candidate_path_dirs(login_path.as_deref());
+    std::env::join_paths(dirs)
+      .unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+  })
+}
+
+/// 用用户登录 shell 取一次真实 PATH（仅 unix；失败返回 None，由兜底目录接住）。
+#[cfg(unix)]
+fn query_login_shell_path() -> Option<String> {
+  let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+  let output = std::process::Command::new(&shell)
+    .args(["-lc", "printf %s \"$PATH\""])
+    .output()
+    .ok()?;
+  if !output.status.success() {
+    return None;
+  }
+  let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+  if path.is_empty() { None } else { Some(path) }
+}
+
+#[cfg(not(unix))]
+fn query_login_shell_path() -> Option<String> {
+  None
+}
+
+/// 在候选目录里查找 `claude` 可执行文件。返回完整路径，未找到则 None。
+fn find_claude_in(dirs: &[PathBuf]) -> Option<PathBuf> {
+  for dir in dirs {
     for name in ["claude", "claude.exe"] {
       let candidate = dir.join(name);
       if candidate.is_file() {
@@ -639,6 +703,12 @@ fn locate_claude_cli() -> Option<PathBuf> {
     }
   }
   None
+}
+
+/// 定位 claude CLI：基于有效 PATH（登录 shell + 继承 + 兜底目录）而非裸 env PATH。
+fn locate_claude_cli() -> Option<PathBuf> {
+  let dirs: Vec<PathBuf> = std::env::split_paths(effective_path_var()).collect();
+  find_claude_in(&dirs)
 }
 
 /// 拼出本次任务的 claude CLI prompt：把规格 + 源文路径 + 输出路径注入。
@@ -714,6 +784,9 @@ fn spawn_agent_extraction(source_path: String) -> Result<AgentExtractionResult, 
 
   let prompt = build_agent_prompt(&source, &output);
   let mut child = match std::process::Command::new(&cli)
+    // GUI 启动时继承的精简 PATH 会让 claude 内部找不到 rg/git 等工具，
+    // 子进程统一用与 locate 相同的有效 PATH。
+    .env("PATH", effective_path_var())
     .arg("--permission-mode")
     .arg("bypassPermissions")
     .arg("--output-format")
@@ -1493,5 +1566,48 @@ mod tests {
     assert!(prompt.contains("Folia 可视化抽取规格"));
     assert!(prompt.contains("源 Markdown 绝对路径：`/abs/case.md`"));
     assert!(prompt.contains("输出 `.foliaviz` 绝对路径：`/abs/case.md.foliaviz`"));
+  }
+
+  #[test]
+  fn candidate_path_dirs_prefers_login_shell_and_dedupes() {
+    // 登录 shell 的目录排最前，与继承 PATH 重复的目录只保留一次。
+    let dirs = candidate_path_dirs(Some("/login/bin:/usr/bin:/login/bin"));
+    assert_eq!(dirs[0], PathBuf::from("/login/bin"));
+    assert_eq!(
+      dirs.iter().filter(|d| **d == PathBuf::from("/login/bin")).count(),
+      1
+    );
+    assert_eq!(
+      dirs.iter().filter(|d| **d == PathBuf::from("/usr/bin")).count(),
+      1
+    );
+  }
+
+  #[test]
+  fn candidate_path_dirs_appends_well_known_fallbacks_without_login_shell() {
+    // GUI 启动且登录 shell 失败时（login_path=None），仍能靠兜底目录找到常见安装位置。
+    let dirs = candidate_path_dirs(None);
+    assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+    assert!(dirs.contains(&PathBuf::from("/usr/local/bin")));
+    if let Some(home) = std::env::var_os("HOME") {
+      assert!(dirs.contains(&PathBuf::from(home).join(".npm-global/bin")));
+    }
+  }
+
+  #[test]
+  fn find_claude_in_locates_binary_in_candidate_dir() {
+    let dir = temp_path("claude-bin-dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("claude"), b"#!/bin/sh\n").unwrap();
+
+    let found = find_claude_in(&[PathBuf::from("/nonexistent"), dir.clone()]);
+
+    assert_eq!(found, Some(dir.join("claude")));
+    let _ = std::fs::remove_dir_all(dir);
+  }
+
+  #[test]
+  fn find_claude_in_returns_none_when_absent() {
+    assert_eq!(find_claude_in(&[PathBuf::from("/nonexistent")]), None);
   }
 }
