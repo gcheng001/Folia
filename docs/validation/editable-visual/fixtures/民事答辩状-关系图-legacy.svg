@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900">
+  <defs>
+    <style>
+      .title { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 22px; font-weight: bold; fill: #2c2c2c; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 14px; fill: #666; }
+      .node-title { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 14px; font-weight: bold; fill: #2c2c2c; }
+      .node-text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 12px; fill: #444; }
+      .node-label { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 11px; fill: #8b4513; }
+      .edge-label { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 11px; fill: #555; }
+      .emphasis { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 12px; fill: #8b4513; font-weight: bold; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#fefcf8"/>
+
+  <!-- Title -->
+  <text x="60" y="45" class="title">民事答辩状关系图</text>
+  <text x="60" y="68" class="subtitle">案号：(2026)浙03民终4068号 | 案由：买卖合同纠纷</text>
+
+  <!-- Decorative line -->
+  <line x1="60" y1="80" x2="1140" y2="80" stroke="#d4a574" stroke-width="1.5" opacity="0.6"/>
+
+  <!-- ==================== PARTY GROUPS ==================== -->
+
+  <!-- Group 1: 答辩人（债权人） -->
+  <rect x="60" y="110" width="260" height="130" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="60" y="110" width="260" height="28" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="60" y="128" width="260" height="10" fill="#f5efe6"/>
+  <text x="190" y="130" class="node-title" text-anchor="middle">答辩人（债权人）</text>
+  <text x="190" y="155" class="node-text" text-anchor="middle">颜怡军</text>
+  <text x="190" y="173" class="node-text" text-anchor="middle">水泥供应商</text>
+  <text x="190" y="191" class="node-text" text-anchor="middle">住浙江省温州市鹿城区</text>
+  <text x="190" y="209" class="node-text" text-anchor="middle">委托代理人：高澄律师</text>
+  <text x="190" y="227" class="node-text" text-anchor="middle">浙江摩尚律师事务所</text>
+
+  <!-- Group 2: 上诉人（被代理人） -->
+  <rect x="680" y="110" width="280" height="130" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="680" y="110" width="280" height="28" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="680" y="128" width="280" height="10" fill="#f5efe6"/>
+  <text x="820" y="130" class="node-title" text-anchor="middle">上诉人（原审被告）</text>
+  <text x="820" y="155" class="node-text" text-anchor="middle">广城建设集团有限公司</text>
+  <text x="820" y="173" class="node-text" text-anchor="middle">中标承建单位</text>
+  <text x="820" y="191" class="node-text" text-anchor="middle">法定代表人：计晓敏</text>
+  <text x="820" y="209" class="node-text" text-anchor="middle">住所：温州市瓯海区</text>
+  <text x="820" y="227" class="node-text" text-anchor="middle">信用代码：91330304145301293W</text>
+
+  <!-- Group 3: 被上诉人（实际施工人） -->
+  <rect x="380" y="110" width="260" height="130" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="380" y="110" width="260" height="28" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="380" y="128" width="260" height="10" fill="#f5efe6"/>
+  <text x="510" y="130" class="node-title" text-anchor="middle">被上诉人（原审共同被告）</text>
+  <text x="510" y="155" class="node-text" text-anchor="middle">郑诗臻</text>
+  <text x="510" y="173" class="node-text" text-anchor="middle">三工程项目实际负责人</text>
+  <text x="510" y="191" class="node-text" text-anchor="middle">以项目部身份对外交易</text>
+  <text x="510" y="209" class="node-text" text-anchor="middle">内部承包关系</text>
+  <text x="510" y="227" class="node-text" text-anchor="middle">自负盈亏</text>
+
+  <!-- ==================== PROJECT NODES ==================== -->
+
+  <!-- Project 1 -->
+  <rect x="300" y="310" width="200" height="75" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="300" y="310" width="200" height="24" rx="4" fill="#f8f5f0" stroke="none"/>
+  <rect x="300" y="324" width="200" height="10" fill="#f8f5f0"/>
+  <text x="400" y="327" class="node-title" text-anchor="middle">瑶溪街道朱宅村</text>
+  <text x="400" y="327" class="node-title" text-anchor="middle">三产安置房建设工程</text>
+  <text x="400" y="358" class="node-text" text-anchor="middle">欠款：173,860元</text>
+
+  <!-- Project 2 -->
+  <rect x="520" y="310" width="200" height="75" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="520" y="310" width="200" height="24" rx="4" fill="#f8f5f0" stroke="none"/>
+  <rect x="520" y="324" width="200" height="10" fill="#f8f5f0"/>
+  <text x="620" y="327" class="node-title" text-anchor="middle">浙江小伦制药机械</text>
+  <text x="620" y="327" class="node-title" text-anchor="middle">新建厂房工程</text>
+  <text x="620" y="358" class="node-text" text-anchor="middle">欠款：67,470元</text>
+
+  <!-- Project 3 -->
+  <rect x="740" y="310" width="200" height="75" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="740" y="310" width="200" height="24" rx="4" fill="#f8f5f0" stroke="none"/>
+  <rect x="740" y="324" width="200" height="10" fill="#f8f5f0"/>
+  <text x="840" y="327" class="node-title" text-anchor="middle">温州东才鞋业</text>
+  <text x="840" y="327" class="node-title" text-anchor="middle">厂房新建项目</text>
+  <text x="840" y="358" class="node-text" text-anchor="middle">欠款：93,070元</text>
+
+  <!-- ==================== RELATIONSHIP NODES ==================== -->
+
+  <!-- Evidence Node -->
+  <rect x="140" y="400" width="220" height="110" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="140" y="400" width="220" height="24" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="140" y="414" width="220" height="10" fill="#f5efe6"/>
+  <text x="250" y="417" class="node-title" text-anchor="middle">关键证据</text>
+  <text x="250" y="442" class="node-text" text-anchor="middle">《水泥欠款单》（2022.12.30）</text>
+  <text x="250" y="460" class="node-text" text-anchor="middle">结算单签字：黄声志、邹晓晖</text>
+  <text x="250" y="478" class="node-text" text-anchor="middle">加盖：项目部资料专用章</text>
+  <text x="250" y="496" class="node-text" text-anchor="middle">郑诗臻签名"属实"</text>
+
+  <!-- Payment Record Node -->
+  <rect x="400" y="400" width="220" height="110" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="400" y="400" width="220" height="24" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="400" y="414" width="220" height="10" fill="#f5efe6"/>
+  <text x="510" y="417" class="node-title" text-anchor="middle">付款事实</text>
+  <text x="510" y="442" class="node-text" text-anchor="middle">广城公司直接支付货款</text>
+  <text x="510" y="460" class="node-text" text-anchor="middle">付款对象：颜怡军指定第三方</text>
+  <text x="510" y="478" class="node-text" text-anchor="middle">管理费收取：6%、2%、1.8%</text>
+  <text x="510" y="496" class="node-text" text-anchor="middle">构成对合同关系的追认</text>
+
+  <!-- Legal Basis Node -->
+  <rect x="660" y="400" width="220" height="110" rx="4" fill="#fff" stroke="#c9b896" stroke-width="1"/>
+  <rect x="660" y="400" width="220" height="24" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="660" y="414" width="220" height="10" fill="#f5efe6"/>
+  <text x="770" y="417" class="node-title" text-anchor="middle">法律依据</text>
+  <text x="770" y="442" class="node-text" text-anchor="middle">《民法典》第172条 表见代理</text>
+  <text x="770" y="460" class="node-text" text-anchor="middle">《民法典》第503条 追认效力</text>
+  <text x="770" y="478" class="node-text" text-anchor="middle">举证责任倒置规则</text>
+  <text x="770" y="496" class="node-text" text-anchor="middle">善意无过失要件满足</text>
+
+  <!-- Dispute Focus Node -->
+  <rect x="920" y="400" width="220" height="110" rx="4" fill="#fff" stroke="#8b4513" stroke-width="2"/>
+  <rect x="920" y="400" width="220" height="24" rx="4" fill="#fdf5ef" stroke="none"/>
+  <rect x="920" y="414" width="220" height="10" fill="#fdf5ef"/>
+  <text x="1030" y="417" class="emphasis" text-anchor="middle">争议焦点</text>
+  <text x="1030" y="442" class="node-text" text-anchor="middle">交易相对方是广城公司</text>
+  <text x="1030" y="460" class="node-text" text-anchor="middle">还是郑诗臻个人？</text>
+  <text x="1030" y="478" class="node-text" text-anchor="middle">→ 表见代理是否成立</text>
+  <text x="1030" y="496" class="node-text" text-anchor="middle">→ 责任承担主体</text>
+
+  <!-- ==================== CONCLUSION BOX ==================== -->
+
+  <rect x="60" y="550" width="1080" height="150" rx="4" fill="#fdfaf5" stroke="#c9b896" stroke-width="1.5"/>
+  <rect x="60" y="550" width="1080" height="32" rx="4" fill="#f5efe6" stroke="none"/>
+  <rect x="60" y="572" width="1080" height="10" fill="#f5efe6"/>
+  <text x="600" y="572" class="node-title" text-anchor="middle">结论与请求</text>
+
+  <text x="90" y="608" class="node-text">一审判决认定：</text>
+  <text x="90" y="626" class="node-text">• 构成表见代理，广城公司承担货款支付义务</text>
+  <text x="90" y="644" class="node-text">• 货款总额334,400元（分项有结算单支撑）</text>
+  <text x="90" y="662" class="node-text">• 利息自2026年1月3日起算</text>
+
+  <text x="90" y="686" class="node-text">答辩请求：</text>
+  <text x="90" y="704" class="emphasis">• 驳回上诉人全部上诉请求</text>
+  <text x="90" y="722" class="emphasis">• 维持一审判决</text>
+  <text x="90" y="740" class="node-text">• 二审诉讼费用由上诉人承担</text>
+
+  <!-- Vertical divider -->
+  <line x1="550" y1="600" x2="550" y2="760" stroke="#d4a574" stroke-width="1" opacity="0.5"/>
+
+  <text x="580" y="608" class="node-text">核心事实：</text>
+  <text x="580" y="626" class="node-text">• 广城系三项目中标承建单位</text>
+  <text x="580" y="644" class="node-text">• 颜怡军主动要求"你公司盖章"</text>
+  <text x="580" y="662" class="node-text">• 被告知"只有资料章可盖"→被动信任</text>
+  <text x="580" y="680" class="node-text">• 广城直接向颜指定第三方付款</text>
+
+  <text x="580" y="700" class="node-text">四个上诉理由均不成立：</text>
+  <text x="580" y="718" class="node-text">① 挂靠/内部承包不影响对外责任</text>
+  <text x="580" y="736" class="node-text">② 内部自负盈亏不得对抗善意第三人</text>
+  <text x="580" y="754" class="node-text">③ 直接付款行为自相矛盾</text>
+  <text x="900" y="754" class="node-text">④ 印章限制属内部规定</text>
+
+  <!-- ==================== ARROWS AND EDGES ==================== -->
+
+  <!-- 颜怡军 → 郑诗臻 (水泥买卖) -->
+  <path d="M 320 175 L 380 175" fill="none" stroke="#8b4513" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="350" y="168" class="edge-label" text-anchor="middle">水泥买卖交易</text>
+  <text x="350" y="195" class="edge-label" text-anchor="middle">（善意相对人）</text>
+
+  <!-- 郑诗臻 → 广城公司 (挂靠/内部承包) -->
+  <path d="M 640 175 L 680 175" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="660" y="168" class="edge-label" text-anchor="middle">内部承包</text>
+  <text x="660" y="195" class="edge-label" text-anchor="middle">（原文未明确关系性质）</text>
+
+  <!-- 广城公司 → 项目节点 -->
+  <path d="M 720 240 L 400 310" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <path d="M 820 240 L 620 310" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <path d="M 900 240 L 840 310" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="780" y="270" class="node-label" text-anchor="middle">中标承建</text>
+
+  <!-- 郑诗臻 → 项目节点 -->
+  <path d="M 510 240 L 500 310" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="505" y="280" class="node-label" text-anchor="middle">实际负责人</text>
+
+  <!-- 关键证据 → 颜怡军 -->
+  <path d="M 250 400 L 250 280" fill="none" stroke="#c9b896" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <text x="270" y="340" class="node-label" text-anchor="middle">持有</text>
+
+  <!-- 付款事实 → 广城 -->
+  <path d="M 620 400 L 820 240" fill="none" stroke="#8b4513" stroke-width="2" marker-end="url(#arrowRed)"/>
+  <text x="720" y="320" class="node-label" text-anchor="middle">直接付款</text>
+
+  <!-- 法律依据 → 郑诗臻 -->
+  <path d="M 660 450 L 580 260" fill="none" stroke="#c9b896" stroke-width="1.5" marker-end="url(#arrowGray)"/>
+  <text x="610" y="360" class="node-label" text-anchor="middle">表见代理条款</text>
+
+  <!-- 争议焦点 → 付款事实 -->
+  <path d="M 920 455 L 620 470" fill="none" stroke="#8b4513" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#arrowRed)"/>
+
+  <!-- 争议焦点 → 法律依据 -->
+  <path d="M 920 450 L 880 400" fill="none" stroke="#8b4513" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- ==================== ARROW MARKERS ==================== -->
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b4513"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b4513"/>
+    </marker>
+    <marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#999"/>
+    </marker>
+  </defs>
+
+  <!-- ==================== FOOTER ==================== -->
+
+  <line x1="60" y1="720" x2="1140" y2="720" stroke="#d4a574" stroke-width="1" opacity="0.4"/>
+  <text x="1140" y="745" class="subtitle" text-anchor="end">答辩人：颜怡军 | 委托代理人：高澄 浙江摩尚律师事务所</text>
+  <text x="60" y="745" class="subtitle">呈：浙江省温州市中级人民法院</text>
+
+</svg>

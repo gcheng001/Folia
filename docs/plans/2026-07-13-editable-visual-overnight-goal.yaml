@@ -1,0 +1,108 @@
+goal:
+  title: "整夜完成 Folia 可编辑可视化升级"
+  execution_owner: "Codex 当前任务"
+  delegation: false
+  multi_model_delivery: false
+  objective: "从根上修复 SVG 文字重叠，完成旧 SVG 无损升级、实用图形编辑、三个可视化入口共用升级、左 Markdown 右图表的实时对照与后台生成、质量与事实检查、干净导出，并构建安装一个明早可直接使用的 Folia。"
+  repository: "/Users/Apple/Folia-source"
+  branch: "gaocheng/v0.4-integration"
+  plan: "/Users/Apple/Folia-source/docs/plans/2026-07-13-complete-editable-visual-upgrade-plan.md"
+  autonomy:
+    continuous: true
+    intermediate_user_approval: false
+    allow_local_dependency_install: true
+    allow_local_build: true
+    allow_package: true
+    allow_install: true
+    install_target: "/Applications/办案工具集/Folia.app"
+    allow_push: false
+    allow_pull_request: false
+    allow_publish: false
+    allow_deploy: false
+    allow_subagents: false
+  priorities:
+    - "P0：真实测字、本地排版、碰撞检测和局部重叠修复"
+    - "P0：旧 SVG 原件不变、可编辑副本、原子保存和回退"
+    - "P0：基础编辑、连接线跟随、撤销重做、保存重开"
+    - "P1：完整编辑、历史、样式、弹性画布、事实与导出检查"
+    - "P1：Markdown 脑图和一键可视化工作簿共用升级"
+    - "P1：原文—图表对照、快速更新、选区生成、独立保存和后台单并发生成队列"
+    - "P0：全量测试、生产构建、安装后真实 Tauri 验收"
+  phases:
+    - id: baseline
+      deliver: "记录脏工作区和测试基线；备份已安装应用与真实 SVG；精确安装并锁定 elkjs。"
+      gate: "所有原件有哈希和可恢复备份，用户现有改动未被覆盖。"
+    - id: overlap_root_fix
+      deliver: "模型只给结构；Folia 真实测字、换行、布局、走线、检查；局部修复与整图重排分开。"
+      gate: "两份真实样本的已知重叠可检出并局部修复，四类新图没有严重重叠。"
+    - id: editable_scene
+      deliver: "版本化场景元数据、完整基础编辑、撤销重做、自动保存、原子写入和历史。"
+      gate: "编辑后保存关闭重开一致，注入写入失败不损坏旧文件。"
+    - id: legacy_upgrade
+      deliver: "旧 SVG 安全识别、锁定低置信度元素、人工分类和无损初始投影。"
+      gate: "两个桌面原件哈希不变，升级前后无结构性视觉变化。"
+    - id: complete_editor
+      deliver: "多选组合、对齐分布吸附、样式、自定义风格、弹性画布、保护人工修改、优化与重新生成。"
+      gate: "风格不改内容结构，AI 不改受保护元素。"
+    - id: shared_upgrade
+      deliver: "Markdown 脑图、结构总览/关系/流程及专用工作簿视图接入适用共用能力。"
+      gate: "三个入口文件语义不混淆，现有来源追踪和 Markdown 编辑不退化。"
+    - id: source_visual_comparison
+      deliver: "固定左 Markdown 右图表/交付预览的对照模式；独立自动保存、焦点工具栏、双向定位、实时变化标记、快速更新、整篇/选区生成和后台队列。"
+      gate: "双侧保存和撤销边界正确；左侧持续编辑不改变运行中快照；右侧旧图可看且新结果不打断操作；重启不静默联网。"
+    - id: quality_delivery
+      deliver: "视觉质量闸门、有限事实核对、差异同步、SVG/PNG/PDF 交付净化。"
+      gate: "注入重叠和假金额会阻止正式导出，交付版不含任何隐私和编辑信息。"
+    - id: ship
+      deliver: "全量回归、生产构建、备份安装、真实应用启动与两份样本十步验收。"
+      gate: "所有必跑命令和安装后 ETV 验收通过。"
+  mandatory_samples:
+    - "/Users/Apple/Desktop/民事答辩状-颜怡军(被上诉人)-v3.0-脑图-01.svg"
+    - "/Users/Apple/Desktop/民事答辩状-颜怡军(被上诉人)-v3.0-关系图-01.svg"
+  required_checks:
+    - "npm test"
+    - "npm run typecheck"
+    - "npm run lint"
+    - "npm run test:e2e"
+    - "cd src-tauri && cargo test --offline --lib"
+    - "npm run build"
+    - "npm run tauri:build:local"
+    - "安装后的 Folia ETV 桌面验收"
+  debug_policy:
+    protocol:
+      - "稳定复现并记录输入、步骤和环境"
+      - "缩小到单一模块和最小样本"
+      - "提出并验证单一根因假设"
+      - "使用不泄露原文的断言、日志或截图取得证据"
+      - "实施最小正确修复，不用延时、吞异常或重试掩盖问题"
+      - "新增修复前失败、修复后通过的回归测试"
+    gates:
+      - "改动级：相关测试、typecheck、所改文件 lint"
+      - "阶段级：本阶段测试、前序回归和真实夹具"
+      - "集成级：全量前端、Rust、E2E和生产构建"
+      - "安装级：Applications 中真实 Tauri 应用"
+    stress:
+      - "保存和切换竞态至少 100 轮"
+      - "编辑命令与历史序列至少 100 轮"
+      - "生成队列状态序列至少 50 组"
+      - "生产候选全量 E2E 连续通过 3 次"
+      - "安装后稳定性点验不少于 30 分钟"
+    zero_tolerance:
+      - "数据丢失、覆盖原件、崩溃、白屏、隐私泄露、恶意 SVG 执行"
+      - "严重重叠、错误事实绕过、损坏或无法打开的正式导出"
+      - "已启用入口存在已知功能性缺陷"
+  failure_policy:
+    - "不得删除或跳过失败测试，不得降低验收标准。"
+    - "不得通过反复重跑挑选偶然绿色结果；任何偶发失败都进入完整调试闭环。"
+    - "每个稳定阶段保留回退点；安装失败恢复旧应用。"
+    - "只有外部账号、权限、证书或服务构成真正硬阻塞时才停止。"
+    - "核心完全通过但附加能力失败时，可安装隐藏未通过入口的最后稳定版本，但不得宣称整个目标完成。"
+  completion_report:
+    include:
+      - "实际完成项和未完成项"
+      - "全部测试命令与结果"
+      - "两份真实 SVG 的逐项验收结果及产物路径"
+      - "对照模式、快速更新、选区生成和后台队列的安装后验收结果"
+      - "安装路径、应用版本和启动结果"
+      - "原文件哈希、备份路径和回退办法"
+      - "任何与计划不同的实现决定"

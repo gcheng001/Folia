@@ -107,6 +107,7 @@ export async function openFile(encoding: DefaultEncoding = 'UTF-8'): Promise<Ope
       { name: 'HTML', extensions: ['html', 'htm'] },
       { name: 'Word 文档', extensions: ['docx'] },
       { name: 'Folia 可视化', extensions: ['foliaviz'] },
+      { name: 'SVG 成品图', extensions: ['svg'] },
       { name: 'All', extensions: ['*'] },
     ],
   });
@@ -134,6 +135,11 @@ export async function openPath(path: string, encoding: DefaultEncoding = 'UTF-8'
       const { parseVisualWorkbook } = await import('./visualization/schema');
       parseVisualWorkbook(content);
       return { path, name, content, dirty: false, lastSavedContent: content, fileType: 'visualization' };
+    }
+
+    if (ext === 'svg') {
+      const content = await readTextWithEncoding(path, 'UTF-8');
+      return { path, name, content, dirty: false, lastSavedContent: content, fileType: 'svg' };
     }
 
     const content = await readTextWithEncoding(path, encoding);
@@ -194,4 +200,14 @@ export async function saveFileAs(file: OpenedFile): Promise<OpenedFile> {
   const name = fileNameFromPath(path);
 
   return { ...file, path, name, dirty: false, lastSavedContent: file.content };
+}
+
+export async function saveSvgCopy(content: string, fileName: string): Promise<string | null> {
+  const path = await save({
+    defaultPath: fileName || 'Folia-成品图.svg',
+    filters: [{ name: 'SVG 成品图', extensions: ['svg'] }],
+  });
+  if (!path) return null;
+  await writeTextFile(path, content);
+  return path;
 }

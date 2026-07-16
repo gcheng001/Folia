@@ -3,6 +3,9 @@ import { expect, type Page, test } from '@playwright/test';
 async function openWysiwygEditor(page: Page) {
   await page.goto('/');
   const editor = page.locator('.wysiwyg-editor-pane .vditor-ir .vditor-reset');
+  if (await editor.count() === 0) {
+    await page.locator('.recent-page-secondary').click();
+  }
   await expect(editor).toBeVisible();
   await editor.click();
   await page.keyboard.press('Meta+A');
@@ -43,6 +46,26 @@ async function expectNoExpandedMarker(page: Page) {
     return null;
   });
   expect(visibleMarkerWidth, 'expected every `**` marker to be visually collapsed (0 width/height)').toBeNull();
+}
+
+async function expectHeadingMarkerHidden(page: Page) {
+  const marker = page.locator(
+    '.wysiwyg-editor-pane .vditor-ir .vditor-ir__marker--heading'
+  ).first();
+  await expect(marker, 'expected the heading Markdown marker to remain in the IR DOM').toHaveCount(1);
+
+  const box = await marker.evaluate((element) => {
+    const rect = (element as HTMLElement).getBoundingClientRect();
+    return {
+      display: window.getComputedStyle(element).display,
+      width: rect.width,
+      height: rect.height,
+      text: element.textContent,
+    };
+  });
+  expect(box.text, 'expected the hidden IR marker to retain heading source semantics').toContain('#');
+  expect(box.width, 'expected the heading marker to have zero visual width').toBeLessThanOrEqual(0.5);
+  expect(box.height, 'expected the heading marker to have zero visual height').toBeLessThanOrEqual(0.5);
 }
 
 test.describe('ISS-151: Vditor IR `**` 加粗 marker 在停顿后自动折叠', () => {
@@ -99,3 +122,19 @@ test.describe('ISS-151: Vditor IR `**` 加粗 marker 在停顿后自动折叠', 
   });
 });
 
+test.describe('Vditor IR 标题井号不闪现', () => {
+  test('点击并继续编辑已有标题时，# 保留源码语义但始终没有可见尺寸', async ({ page }) => {
+    const editor = await openWysiwygEditor(page);
+    await page.keyboard.type('# 标题', { delay: 40 });
+
+    const heading = editor.locator('h1').first();
+    await expect(heading).toBeVisible();
+    await heading.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type('补充', { delay: 40 });
+
+    // 不等待旧的 220ms 折叠定时器：验证 Vditor 刚展开节点时也不会闪出 #。
+    await expectHeadingMarkerHidden(page);
+    await expect(heading).toContainText('标题补充');
+  });
+});

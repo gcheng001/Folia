@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#8B7355"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="1000" fill="#FDFBF7"/>
+
+  <!-- Title -->
+  <text x="700" y="45" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="24" font-weight="bold" fill="#333333">民事答辩状核心要点</text>
+  <text x="700" y="72" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" fill="#666666">(2026)浙03民终4068号 买卖合同纠纷</text>
+
+  <!-- Connection Lines (drawn first) -->
+  <!-- Center to main branches -->
+  <path d="M 700 210 Q 700 250 700 280" stroke="#8B7355" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 700 210 Q 500 240 380 280" stroke="#8B7355" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 700 210 Q 900 240 1020 280" stroke="#8B7355" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 700 210 Q 380 250 260 320" stroke="#8B7355" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 700 210 Q 1020 250 1140 320" stroke="#8B7355" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Sub-branches from 四个上诉理由 -->
+  <path d="M 380 400 Q 380 450 280 500" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 380 400 Q 380 450 480 500" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 380 400 Q 380 450 200 530" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 380 400 Q 380 450 560 530" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Sub-branches from 货款金额 -->
+  <path d="M 1020 400 Q 1020 450 920 500" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 1020 400 Q 1020 450 1120 500" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Sub-branches from 答辩请求 -->
+  <path d="M 700 400 Q 700 450 600 500" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+  <path d="M 700 400 Q 700 450 800 500" stroke="#8B7355" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)"/>
+
+  <!-- Center Node - 核心争议 -->
+  <rect x="550" y="140" width="300" height="70" rx="8" fill="#8B7355" stroke="#6B5344" stroke-width="2"/>
+  <text x="700" y="172" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="bold" fill="#FFFFFF">核心争议焦点</text>
+  <text x="700" y="195" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="12" fill="#F5F0E8">交易相对方是广城公司还是郑诗臻个人</text>
+
+  <!-- Branch 1: 案件基本信息 -->
+  <rect x="320" y="280" width="220" height="52" rx="6" fill="#FFFFFF" stroke="#8B7355" stroke-width="1.5"/>
+  <text x="430" y="305" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#333333">案件基本信息</text>
+  <text x="430" y="322" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#666666">答辩人:颜怡军 | 上诉人:广城建设集团</text>
+
+  <!-- Branch 2: 四个上诉理由的反驳 -->
+  <rect x="260" y="280" width="240" height="52" rx="6" fill="#FFFFFF" stroke="#8B7355" stroke-width="1.5"/>
+  <text x="380" y="305" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#333333">四个上诉理由的反驳</text>
+  <text x="380" y="322" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#666666">均不能成立，详见如下</text>
+
+  <!-- Sub-nodes for 四个上诉理由 -->
+  <rect x="160" y="500" width="120" height="65" rx="4" fill="#FFF9F0" stroke="#8B7355" stroke-width="1"/>
+  <text x="220" y="525" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">理由一</text>
+  <text x="220" y="542" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">"名为内部承包</text>
+  <text x="220" y="556" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">实为挂靠"</text>
+
+  <rect x="440" y="500" width="120" height="65" rx="4" fill="#FFF9F0" stroke="#8B7355" stroke-width="1"/>
+  <text x="500" y="525" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">理由二</text>
+  <text x="500" y="542" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">"郑诗臻系</text>
+  <text x="500" y="556" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">最终受益人"</text>
+
+  <rect x="160" y="530" width="120" height="65" rx="4" fill="#FFF9F0" stroke="#8B7355" stroke-width="1"/>
+  <text x="220" y="555" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">理由三</text>
+  <text x="220" y="572" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">"现有证据</text>
+  <text x="220" y="586" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">证明交易对象是郑"</text>
+
+  <rect x="440" y="530" width="120" height="65" rx="4" fill="#FFF9F0" stroke="#8B7355" stroke-width="1"/>
+  <text x="500" y="555" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">理由四</text>
+  <text x="500" y="572" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">"项目章标注</text>
+  <text x="500" y="586" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">签经济合同无效"</text>
+
+  <!-- Branch 3: 答辩请求 -->
+  <rect x="590" y="280" width="220" height="52" rx="6" fill="#FFFFFF" stroke="#8B7355" stroke-width="1.5"/>
+  <text x="700" y="305" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#333333">答辩请求</text>
+  <text x="700" y="322" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#666666">驳回上诉、维持原判</text>
+
+  <!-- Sub-nodes for 答辩请求 -->
+  <rect x="480" y="500" width="120" height="55" rx="4" fill="#F5F9F5" stroke="#6B8B6B" stroke-width="1"/>
+  <text x="540" y="522" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">请求一</text>
+  <text x="540" y="540" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">驳回全部</text>
+  <text x="540" y="552" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">上诉请求</text>
+
+  <rect x="720" y="500" width="120" height="55" rx="4" fill="#F5F9F5" stroke="#6B8B6B" stroke-width="1"/>
+  <text x="780" y="522" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">请求二</text>
+  <text x="780" y="540" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">维持温州市</text>
+  <text x="780" y="552" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">鹿城区法院判决</text>
+
+  <!-- Branch 4: 货款金额 -->
+  <rect x="910" y="280" width="220" height="52" rx="6" fill="#FFFFFF" stroke="#8B7355" stroke-width="1.5"/>
+  <text x="1020" y="305" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#333333">货款金额认定</text>
+  <text x="1020" y="322" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#666666">334,400元 一审认定事实清楚</text>
+
+  <!-- Sub-nodes for 货款金额 -->
+  <rect x="800" y="500" width="120" height="70" rx="4" fill="#F0F5F9" stroke="#6B7B8B" stroke-width="1"/>
+  <text x="860" y="522" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">分项明细</text>
+  <text x="860" y="538" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="9" fill="#555555">瑶溪安置房:173,860元</text>
+  <text x="860" y="552" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="9" fill="#555555">小伦制药:67,470元</text>
+  <text x="860" y="566" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="9" fill="#555555">东才鞋业:93,070元</text>
+
+  <rect x="1040" y="500" width="120" height="70" rx="4" fill="#F0F5F9" stroke="#6B7B8B" stroke-width="1"/>
+  <text x="1100" y="522" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">证据支撑</text>
+  <text x="1100" y="538" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="9" fill="#555555">2022.12.30对账</text>
+  <text x="1100" y="552" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="9" fill="#555555">郑诗臻"属实"签字</text>
+  <text x="1100" y="566" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="9" fill="#555555">项目部盖章确认</text>
+
+  <!-- Branch 5: 利息起算点 -->
+  <rect x="1050" y="320" width="180" height="52" rx="6" fill="#FFFFFF" stroke="#8B7355" stroke-width="1.5"/>
+  <text x="1140" y="345" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#333333">利息起算点</text>
+  <text x="1140" y="362" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#666666">2026年1月3日起算</text>
+
+  <!-- Branch 6: 表见代理要件 -->
+  <rect x="50" y="320" width="180" height="52" rx="6" fill="#FFFFFF" stroke="#8B7355" stroke-width="1.5"/>
+  <text x="140" y="345" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#333333">表见代理构成</text>
+  <text x="140" y="362" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#666666">善意无过失要件满足</text>
+
+  <!-- Key Points Section -->
+  <rect x="50" y="680" width="1300" height="280" rx="8" fill="#FAFAFA" stroke="#E0D8D0" stroke-width="1"/>
+
+  <text x="70" y="710" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="bold" fill="#333333">关键事实链</text>
+
+  <!-- Key point 1 -->
+  <rect x="70" y="725" width="280" height="75" rx="4" fill="#FFF9F0" stroke="#D4C4B0" stroke-width="1"/>
+  <text x="210" y="748" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">① 代理权外观</text>
+  <text x="210" y="765" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">广城公司系三项目中标承建单位</text>
+  <text x="210" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">收取管理费(6%、2%、1.8%)</text>
+  <text x="210" y="795" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">项目部章+资料专用章</text>
+
+  <!-- Key point 2 -->
+  <rect x="370" y="725" width="280" height="75" rx="4" fill="#FFF9F0" stroke="#D4C4B0" stroke-width="1"/>
+  <text x="510" y="748" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">② 善意无过失</text>
+  <text x="510" y="765" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">主动要求"你公司盖章给我"</text>
+  <text x="510" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">被动接受资料章(被告知仅有此章)</text>
+  <text x="510" y="795" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">超出普通相对人的审查义务</text>
+
+  <!-- Key point 3 -->
+  <rect x="670" y="725" width="280" height="75" rx="4" fill="#FFF9F0" stroke="#D4C4B0" stroke-width="1"/>
+  <text x="810" y="748" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">③ 追认效果</text>
+  <text x="810" y="765" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">广城公司直接支付货款给答辩人</text>
+  <text x="810" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">指定第三方(构成履行义务)</text>
+  <text x="810" y="795" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">视为《民法典》503条追认</text>
+
+  <!-- Key point 4 -->
+  <rect x="970" y="725" width="280" height="75" rx="4" fill="#FFF9F0" stroke="#D4C4B0" stroke-width="1"/>
+  <text x="1110" y="748" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="11" font-weight="bold" fill="#333333">④ 举证责任</text>
+  <text x="1110" y="765" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">答辩人已就代理权外观举证</text>
+  <text x="1110" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">上诉人未能证明答辩人非善意</text>
+  <text x="1110" y="795" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">上诉人承担举证不能后果</text>
+
+  <!-- Legal Basis -->
+  <text x="70" y="840" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="bold" fill="#333333">法律依据</text>
+
+  <rect x="70" y="855" width="380" height="50" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+  <text x="260" y="875" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">《民法典》第172条：行为人无代理权，相对人有理由相信有代理权的，代理行为有效</text>
+
+  <rect x="470" y="855" width="380" height="50" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+  <text x="660" y="875" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">《民法典》第503条：被代理人已开始履行合同义务，视为对合同的追认</text>
+
+  <rect x="870" y="855" width="380" height="50" rx="4" fill="#FFFFFF" stroke="#D0D0D0" stroke-width="1"/>
+  <text x="1060" y="875" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="10" fill="#555555">法释〔2022〕6号第28条：表见代理争议中，相对人举证代理权外观，被代理人举证相对人非善意</text>
+
+  <!-- Conclusion -->
+  <rect x="70" y="920" width="1260" height="45" rx="6" fill="#8B7355" stroke="#6B5344" stroke-width="1"/>
+  <text x="700" y="945" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF">结论：恳请二审法院驳回上诉，维持原判，保护答辩人作为善意债权人的合法权益</text>
+</svg>

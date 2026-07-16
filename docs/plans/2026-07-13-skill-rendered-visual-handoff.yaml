@@ -1,0 +1,35 @@
+delivery_handoff:
+  outcome: "先完成 baoyu-diagram 成品图的真实文档效果验证；用户确认明显优于现有可视化后，在 Folia 交付可选图类型与四种风格、带进度和取消、不会覆盖旧文件的第一版静态 SVG 生成。"
+  artifacts:
+    - "/Users/Apple/Folia-source/docs/plans/2026-07-13-skill-rendered-visual-roadmap.md"
+    - "/Users/Apple/Folia-source/docs/adr/0005-skill-rendered-visual-channel.md"
+    - "/Users/Apple/Folia-source/docs/adr/0006-editable-skill-svg.md"
+    - "/Users/Apple/Folia-source/CONTEXT.md"
+    - "/Users/Apple/Folia-source/docs/DESIGN.md"
+  acceptance:
+    - "先验证 Skill 来源、分发许可和至少三份法律文档加一份非法律文档的生成效果；用户未确认视觉效果明显提升前，不进入完整产品接入。"
+    - "第一版只接入 baoyu-diagram，提供流程图、时间轴、关系图和脑图推荐与改选，以及浅色正式、简洁商务、深色科技、柔和彩色四种可预览风格。"
+    - "每份文档记住上次风格，新文档默认浅色正式；生成使用编辑器最新内容并准确提示 Claude 联网处理。"
+    - "生成过程显示阶段和等待时间、支持真正取消，并通过临时文件与递增版本号保护所有旧结果。"
+    - "输出按“原文名称-图类型-版本号.svg”命名，生成后自动在 Folia 打开；单元测试、类型检查、Rust 测试和真实桌面点验通过。"
+  out_of_scope:
+    - "初始交付不实现第二版 SVG 编辑器；其文字、方框、连接线和局部样式编辑要求已保留在路线图与 ADR 0006。"
+    - "初始交付不接入 baoyu-infographic、其他 Skill、任意用户安装 Skill或图片生成服务。"
+    - "不反向解析普通外部 SVG，不建设自动事实检查或导出拦截，不覆盖旧成品。"
+  repository: "/Users/Apple/Folia-source"
+  target_branch: "gaocheng/v0.4-integration"
+  checks:
+    - "npm test"
+    - "npm run typecheck"
+    - "npx eslint <touched-files> --config config/eslint.config.js"
+    - "cd src-tauri && cargo test --offline --lib"
+  authority:
+    local_build: true
+    package: false
+    install: false
+    push: false
+    pull_request: false
+    publish: false
+    deploy: false
+  routing_overrides: {}
+  budget_overrides: {}

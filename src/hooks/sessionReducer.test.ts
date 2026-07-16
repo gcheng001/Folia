@@ -14,7 +14,7 @@ function file(name: string, content = '', dirty = false, path = `/tmp/${name}`) 
 }
 
 function stateWith(tabs: SessionState['tabs'], activeTabId?: string): SessionState {
-  return { tabs, activeTabId: activeTabId ?? tabs[0]?.id ?? '', recentFiles: [] };
+  return { tabs, activeTabId: activeTabId ?? tabs[0]?.id ?? '', recentFiles: [], splitTabId: null, splitView: false };
 }
 
 describe('bootstrapSession', () => {
@@ -108,6 +108,27 @@ describe('sessionReducer.openInNewTab', () => {
     const start = bootstrapSession({ tabs: [], activeTabId: '', recentFiles: [] });
     const next = sessionReducer(start, { type: 'openInNewTab', file: file('a.md', 'A') });
     expect(next.tabs[next.tabs.length - 1].isPlaceholder).toBe(false);
+  });
+
+  it('同一路径已打开时复用既有标签，不重复创建标签', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A', false, '/tmp/case.md'));
+    const t2 = makeTabFromFile(file('b.md', 'B', false, '/tmp/other.md'));
+    const start = stateWith([t1, t2], t2.id);
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('case.md', 'disk', false, '/tmp/case.md') });
+    expect(next.tabs).toHaveLength(2);
+    expect(next.activeTabId).toBe(t1.id);
+    expect(next.tabs[0].file.content).toBe('A');
+  });
+
+  it('普通打开右侧分屏已有文件时切到该标签并关闭分屏', () => {
+    const t1 = makeTabFromFile(file('a.md', 'A', false, '/tmp/a.md'));
+    const t2 = makeTabFromFile(file('b.md', 'B', false, '/tmp/b.md'));
+    const start: SessionState = { tabs: [t1, t2], activeTabId: t1.id, recentFiles: [], splitTabId: t2.id, splitView: true };
+    const next = sessionReducer(start, { type: 'openInNewTab', file: file('b.md', 'disk', false, '/tmp/b.md') });
+    expect(next.tabs).toHaveLength(2);
+    expect(next.activeTabId).toBe(t2.id);
+    expect(next.splitTabId).toBeNull();
+    expect(next.splitView).toBe(false);
   });
 
   it('超 MAX_TABS 时 LRU 关闭最旧非 dirty 非激活标签', () => {
@@ -329,6 +350,29 @@ describe('sessionReducer split-view', () => {
     const s = splitState([t1, t2], t1.id);
     expect(sessionReducer(s, { type: 'setSplitTab', id: t2.id }))
       .toEqual({ tabs: [t1, t2], activeTabId: t1.id, recentFiles: [], splitTabId: t2.id, splitView: true });
+  });
+
+  it('openInSplit 保持 Markdown 在左侧并把新图放到右侧', () => {
+    const markdown = makeTabFromFile(file('markdown.md'));
+    const visual = { path: '/tmp/a.svg', name: 'a.svg', content: '<svg/>', dirty: false, lastSavedContent: '<svg/>', fileType: 'svg' as const };
+    const next = sessionReducer(splitState([markdown], markdown.id), { type: 'openInSplit', file: visual, sourceTabId: markdown.id });
+    expect(next.activeTabId).toBe(markdown.id);
+    expect(next.splitView).toBe(true);
+    expect(next.tabs.find((tab) => tab.id === next.splitTabId)?.file.path).toBe('/tmp/a.svg');
+  });
+
+  it('openInSplit 对同一路径复用既有标签作为右侧对照', () => {
+    const source = makeTabFromFile(file('source.md', 'S', false, '/tmp/source.md'));
+    const existing = makeTabFromFile(file('compare.md', 'old', true, '/tmp/compare.md'));
+    const next = sessionReducer(splitState([source, existing], source.id), {
+      type: 'openInSplit',
+      file: file('compare.md', 'disk', false, '/tmp/compare.md'),
+      sourceTabId: source.id,
+    });
+    expect(next.tabs).toHaveLength(2);
+    expect(next.activeTabId).toBe(source.id);
+    expect(next.splitTabId).toBe(existing.id);
+    expect(next.tabs[1].file.content).toBe('old');
   });
 
   it('setSplitTab 不允许设为 activeTabId（返回同一引用）', () => {

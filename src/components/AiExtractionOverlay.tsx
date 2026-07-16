@@ -16,7 +16,7 @@ const ICON_STROKE_WIDTH = 1.6;
  *
  * 设计目标：让用户在使用「AI 可视化」按钮前清楚知道会发生什么——文件被
  * 哪个进程读取、产物落到哪里、是否会离开本机。Folia 自身不读文件，
- * 读取只发生在用户机器上的 Claude CLI 子进程里。
+ * Claude CLI 在本机启动，但文档内容会提交给 Claude 服务处理。
  */
 export function AiExtractionOverlay({ onConfirm, onCancel }: AiExtractionOverlayProps) {
   const settings = useSettings();

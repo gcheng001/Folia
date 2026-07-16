@@ -5,6 +5,15 @@
  */
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('folia.session.v1')) return;
+    const file = { path: '', name: '未命名', content: '', dirty: false, lastSavedContent: '', fileType: 'markdown' };
+    const tab = { id: 'e2e-draft', file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false };
+    localStorage.setItem('folia.session.v1', JSON.stringify({ version: 1, tabs: [tab], activeTabId: tab.id, recentFiles: [], splitTabId: null, splitView: false }));
+  });
+});
+
 test.describe('Editor initialization robustness', () => {
   test('editor pane shows content after Vditor initializes (not white screen)', async ({ page }) => {
     await page.goto('/');
@@ -38,6 +47,32 @@ test.describe('Editor initialization robustness', () => {
     // 等待 editor 完成初始化
     const irContainer = page.locator('.wysiwyg-editor-pane .vditor-ir');
     await expect(irContainer).toBeVisible({ timeout: 15000 });
+  });
+
+  test('long WYSIWYG document remains editable without jumping to the top', async ({ page }) => {
+    const marker = 'FOLIA_EDIT_PROBE';
+    const content = Array.from(
+      { length: 240 },
+      (_, index) => `## 第 ${index + 1} 节\n\n这是第 ${index + 1} 段正文。`,
+    ).join('\n\n');
+
+    await page.goto('/');
+    await page.getByRole('button', { name: '源码模式' }).click();
+    await page.locator('.cm-content').click();
+    await page.keyboard.insertText(content);
+    await page.getByRole('button', { name: '源码模式' }).click();
+
+    const editor = page.locator('.wysiwyg-editor-pane .vditor-ir > .vditor-reset');
+    await expect(editor).toHaveAttribute('contenteditable', 'true');
+    await editor.locator(':scope > *').last().click();
+    await page.keyboard.press('End');
+    const scrollTop = await editor.evaluate((element) => element.scrollTop);
+
+    await page.keyboard.type(marker);
+
+    await expect(editor).toContainText(marker);
+    await expect.poll(() => editor.evaluate((element) => element.scrollTop)).toBeGreaterThanOrEqual(scrollTop - 50);
+    await expect.poll(() => page.evaluate((text) => (localStorage.getItem('folia.session.v1') ?? '').includes(text), marker)).toBe(true);
   });
 
   test('error state with retry button is shown when Vditor fails to load', async ({ page }) => {

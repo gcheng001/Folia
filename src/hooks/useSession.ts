@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
-import { sessionReducer, bootstrapSessionForWindow } from './sessionReducer';
+import { sessionReducer, bootstrapSessionForWindow, type SessionAction } from './sessionReducer';
 import { loadSession, saveSession } from '../services/sessionStore';
 import {
   closeTabWindow,
@@ -25,7 +25,7 @@ export interface CloseOptions {
  * 本 hook 负责：初始化（启动恢复）、debounce 持久化草稿、派生 activeFile/editorMode 等。
  */
 export function useSession() {
-  const [state, dispatch] = useReducer(sessionReducer, undefined, () => {
+  const [state, reactDispatch] = useReducer(sessionReducer, undefined, () => {
     const windowLabel = detectCurrentWindowLabel();
     const initialTabIds = detectCurrentWindowTabIds();
     return bootstrapSessionForWindow(loadSession(), windowLabel, initialTabIds);
@@ -34,6 +34,14 @@ export function useSession() {
   // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // React dispatch 到下一次提交之间存在一个很短的窗口。若用户刚保存就 Cmd+Q，
+  // pagehide 会在 useEffect 更新 stateRef 之前触发，进而把旧 dirty=true 写回会话。
+  // 同步推进 ref 与 React reducer，确保关窗 flush 总能拿到最后一次状态转换。
+  const dispatch = useCallback((action: SessionAction) => {
+    stateRef.current = sessionReducer(stateRef.current, action);
+    reactDispatch(action);
+  }, []);
 
   // state 变化后 debounce 持久化草稿（含未保存内容）；卸载时清理定时器。
   useEffect(() => {
@@ -138,7 +146,7 @@ export function useSession() {
     return () => {
       for (const fn of unlistens) fn();
     };
-  }, [state.tabs]);
+  }, [dispatch, state.tabs]);
 
   // ISS-164：独立窗口关窗前同步 tab 列表给 Rust，便于关闭时 emit 准确 remainingTabIds。
   useEffect(() => {
@@ -157,54 +165,59 @@ export function useSession() {
   const openInNewTab = useCallback((file: OpenedFile) => {
     dispatch({ type: 'openInNewTab', file });
     dispatch({ type: 'recordRecentFile', file });
-  }, []);
+  }, [dispatch]);
+
+  const openInSplit = useCallback((file: OpenedFile, sourceTabId: string) => {
+    dispatch({ type: 'openInSplit', file, sourceTabId });
+    dispatch({ type: 'recordRecentFile', file });
+  }, [dispatch]);
 
   const switchTab = useCallback((id: string) => {
     dispatch({ type: 'switchTab', id });
-  }, []);
+  }, [dispatch]);
 
   const updateActiveFile = useCallback((updater: (f: OpenedFile) => OpenedFile) => {
     dispatch({ type: 'updateActiveFile', updater });
-  }, []);
+  }, [dispatch]);
 
   const updateTabFile = useCallback((id: string, updater: (f: OpenedFile) => OpenedFile) => {
     dispatch({ type: 'updateTabFile', id, updater });
-  }, []);
+  }, [dispatch]);
 
   const updateActiveTabMeta = useCallback(
     (meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>>) => {
       dispatch({ type: 'updateActiveTabMeta', meta });
     },
-    []
+    [dispatch]
   );
 
   const recordRecentFile = useCallback((file: OpenedFile) => {
     dispatch({ type: 'recordRecentFile', file });
-  }, []);
+  }, [dispatch]);
 
   const removeRecentFile = useCallback((path: string) => {
     dispatch({ type: 'removeRecentFile', path });
-  }, []);
+  }, [dispatch]);
 
   const clearRecentFiles = useCallback(() => {
     dispatch({ type: 'clearRecentFiles' });
-  }, []);
+  }, [dispatch]);
 
-  const closeOthers = useCallback((id: string) => { dispatch({ type: 'closeOthers', id }); }, []);
-  const closeToRight = useCallback((id: string) => { dispatch({ type: 'closeToRight', id }); }, []);
-  const closeAll = useCallback(() => { dispatch({ type: 'closeAll' }); }, []);
+  const closeOthers = useCallback((id: string) => { dispatch({ type: 'closeOthers', id }); }, [dispatch]);
+  const closeToRight = useCallback((id: string) => { dispatch({ type: 'closeToRight', id }); }, [dispatch]);
+  const closeAll = useCallback(() => { dispatch({ type: 'closeAll' }); }, [dispatch]);
 
   // ── 窗口内分屏（split-view）──
-  const toggleSplit = useCallback(() => { dispatch({ type: 'toggleSplit' }); }, []);
-  const setSplitTab = useCallback((id: string) => { dispatch({ type: 'setSplitTab', id }); }, []);
-  const closeSplit = useCallback(() => { dispatch({ type: 'closeSplit' }); }, []);
+  const toggleSplit = useCallback(() => { dispatch({ type: 'toggleSplit' }); }, [dispatch]);
+  const setSplitTab = useCallback((id: string) => { dispatch({ type: 'setSplitTab', id }); }, [dispatch]);
+  const closeSplit = useCallback(() => { dispatch({ type: 'closeSplit' }); }, [dispatch]);
   const updateSplitTabFile = useCallback((updater: (f: OpenedFile) => OpenedFile) => {
     dispatch({ type: 'updateSplitTabFile', updater });
-  }, []);
+  }, [dispatch]);
 
   const markPathInvalid = useCallback((id: string) => {
     dispatch({ type: 'markPathInvalid', id });
-  }, []);
+  }, [dispatch]);
 
   const closeTab = useCallback(
     (id: string, options?: CloseOptions) => {
@@ -214,7 +227,7 @@ export function useSession() {
       dispatch({ type: 'closeTab', id, confirmed: true });
       return true;
     },
-    [state.tabs]
+    [dispatch, state.tabs]
   );
 
   // DEC-111：drag 到空白处时调用，撕出当前 tab 到新独立窗口。
@@ -242,7 +255,7 @@ export function useSession() {
         return false;
       }
     },
-    [state.tabs]
+    [dispatch, state.tabs]
   );
 
   // ISS-164：把当前 tab 拖回主窗口（独立窗口调用）。
@@ -273,7 +286,7 @@ export function useSession() {
         return false;
       }
     },
-    [state.tabs]
+    [dispatch, state.tabs]
   );
 
   return {
@@ -286,6 +299,7 @@ export function useSession() {
     rightPanelMode: (activeTab?.rightPanelMode ?? 'none') as RightPanelMode,
     showHomePage: activeTab?.isPlaceholder ?? false,
     openInNewTab,
+    openInSplit,
     switchTab,
     closeTab,
     closeOthers,

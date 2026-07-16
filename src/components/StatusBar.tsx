@@ -26,6 +26,13 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
   const settings = useSettings();
   const t = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
   const hasPath = filePath.length > 0;
+  const displayedPath = !hasPath || settings.statusBarPathStyle === 'full'
+    ? filePath
+    : settings.statusBarPathStyle === 'basename'
+      ? filePath.split(/[\\/]/u).at(-1) ?? filePath
+      : filePath.length > 64
+        ? `${filePath.slice(0, 28)}…${filePath.slice(-32)}`
+        : filePath;
   const [copyMarker, setCopyMarker] = useState<CopyMarker>(null);
   const resetTimerRef = useRef<number | null>(null);
 
@@ -87,7 +94,7 @@ export function StatusBar({ filePath, dirty, draftPersisted, pathInvalid, reload
           hasPath ? { cursor: 'text', userSelect: 'text' } : undefined
         }
       >
-        {hasPath ? filePath : t('statusBarNoFile')}
+        {hasPath ? displayedPath : t('statusBarNoFile')}
       </span>
       {notice && (
         <span

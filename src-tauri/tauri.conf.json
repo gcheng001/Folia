@@ -50,6 +50,9 @@
     "active": true,
     "targets": ["app", "dmg", "nsis"],
     "createUpdaterArtifacts": true,
+    "resources": [
+      "../THIRD_PARTY_LICENSES/baoyu-skills-MIT.txt"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -89,6 +92,14 @@
         "mimeType": "application/vnd.folia.visualization+json",
         "role": "Editor",
         "rank": "Default"
+      },
+      {
+        "ext": ["svg"],
+        "name": "SVG Diagram",
+        "description": "SVG finished diagram",
+        "mimeType": "image/svg+xml",
+        "role": "Viewer",
+        "rank": "Alternate"
       }
     ],
     "android": {

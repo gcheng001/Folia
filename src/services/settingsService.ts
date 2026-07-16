@@ -200,6 +200,7 @@ export interface AppSettings {
   // 外观
   theme: 'light' | 'dark';
   zoomLevel: number;
+  statusBarPathStyle: 'basename' | 'middle' | 'full';
 }
 
 const defaults: AppSettings = {
@@ -236,7 +237,12 @@ const defaults: AppSettings = {
   tocAlwaysPinned: false,
   theme: 'light',
   zoomLevel: 100,
+  statusBarPathStyle: 'middle',
 };
+
+function normalizeStatusBarPathStyle(value: unknown): AppSettings['statusBarPathStyle'] {
+  return value === 'basename' || value === 'full' ? value : 'middle';
+}
 
 function readStoredSettings(): Partial<AppSettings> {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -687,6 +693,7 @@ export function getSettings(): AppSettings {
       previewLatinCustomFont: normalizeCustomFontName(stored.previewLatinCustomFont),
       previewHeadingCustomFont: normalizeCustomFontName(stored.previewHeadingCustomFont),
       tocAlwaysPinned: stored.tocAlwaysPinned === true,
+      statusBarPathStyle: normalizeStatusBarPathStyle(stored.statusBarPathStyle),
     };
   } catch {
     return { ...defaults };
@@ -714,6 +721,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     ...current,
     ...patch,
     locale: normalizeLocale(patch.locale ?? current.locale),
+    statusBarPathStyle: normalizeStatusBarPathStyle(patch.statusBarPathStyle ?? current.statusBarPathStyle),
     fontDefaultsVersion: FONT_DEFAULTS_VERSION,
     previewFontFamily: normalizePreviewFontFamily(patch.previewFontFamily ?? current.previewFontFamily),
     previewChineseFontFamily: normalizePreviewChineseFontFamily(

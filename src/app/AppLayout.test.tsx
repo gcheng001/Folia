@@ -178,6 +178,62 @@ describe('AppLayout update flow', () => {
     expect(fileServiceMock.openPath).toHaveBeenCalledWith('/tmp/系统打开.md', 'UTF-8');
   });
 
+  it('drops a file into the right comparison pane when split view is active', async () => {
+    type DragDropHandler = (event: { payload: { type: string; paths: string[] } }) => void;
+    tauriWindowMock.onDragDropEvent.mockImplementation(async (_handler: DragDropHandler) => {
+      return vi.fn();
+    });
+    fileServiceMock.openFile.mockResolvedValue({
+      path: '/tmp/source.md',
+      name: 'source.md',
+      content: '# 左侧',
+      dirty: false,
+      lastSavedContent: '# 左侧',
+      fileType: 'markdown',
+    });
+    fileServiceMock.openPath.mockImplementation(async (path: string) => ({
+      path,
+      name: path.split('/').pop() ?? '未命名',
+      content: path.includes('compare') ? '# 右侧' : '# 系统打开文件',
+      dirty: false,
+      lastSavedContent: path.includes('compare') ? '# 右侧' : '# 系统打开文件',
+      fileType: 'markdown',
+    }));
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+      await flushPromises();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', metaKey: true }));
+      await flushPromises();
+      await flushPromises();
+    });
+
+    const splitButton = host.querySelector<HTMLButtonElement>('button[aria-label="分屏对照"]');
+    expect(splitButton).toBeTruthy();
+
+    await act(async () => {
+      splitButton?.click();
+      for (let i = 0; i < 5; i += 1) await flushPromises();
+    });
+
+    const dragDropHandler = tauriWindowMock.onDragDropEvent.mock.calls.at(-1)?.[0] as DragDropHandler | undefined;
+    expect(dragDropHandler).toBeTruthy();
+
+    await act(async () => {
+      dragDropHandler?.({ payload: { type: 'drop', paths: ['/tmp/compare.md'] } });
+      for (let i = 0; i < 5; i += 1) await flushPromises();
+    });
+
+    expect(fileServiceMock.openPath).toHaveBeenCalledWith('/tmp/compare.md', 'UTF-8');
+    expect(host.querySelector('.split-view')).toBeTruthy();
+    expect(host.textContent).toContain('source.md');
+    expect(host.textContent).toContain('compare.md');
+  });
+
   it('passes the current HTML source into the source editor from the WYSIWYG pane', async () => {
     const source = '<!doctype html><html><body><h1>材料</h1><table><tr><td>正文</td></tr></table></body></html>';
     fileServiceMock.openFile.mockResolvedValue({
@@ -310,6 +366,99 @@ describe('AppLayout update flow', () => {
     });
 
     expect(editorPaneMock.source).toBe(content);
+  });
+
+  it('opens the Skill diagram chooser with all four styles from the toolbar', async () => {
+    const content = '# 案件经过\n2024年1月2日签约。\n2024年2月3日付款。';
+    fileServiceMock.openFile.mockResolvedValue({
+      path: '/tmp/case.md',
+      name: 'case.md',
+      content,
+      dirty: false,
+      lastSavedContent: content,
+      fileType: 'markdown',
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', metaKey: true }));
+      await flushPromises();
+      await flushPromises();
+    });
+
+    const skillButton = host.querySelector<HTMLButtonElement>('button[aria-label="Skill 成品图"]');
+    expect(skillButton).toBeTruthy();
+    await act(async () => skillButton?.click());
+
+    const dialog = host.querySelector('[aria-labelledby="skill-visual-title"]');
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toContain('时间轴');
+    expect(dialog?.textContent).toContain('浅色正式');
+    expect(dialog?.textContent).toContain('简洁商务');
+    expect(dialog?.textContent).toContain('深色科技');
+    expect(dialog?.textContent).toContain('柔和彩色');
+  });
+
+  it('keeps Skill generation running while the dialog is minimized and reopens it from the toolbar', async () => {
+    const content = '# 案件经过\n2024年1月2日签约。\n2024年2月3日付款。';
+    fileServiceMock.openFile.mockResolvedValue({
+      path: '/tmp/case.md',
+      name: 'case.md',
+      content,
+      dirty: false,
+      lastSavedContent: content,
+      fileType: 'markdown',
+    });
+
+    await act(async () => {
+      root.render(<AppLayout />);
+      await flushPromises();
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', metaKey: true }));
+      await flushPromises();
+      await flushPromises();
+    });
+
+    let finishGeneration: ((result: unknown) => void) | undefined;
+    tauriCoreMock.invoke.mockImplementation((command: string) => {
+      if (command === 'generate_skill_visual') {
+        return new Promise((resolve) => {
+          finishGeneration = resolve;
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    const skillButton = host.querySelector<HTMLButtonElement>('button[aria-label="Skill 成品图"]');
+    await act(async () => skillButton?.click());
+    const generateButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('开始生成'));
+    await act(async () => {
+      generateButton?.click();
+      await vi.dynamicImportSettled();
+      await flushPromises();
+    });
+
+    expect(host.textContent).toContain('正在绘制成品图');
+    const minimizeButton = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('收起并后台运行'));
+    await act(async () => minimizeButton?.click());
+
+    expect(host.querySelector('[aria-labelledby="skill-visual-title"]')).toBeNull();
+    const runningButton = host.querySelector<HTMLButtonElement>('button[aria-label="Skill 成品图生成中，点击查看进度"]');
+    expect(runningButton?.disabled).toBe(false);
+
+    await act(async () => runningButton?.click());
+    expect(host.textContent).toContain('正在绘制成品图');
+
+    await act(async () => {
+      finishGeneration?.({ outputPath: null, durationMs: 1, kind: 'cancelled', message: '已取消' });
+      await flushPromises();
+    });
   });
 });
 

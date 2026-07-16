@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" preserveAspectRatio="xMidYMid meet">
+  <!-- 柔和彩色 · 脑图 · 来源：docs/ARCHITECTURE.md -->
+  <defs>
+    <style>
+      .bg { fill: #FAF7F0; }
+      .title { font-family: 'Songti SC', 'Noto Serif CJK SC', serif; font-size: 24px; font-weight: 600; fill: #3A3530; }
+      .subtitle { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 12px; fill: #8A7F70; }
+      .center-fill { fill: #FAF7F0; stroke: #B89F7A; stroke-width: 2; }
+      .center-name { font-family: 'Songti SC', 'Noto Serif CJK SC', serif; font-size: 36px; font-weight: 600; fill: #5C4A2E; text-anchor: middle; }
+      .center-tag { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 12px; fill: #8A7F70; text-anchor: middle; letter-spacing: 0.1em; }
+      .quad-title { font-family: 'Songti SC', 'Noto Serif CJK SC', serif; font-size: 18px; font-weight: 600; text-anchor: middle; }
+      .quad-tag { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 10px; text-anchor: middle; letter-spacing: 0.1em; }
+      .item { stroke-width: 1.2; }
+      .item-title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 12px; font-weight: 600; fill: #3A3530; text-anchor: middle; }
+      .item-sub { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 10px; fill: #6B5E4F; text-anchor: middle; }
+      .item-mono { font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 9px; fill: #8A7F70; text-anchor: middle; }
+      .branch { fill: none; stroke-width: 1.6; }
+      .footer { font-family: 'PingFang SC', sans-serif; font-size: 11px; fill: #B0A28F; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1400" height="1000"/>
+
+  <!-- 标题 -->
+  <text class="title" x="60" y="56">Folia 架构脑图</text>
+  <text class="subtitle" x="60" y="80">桌面 Markdown 阅读器 · Tauri v2 + React 19 · 来源 docs/ARCHITECTURE.md</text>
+
+  <!-- 连接线 · 中心 → 四象限（有机曲线） -->
+  <!-- 上 -->
+  <path class="branch" d="M 700 440 C 700 380, 700 320, 700 270" stroke="#8BB3D9"/>
+  <!-- 右 -->
+  <path class="branch" d="M 860 500 C 950 500, 1050 510, 1110 510" stroke="#E8B7B0"/>
+  <!-- 下 -->
+  <path class="branch" d="M 700 560 C 700 620, 700 690, 700 760" stroke="#A8C2A8"/>
+  <!-- 左 -->
+  <path class="branch" d="M 540 500 C 450 500, 350 510, 290 510" stroke="#C8B5D6"/>
+
+  <!-- 中心节点 -->
+  <g>
+    <ellipse class="center-fill" cx="700" cy="500" rx="150" ry="55"/>
+    <text class="center-name" x="700" y="498">Folia</text>
+    <text class="center-tag" x="700" y="522">桌面 Markdown 阅读器</text>
+  </g>
+
+  <!-- 上 · 渲染与编辑（柔和天蓝） -->
+  <g>
+    <ellipse cx="700" cy="250" rx="170" ry="40" fill="#E5EEF6" stroke="#8BB3D9" stroke-width="1.6"/>
+    <text class="quad-title" x="700" y="248" fill="#3D5A75">渲染与编辑</text>
+    <text class="quad-tag" x="700" y="268" fill="#6B89A8">RENDER · EDIT</text>
+
+    <!-- 6 子项 -->
+    <g>
+      <rect class="item" x="60" y="100" width="200" height="60" rx="10" fill="#EFF4F9" stroke="#8BB3D9"/>
+      <text class="item-title" x="160" y="122">WYSIWYG 编辑</text>
+      <text class="item-sub" x="160" y="140">Vditor IR 即时渲染</text>
+      <text class="item-mono" x="160" y="154">默认模式 · DEC-085</text>
+    </g>
+    <g>
+      <rect class="item" x="280" y="100" width="200" height="60" rx="10" fill="#EFF4F9" stroke="#8BB3D9"/>
+      <text class="item-title" x="380" y="122">源码模式</text>
+      <text class="item-sub" x="380" y="140">CodeMirror 6</text>
+      <text class="item-mono" x="380" y="154">@uiw/react-codemirror</text>
+    </g>
+    <g>
+      <rect class="item" x="500" y="100" width="200" height="60" rx="10" fill="#EFF4F9" stroke="#8BB3D9"/>
+      <text class="item-title" x="600" y="122">HTML 阅读预览</text>
+      <text class="item-sub" x="600" y="140">DOMPurify 清洗</text>
+      <text class="item-mono" x="600" y="154">复杂表格稳定渲染</text>
+    </g>
+    <g>
+      <rect class="item" x="720" y="100" width="200" height="60" rx="10" fill="#EFF4F9" stroke="#8BB3D9"/>
+      <text class="item-title" x="820" y="122">Word 预览</text>
+      <text class="item-sub" x="820" y="140">A4 纸张 · 按需加载</text>
+      <text class="item-mono" x="820" y="154">PresetConfig 映射</text>
+    </g>
+    <g>
+      <rect class="item" x="940" y="100" width="200" height="60" rx="10" fill="#EFF4F9" stroke="#8BB3D9"/>
+      <text class="item-title" x="1040" y="122">HTML 演示模式</text>
+      <text class="item-sub" x="1040" y="140">sandbox iframe</text>
+      <text class="item-mono" x="1040" y="154">postMessage 翻页</text>
+    </g>
+    <g>
+      <rect class="item" x="1160" y="100" width="200" height="60" rx="10" fill="#EFF4F9" stroke="#8BB3D9"/>
+      <text class="item-title" x="1260" y="122">复杂表格锁</text>
+      <text class="item-sub" x="1260" y="140">contenteditable=false</text>
+      <text class="item-mono" x="1260" y="154">查看原貌 Eye 图标</text>
+    </g>
+
+    <!-- 子项 → 象限连接（细线） -->
+    <line x1="160" y1="160" x2="600" y2="225" stroke="#8BB3D9" stroke-width="0.6"/>
+    <line x1="380" y1="160" x2="630" y2="225" stroke="#8BB3D9" stroke-width="0.6"/>
+    <line x1="600" y1="160" x2="660" y2="225" stroke="#8BB3D9" stroke-width="0.6"/>
+    <line x1="820" y1="160" x2="740" y2="225" stroke="#8BB3D9" stroke-width="0.6"/>
+    <line x1="1040" y1="160" x2="770" y2="225" stroke="#8BB3D9" stroke-width="0.6"/>
+    <line x1="1260" y1="160" x2="800" y2="225" stroke="#8BB3D9" stroke-width="0.6"/>
+  </g>
+
+  <!-- 右 · 模块结构（柔和桃粉） -->
+  <g>
+    <ellipse cx="1230" cy="510" rx="120" ry="25" fill="#F7E7E3" stroke="#E8B7B0" stroke-width="1.6"/>
+    <text class="quad-title" x="1230" y="507" fill="#9C5F56">模块结构</text>
+    <text class="quad-tag" x="1230" y="524" fill="#B57C72">SERVICES · COMPONENTS</text>
+
+    <g>
+      <rect class="item" x="1100" y="290" width="260" height="50" rx="10" fill="#FBEFEC" stroke="#E8B7B0"/>
+      <text class="item-title" x="1230" y="310">services/</text>
+      <text class="item-sub" x="1230" y="328">fileService · wordExportService · wechatPreview</text>
+    </g>
+    <g>
+      <rect class="item" x="1100" y="350" width="260" height="50" rx="10" fill="#FBEFEC" stroke="#E8B7B0"/>
+      <text class="item-title" x="1230" y="370">components/</text>
+      <text class="item-sub" x="1230" y="388">Toolbar · WysiwygEditorPane · WordPaperPreviewPane</text>
+    </g>
+    <g>
+      <rect class="item" x="1100" y="410" width="260" height="50" rx="10" fill="#FBEFEC" stroke="#E8B7B0"/>
+      <text class="item-title" x="1230" y="430">app/</text>
+      <text class="item-sub" x="1230" y="448">AppLayout · App.tsx</text>
+    </g>
+    <g>
+      <rect class="item" x="1100" y="560" width="260" height="50" rx="10" fill="#FBEFEC" stroke="#E8B7B0"/>
+      <text class="item-title" x="1230" y="580">config/</text>
+      <text class="item-sub" x="1230" y="598">ESLint · Playwright · Vite · TypeScript</text>
+    </g>
+
+    <line x1="1230" y1="340" x2="1230" y2="485" stroke="#E8B7B0" stroke-width="0.6"/>
+    <line x1="1230" y1="400" x2="1230" y2="485" stroke="#E8B7B0" stroke-width="0.6"/>
+    <line x1="1230" y1="460" x2="1230" y2="485" stroke="#E8B7B0" stroke-width="0.6"/>
+    <line x1="1230" y1="560" x2="1230" y2="535" stroke="#E8B7B0" stroke-width="0.6"/>
+  </g>
+
+  <!-- 下 · 技术栈（柔和鼠尾草） -->
+  <g>
+    <ellipse cx="700" cy="800" rx="150" ry="40" fill="#EAF1E8" stroke="#A8C2A8" stroke-width="1.6"/>
+    <text class="quad-title" x="700" y="798" fill="#5C7350">技术栈</text>
+    <text class="quad-tag" x="700" y="818" fill="#7E9876">STACK · VERSIONS</text>
+
+    <g>
+      <rect class="item" x="60" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="145" y="892">Tauri v2</text>
+      <text class="item-mono" x="145" y="908">2.11.1</text>
+      <text class="item-mono" x="145" y="920">桌面框架</text>
+    </g>
+    <g>
+      <rect class="item" x="245" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="330" y="892">React 19 + TS 6</text>
+      <text class="item-mono" x="330" y="908">前端框架</text>
+      <text class="item-mono" x="330" y="920">TypeScript</text>
+    </g>
+    <g>
+      <rect class="item" x="430" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="515" y="892">Vite 8</text>
+      <text class="item-mono" x="515" y="908">构建工具</text>
+      <text class="item-mono" x="515" y="920">dev / preview</text>
+    </g>
+    <g>
+      <rect class="item" x="615" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="700" y="892">Vditor 3.11.2</text>
+      <text class="item-mono" x="700" y="908">Markdown 引擎</text>
+      <text class="item-mono" x="700" y="920">Lute</text>
+    </g>
+    <g>
+      <rect class="item" x="800" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="885" y="892">CodeMirror 6</text>
+      <text class="item-mono" x="885" y="908">源码编辑</text>
+      <text class="item-mono" x="885" y="920">@uiw/react-codemirror</text>
+    </g>
+    <g>
+      <rect class="item" x="985" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="1070" y="892">Tauri 插件</text>
+      <text class="item-mono" x="1070" y="908">dialog · fs · opener</text>
+      <text class="item-mono" x="1070" y="920">updater · process</text>
+    </g>
+    <g>
+      <rect class="item" x="1170" y="870" width="170" height="56" rx="10" fill="#F2F6F0" stroke="#A8C2A8"/>
+      <text class="item-title" x="1255" y="892">Astro</text>
+      <text class="item-mono" x="1255" y="908">官网</text>
+      <text class="item-mono" x="1255" y="920">GitHub Pages</text>
+    </g>
+
+    <line x1="145" y1="870" x2="600" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+    <line x1="330" y1="870" x2="630" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+    <line x1="515" y1="870" x2="660" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+    <line x1="700" y1="870" x2="700" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+    <line x1="885" y1="870" x2="740" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+    <line x1="1070" y1="870" x2="770" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+    <line x1="1255" y1="870" x2="800" y2="838" stroke="#A8C2A8" stroke-width="0.6"/>
+  </g>
+
+  <!-- 左 · 设置与发布（柔和丁香） -->
+  <g>
+    <ellipse cx="170" cy="510" rx="120" ry="25" fill="#EFE9F1" stroke="#C8B5D6" stroke-width="1.6"/>
+    <text class="quad-title" x="170" y="507" fill="#6E5783">设置与发布</text>
+    <text class="quad-tag" x="170" y="524" fill="#9179A6">SETTINGS · RELEASE</text>
+
+    <g>
+      <rect class="item" x="40" y="290" width="260" height="50" rx="10" fill="#F3EFF6" stroke="#C8B5D6"/>
+      <text class="item-title" x="170" y="310">Settings 弹窗</text>
+      <text class="item-sub" x="170" y="328">8 Tab · 按需懒加载 · 通用 / 导出 / 授权</text>
+    </g>
+    <g>
+      <rect class="item" x="40" y="350" width="260" height="50" rx="10" fill="#F3EFF6" stroke="#C8B5D6"/>
+      <text class="item-title" x="170" y="370">Word 导出预设</text>
+      <text class="item-sub" x="170" y="388">JSON 导入 · 槽位 · 单页纸预览</text>
+    </g>
+    <g>
+      <rect class="item" x="40" y="410" width="260" height="50" rx="10" fill="#F3EFF6" stroke="#C8B5D6"/>
+      <text class="item-title" x="170" y="430">HTML 导出预设</text>
+      <text class="item-sub" x="170" y="448">CSS / JSON · 归一化 · at-rule 过滤</text>
+    </g>
+    <g>
+      <rect class="item" x="40" y="560" width="260" height="50" rx="10" fill="#F3EFF6" stroke="#C8B5D6"/>
+      <text class="item-title" x="170" y="580">自动更新</text>
+      <text class="item-sub" x="170" y="598">GitHub Releases · Gitee 镜像 · 签名</text>
+    </g>
+    <g>
+      <rect class="item" x="40" y="620" width="260" height="50" rx="10" fill="#F3EFF6" stroke="#C8B5D6"/>
+      <text class="item-title" x="170" y="640">测试策略</text>
+      <text class="item-sub" x="170" y="658">Vitest 单元 · Playwright E2E</text>
+    </g>
+
+    <line x1="170" y1="340" x2="170" y2="485" stroke="#C8B5D6" stroke-width="0.6"/>
+    <line x1="170" y1="400" x2="170" y2="485" stroke="#C8B5D6" stroke-width="0.6"/>
+    <line x1="170" y1="460" x2="170" y2="485" stroke="#C8B5D6" stroke-width="0.6"/>
+    <line x1="170" y1="560" x2="170" y2="535" stroke="#C8B5D6" stroke-width="0.6"/>
+  </g>
+
+  <line x1="60" y1="950" x2="1340" y2="950" stroke="#E0D6C2" stroke-width="1"/>
+  <text class="footer" x="60" y="976">来源：docs/ARCHITECTURE.md</text>
+  <text class="footer" x="1340" y="976" text-anchor="end">柔和彩色 · 风格 04 · 脑图</text>
+</svg>

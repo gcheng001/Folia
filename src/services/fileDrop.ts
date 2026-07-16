@@ -1,4 +1,4 @@
-const OPENABLE_EXTENSIONS = new Set(['md', 'markdown', 'html', 'htm', 'docx', 'foliaviz']);
+const OPENABLE_EXTENSIONS = new Set(['md', 'markdown', 'html', 'htm', 'docx', 'foliaviz', 'svg']);
 
 export function isOpenableDocumentPath(path: string): boolean {
   const ext = path.split('.').pop()?.toLowerCase();

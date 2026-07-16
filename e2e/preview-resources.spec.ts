@@ -1,5 +1,13 @@
 import { expect, type Page, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const file = { path: '', name: '未命名', content: '', dirty: false, lastSavedContent: '', fileType: 'markdown' };
+    const tab = { id: 'e2e-draft', file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false };
+    localStorage.setItem('folia.session.v1', JSON.stringify({ version: 1, tabs: [tab], activeTabId: tab.id, recentFiles: [], splitTabId: null, splitView: false }));
+  });
+});
+
 async function loadedResourcePaths(page: Page): Promise<string[]> {
   return page.evaluate(() =>
     performance.getEntriesByType('resource')

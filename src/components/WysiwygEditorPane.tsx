@@ -18,9 +18,10 @@ type WysiwygEditorPaneProps = {
   filePath?: string;
 };
 
-// 复用 IR 模式展开 → 自动折叠的"停顿"延迟（ISS-151）
+// 复用 IR 模式展开 → 自动折叠的"停顿"延迟（ISS-151）。
 // Vditor IR 默认在编辑时让 `**` / `*` 等 marker 始终可见（vditor-ir__node--expand），
 // 用户视角下加粗 / 斜体看上去未生效。监听 keydown 重置定时器，输入停顿后强制折叠。
+// 标题 `#` 不走定时器：app.css 永久压成 0×0，保留 DOM 供 Markdown 序列化。
 const IR_MARKER_COLLAPSE_DELAY_MS = 220;
 const FOLIA_LOCKED_ATTR = 'data-folia-locked';
 const FOLIA_LOCKED_VALUE = 'table';
@@ -45,11 +46,6 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
   });
 }
 
-function editorHasFocus(editor: import('vditor').default): boolean {
-  const ir = getIrElement(editor);
-  return !!ir && (document.activeElement === ir || ir.contains(document.activeElement));
-}
-
 /**
  * 对 Vditor IR 模式编辑器 DOM 做 sanitize（ISS-168 编辑器部分）。
  *
@@ -62,12 +58,11 @@ function editorHasFocus(editor: import('vditor').default): boolean {
  * 类型声明但 vditor 源码无任何使用点，仅 `IPreviewOptions.markdown.
  * transform`（previewRender.ts:95-96）真实生效。
  *
- * 备选方案：sanitize 整个 IR DOM 的 innerHTML，并额外清理 HTML block
- * 的隐藏 marker 文本。IR 模式会同时保存可见 preview DOM 和
+ * Folia 清理 IR DOM 及 HTML block 的隐藏 marker 文本。IR 模式会同时
+ * 保存可见 preview DOM 和
  * `code[data-type="html-block"]` 中的转义源码；后者才是
  * Lute.VditorIRDOM2Md 反序列化为 MD 的来源之一。只清理 preview 会让
- * 保存时重新还原 `<script>` / `onerror`。`sanitizeVditorIrHtml` 会先清理
- * marker 文本，再用 DOMPurify 清理整体 IR DOM，同时：
+ * 保存时重新还原 `<script>` / `onerror`。清理过程会：
  *   - 保留内联 `<svg>` 及子元素（`<rect>`/`<text>`/`<defs>`/...）、
  *     `viewBox`/`xmlns`/`fill`/`stroke` 等属性（让用户内联 SVG 配图
  *     在编辑器里也正常显示——ISS-168 的核心修复目标）；
@@ -80,42 +75,43 @@ function editorHasFocus(editor: import('vditor').default): boolean {
  * MD：`getValue()` 返回的 MD 仍含 svg 子元素（保存不丢 svg），不含
  * script 标签。
  *
- * 调用方负责在合适的时机（Vditor 渲染完成 / setValue 完成 / 用户输
- * 入稳定后）调用 `sanitizeIrDom`；不要在 input 事件回调内立即调用，
- * 否则会与 Vditor 自身的 setValue 死循环（用 applyingExternalValue /
- * sanitizingRef 双重 guard）。
+ * 普通输入只在副本上判断是否有危险 marker，不改活 DOM；失焦、初始化或
+ * 外部 setValue 后再应用完整清理。这样既不破坏 Vditor 的内部编辑结构，
+ * 也不会在打字时销毁选区和滚动锚点。
  *
- * ISS-63 / DEC-119 sanitize 完成后重置 `.vditor-ir__preview[data-render="1"]`
- * 的 data-render 为 "0" 并重跑 Vditor 内置代码块渲染器：DOMPurify 整体重写
- * IR DOM 后 Vditor 内部 mermaid / echarts 等异步渲染拿到的是 detached 节
- * 点引用，svg / canvas 写入被丢弃。重置 data-render 让 Vditor 知道这些 preview
- * 需要重新处理；调 `Vditor.mermaidRender` / `Vditor.mathRender` 等静态方法
- * 让渲染器找到新 IR DOM 节点引用，异步产物会写到活节点上。
+ * ISS-63 / DEC-119：当清理或 SVG 预览修复确实改动 DOM 时，重跑 Vditor
+ * 代码块渲染器，确保 mermaid / echarts 等异步产物写入当前活节点。
  */
-function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: string): boolean {
+function sanitizeIrDom(
+  editor: import('vditor').default | null,
+  markdownSource: string,
+  options: { deferSafeDomReplacement?: boolean } = {},
+): boolean {
   if (!editor) return false;
   const ir = getIrElement(editor);
   if (!ir) return false;
   const original = ir.innerHTML;
   if (original === '') return false;
   const result = sanitizeVditorIrHtml(original);
-  if (result.changed) {
+  // 输入期间只在危险 marker 确实改变 Markdown 源时立即替换；普通 DOM
+  // 规范化延迟到 blur，避免触碰 Vditor 正在维护的活编辑结构。
+  const shouldReplace = result.changed
+    && (!options.deferSafeDomReplacement || result.sourceChanged);
+  if (shouldReplace) {
     ir.innerHTML = result.html;
   }
-  repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
-  // ISS-63 / DEC-118：sanitize 完成后重跑 Vditor 内部代码块渲染器，让
-  // mermaid / echarts 等异步产物写入 sanitize 后的新 IR DOM 活节点（绕
-  // 开 detached-node 竞争）。Try/catch 防 unhandled rejection + 卸载竞态
-  // 检查防 await 期间 editor 被 cleanup 销毁。
-  rerenderAsyncCodeBlocks(editor);
-  return result.sourceChanged;
+  const previewRepaired = repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
+  // 只有清理或 SVG 修复实际改动 DOM 时才重跑异步渲染，普通输入不触发。
+  if (shouldReplace || previewRepaired) {
+    rerenderAsyncCodeBlocks(editor);
+  }
+  return shouldReplace && result.sourceChanged;
 }
 
 /**
  * 重跑 Vditor 内部代码块渲染器，让 mermaid / echarts / mathjax / flowchart /
  * plantuml / graphviz / markmap / mindmap / abc / smiles / chart 等异步
- * 渲染产物能正确写入 sanitize 后的新 IR DOM 节点（绕过 folia sanitize
- * 与 Vditor 异步渲染之间的 detached-node 竞争 —— ISS-63 / DEC-118）。
+ * 渲染产物能正确写入 sanitize 后的活 IR DOM 节点（ISS-63 / DEC-118）。
  *
  * cdn / theme 从 editor 实例动态拿（避免 hardcoded 主题与编辑器切换不一
  * 致）。try/catch 包裹所有 Render 调用 + 卸载竞态检查防止 mermaid /
@@ -129,7 +125,7 @@ function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: 
  * 等价。
  *
  * addScript 二次调用因 script 标签已存在会直接 resolve；mermaid.render
- * / echarts.init 等渲染部分会重新跑，把 svg / canvas 写入新 IR DOM 节
+ * / echarts.init 等渲染部分会重新跑，把 svg / canvas 写入当前 IR DOM 节
  * 点。Vditor 内部 input handler 不会自动响应 data-render 重置，这里不
  * 重置 data-render（Vditor.processCodeRender 末尾总是设为 "1"，但我
  * 们直接调 Render 方法绕过 processCodeRender，data-render 维持 sanitize
@@ -259,7 +255,15 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     const markUserInteracted = () => {
       userInteractedRef.current = true;
     };
+    const syncNativeInput = () => {
+      queueMicrotask(() => {
+        const editor = editorRef.current;
+        if (!editor || cancelled || initializingRef.current || applyingExternalValue.current || sanitizingRef.current || !userInteractedRef.current) return;
+        emitEditorValueIfChanged(editor);
+      });
+    };
     host.addEventListener('beforeinput', markUserInteracted, true);
+    host.addEventListener('input', syncNativeInput, true);
     host.addEventListener('paste', markUserInteracted, true);
     host.addEventListener('drop', markUserInteracted, true);
 
@@ -267,7 +271,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     //（vditor-ir__node--expand），不止输入时。原方案只在 keydown/input 后
     // 安排折叠，鼠标点击移动光标展开的 `#`/`**` 无人折叠，一直挂在屏上
     //（用户反馈"编辑文字时经常跳出井号星号"的主因）。mouseup 后同样安排
-    // 停顿折叠，与键盘路径共用定时器。
+    // 停顿折叠，与键盘路径共用定时器。标题 `#` 由 CSS 永久隐藏，
+    // 这里继续负责 `**` / `*` / 链接等其他 IR marker。
     const scheduleCollapseOnMouseUp = () => {
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
@@ -389,7 +394,6 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         },
         input(value) {
           if (initializingRef.current || applyingExternalValue.current || sanitizingRef.current) return;
-          if (!editorHasFocus(editor)) return;
           if (!userInteractedRef.current) return;
 
           // ISS-151: 每次 input 后安排折叠定时器。
@@ -403,16 +407,13 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             collapseExpandedMarkers(editorRef.current);
           }, IR_MARKER_COLLAPSE_DELAY_MS);
 
-          // ISS-168 编辑器部分：每次 input 回调先 sanitize IR DOM，
-          // 保证用户输入/粘贴/拖入的 svg 保留、script/onerror 剥离。
-          // sanitizeIrDom 写 innerHTML 不会触发 Vditor 的 input 回调
-          // （innerHTML 直接赋值 vs execCommand insertHTML 路径不同），
-          // 但为防御性仍然包在 sanitizingRef 里。try/finally 保证 DOMException
-          // 不会让 sanitizingRef 永远卡在 true（ISS-170 review follow-up）。
+          // ISS-168：input 期间在 DOM 副本上检查安全性。普通规范化不改活 DOM；
+          // 只有危险 marker 改变 Markdown 源时才立即回写，其余清理延迟到 blur。
+          // guard + try/finally 防止与外部 setValue 重入或异常后永久锁死。
           sanitizingRef.current = true;
           let sanitized = false;
           try {
-            sanitized = sanitizeIrDom(editor, latestSource.current);
+            sanitized = sanitizeIrDom(editor, latestSource.current, { deferSafeDomReplacement: true });
           } catch (error) {
             console.error('[Folia] input() sanitize 失败:', error);
           } finally {
@@ -498,6 +499,17 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
             collapseTimerRef.current = null;
           }
           collapseExpandedMarkers(editorRef.current);
+          if (applyingExternalValue.current || sanitizingRef.current) return;
+          sanitizingRef.current = true;
+          try {
+            const sanitized = sanitizeIrDom(editor, latestSource.current);
+            lockComplexTables();
+            if (sanitized) emitEditorValueIfChanged(editor);
+          } catch (error) {
+            console.error('[Folia] blur() sanitize 失败:', error);
+          } finally {
+            sanitizingRef.current = false;
+          }
         },
       });
 
@@ -513,6 +525,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     return () => {
       cancelled = true;
       host.removeEventListener('beforeinput', markUserInteracted, true);
+      host.removeEventListener('input', syncNativeInput, true);
       host.removeEventListener('paste', markUserInteracted, true);
       host.removeEventListener('drop', markUserInteracted, true);
       host.removeEventListener('mouseup', scheduleCollapseOnMouseUp, true);

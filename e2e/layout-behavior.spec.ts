@@ -1,5 +1,13 @@
 import { expect, type Page, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const file = { path: '', name: '未命名', content: '', dirty: false, lastSavedContent: '', fileType: 'markdown' };
+    const tab = { id: 'e2e-draft', file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder: false };
+    localStorage.setItem('folia.session.v1', JSON.stringify({ version: 1, tabs: [tab], activeTabId: tab.id, recentFiles: [], splitTabId: null, splitView: false }));
+  });
+});
+
 async function openEditor(page: Page): Promise<void> {
   await page.getByRole('button', { name: '源码模式' }).click();
   await expect(page.locator('.cm-editor')).toBeVisible();
@@ -50,7 +58,7 @@ test('toolbar hides the app name and keeps draggable space around controls', asy
       titleDrag: document.querySelector('.toolbar-title')?.hasAttribute('data-tauri-drag-region') ?? false,
       tabbarInsideTitle: !!document.querySelector('.toolbar-title [role="tablist"]'),
       tabNoDrag: document.querySelector('.tabbar-tab')?.hasAttribute('data-no-window-drag') ?? false,
-      newBtnNoDrag: document.querySelector('.tabbar-new')?.hasAttribute('data-no-window-drag') ?? false,
+      newBtnNoDrag: document.querySelector('button[aria-label="新建 Markdown"]')?.hasAttribute('data-no-window-drag') ?? false,
       overlayCount: document.querySelectorAll('.toolbar-drag-region').length,
       fallback: document.querySelector('.app-toolbar')?.getAttribute('data-window-drag-fallback') ?? '',
       groups: Array.from(document.querySelectorAll('.toolbar-group')).map((group) => (
@@ -721,7 +729,7 @@ test('license settings activate beta slots for Word and HTML presets', async ({ 
   await expect(page.getByRole('heading', { name: '内测授权' })).toBeVisible();
   await expect(page.getByText('内测码只用于开启本机额外自定义槽位。')).toBeVisible();
   await expect(page.getByText(/购买|订阅|收费/)).toHaveCount(0);
-  await page.getByLabel('内测码').fill('FOLIA-BETA-2026');
+  await page.getByLabel('内测码').fill('YWXLAW');
   await page.getByRole('button', { name: '激活内测授权' }).click();
 
   await expect(page.getByText('内测授权已启用。')).toBeVisible();

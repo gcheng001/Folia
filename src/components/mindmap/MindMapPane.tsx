@@ -193,7 +193,14 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   const [sidecar, setSidecar] = useState<MindMapCanvasSidecar>(() => loadCanvasSidecar(documentKey));
   const [edgeMode, setEdgeMode] = useState<EdgeDisplayMode>(() => loadCanvasSidecar(documentKey).edgeMode);
   const [pendingStructure, setPendingStructure] = useState<StructureHover | null>(null);
-  const history = useCanvasHistory();
+  const {
+    recordBefore: recordHistoryBefore,
+    undo: undoHistory,
+    redo: redoHistory,
+    reset: resetHistory,
+    canUndo,
+    canRedo,
+  } = useCanvasHistory();
 
   // P0-1: 跟踪当前 sidecar 所属的文档 key，防止文件切换时的数据污染
   const [hydratedDocumentKey, setHydratedDocumentKey] = useState<string | null>(documentKey);
@@ -227,10 +234,10 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     const loaded = loadCanvasSidecar(documentKey);
     setSidecar(loaded);
     setEdgeMode(loaded.edgeMode);
-    history.reset();
+    resetHistory();
     // P0-1: 标记 sidecar 已完全加载到这个 documentKey
     setHydratedDocumentKey(documentKey);
-  }, [documentKey, history.reset]);
+  }, [documentKey, resetHistory]);
 
   // sidecar 持久化
   useEffect(() => {
@@ -245,24 +252,24 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
 
   // 操作前记录快照，撤销栈保存不可变的 markdown + sidecar 状态。
   const recordBefore = useCallback((md: string, sc: MindMapCanvasSidecar) => {
-    history.recordBefore({ markdown: md, sidecar: sc });
-  }, [history.recordBefore]);
+    recordHistoryBefore({ markdown: md, sidecar: sc });
+  }, [recordHistoryBefore]);
 
   const undo = useCallback(() => {
-    const entry = history.undo({ markdown, sidecar });
+    const entry = undoHistory({ markdown, sidecar });
     if (!entry) return;
     setSidecar(entry.sidecar);
     setEdgeMode(entry.sidecar.edgeMode);
     onChangeRef.current?.(entry.markdown);
-  }, [history.undo, markdown, sidecar]);
+  }, [undoHistory, markdown, sidecar]);
 
   const redo = useCallback(() => {
-    const entry = history.redo({ markdown, sidecar });
+    const entry = redoHistory({ markdown, sidecar });
     if (!entry) return;
     setSidecar(entry.sidecar);
     setEdgeMode(entry.sidecar.edgeMode);
     onChangeRef.current?.(entry.markdown);
-  }, [history.redo, markdown, sidecar]);
+  }, [redoHistory, markdown, sidecar]);
 
   const applyInsert = useCallback((result: EditResult | null) => {
     if (!result || !onChangeRef.current) return;
@@ -489,7 +496,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       nodes.push(makeGroupNode(g, bbox, selectedIds.includes(`g:${g.id}`), handleTitleChange)); // P0-5: 使用 g: 前缀
     }
     return nodes;
-  }, [sidecar.groups, derivedNodes, doc, selectedIds, markdown, sidecar, recordBefore]);
+  }, [derivedNodes, doc, selectedIds, markdown, sidecar, recordBefore]);
 
   const freeLineNodeBoxes = useMemo<FreeLineNodeBox[]>(() => (
     derivedNodes
@@ -892,7 +899,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     }
     // 自由拖动：位置已在 React Flow 状态；这里同步到 sidecar
     clearStructureHover();
-  }, [pendingStructure, clearStructureHover, markdown, sidecar, recordBefore, rf]);
+  }, [pendingStructure, clearStructureHover]);
 
   // 连接模式：onConnect
   const handleConnect = useCallback((connection: Connection) => {
@@ -1145,7 +1152,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       if (style) return { kind: 'edge', ids: selectedIds, style };
     }
     return null;
-  }, [selectedIds, sidecar.groups, sidecar.customEdges, sidecar.freeLines, sidecar.positions, sidecar.nodeStyles]);
+  }, [selectedIds, sidecar.groups, sidecar.customEdges, sidecar.freeLines, sidecar.nodeStyles]);
 
   // 上下文栏动作
   const applyColorToSelected = useCallback((color: string) => {
@@ -1500,8 +1507,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         onToolChange={setTool}
         edgeMode={edgeMode}
         onEdgeModeChange={handleEdgeModeChange}
-        canUndo={history.canUndo}
-        canRedo={history.canRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onAutoLayout={handleAutoLayout}
         onTidyCanvas={handleTidyCanvas}
         onClearFreeLines={handleClearFreeLines}

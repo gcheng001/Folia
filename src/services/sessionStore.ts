@@ -1,7 +1,17 @@
 import type { SessionState, PersistedSession, Tab } from '../types/session';
+import type { OpenedFile } from '../types/document';
 import { DRAFT_PERSIST_MAX_BYTES } from '../types/session';
 
 export const SESSION_STORAGE_KEY = 'folia.session.v1';
+
+/**
+ * 关窗可能发生在异步保存完成、React dirty 状态提交之前。重启时以磁盘为事实来源：
+ * 磁盘内容与恢复草稿完全一致才清除假 dirty；不一致时保留草稿和警示。
+ */
+export function reconcilePersistedDirtyFile(file: OpenedFile, diskContent: string): OpenedFile {
+  if (!file.dirty || !file.path || file.content !== diskContent) return file;
+  return { ...file, dirty: false, lastSavedContent: file.content };
+}
 
 function emptySession(): SessionState {
   return { tabs: [], activeTabId: '', recentFiles: [], splitTabId: null, splitView: false };

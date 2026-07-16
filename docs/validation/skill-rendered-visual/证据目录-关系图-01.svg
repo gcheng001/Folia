@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid meet">
+  <!-- 深色科技 · 关系图 · 来源：fixtures/legal-html-tables/evidence-directory.md -->
+  <defs>
+    <style>
+      .bg { fill: #0F172A; }
+      .grid { stroke: #1E293B; stroke-width: 0.5; fill: none; }
+      .title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 22px; font-weight: 700; fill: #F8FAFC; letter-spacing: 0.05em; }
+      .subtitle { font-family: 'PingFang SC', sans-serif; font-size: 12px; fill: #94A3B8; }
+      .evidence-box { fill: #0F172A; stroke-width: 1.5; }
+      .evidence-title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 14px; font-weight: 700; fill: #F8FAFC; }
+      .evidence-meta { font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 10px; fill: #94A3B8; }
+      .evidence-purpose { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 11px; fill: #CBD5E1; }
+      .evidence-purpose-h { font-family: 'PingFang SC', sans-serif; font-size: 10px; font-weight: 600; fill: #FBBF24; letter-spacing: 0.05em; }
+      .center-box { fill: #0F172A; stroke: #FBBF24; stroke-width: 2; }
+      .center-title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 13px; font-weight: 700; fill: #FBBF24; letter-spacing: 0.05em; text-anchor: middle; }
+      .center-money { font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; fill: #F8FAFC; text-anchor: middle; }
+      .center-sub { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 11px; fill: #94A3B8; text-anchor: middle; }
+      .edge-time { stroke-width: 1.5; fill: none; stroke-dasharray: 6 4; }
+      .edge-prove { stroke-width: 1.5; fill: none; }
+      .time-label { font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 10px; fill: #94A3B8; text-anchor: middle; }
+      .footer { font-family: 'PingFang SC', sans-serif; font-size: 11px; fill: #64748B; }
+      .case-no { font-family: 'SF Mono', 'JetBrains Mono', monospace; font-size: 12px; fill: #94A3B8; }
+    </style>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" class="grid"/>
+    </pattern>
+    <marker id="arr-time" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#64748B"/>
+    </marker>
+    <marker id="arr-prove" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#FBBF24"/>
+    </marker>
+  </defs>
+
+  <!-- 背景与网格 -->
+  <rect class="bg" width="1200" height="900"/>
+  <rect width="1200" height="900" fill="url(#grid)"/>
+
+  <!-- 标题 -->
+  <text class="title" x="60" y="56">证据目录关系图</text>
+  <text class="case-no" x="60" y="78">案号：（2026）沪0101民初1234号</text>
+  <text class="subtitle" x="1140" y="56" text-anchor="end">原告主张被告欠货款</text>
+  <text class="subtitle" x="1140" y="78" text-anchor="end">四条证据 → 同一待证事实</text>
+
+  <!-- 时间链 · 背景虚线 -->
+  <path class="edge-time" d="M 240 260 C 360 180, 840 180, 960 260" stroke="#64748B" marker-end="url(#arr-time)"/>
+  <path class="edge-time" d="M 960 320 C 840 400, 360 400, 240 320" stroke="#64748B" marker-end="url(#arr-time)"/>
+
+  <text class="time-label" x="600" y="186" fill="#64748B">合同 → 物流</text>
+  <text class="time-label" x="600" y="350" fill="#64748B">对账 → 情况说明</text>
+
+  <!-- 证据 1 · 采购合同（左上） -->
+  <g>
+    <rect class="evidence-box" x="80" y="220" width="320" height="200" rx="8" stroke="#22D3EE"/>
+    <rect x="80" y="220" width="320" height="200" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22D3EE" stroke-width="1.5"/>
+    <text class="evidence-title" x="100" y="248">证据 1 · 采购合同</text>
+    <text class="evidence-meta" x="100" y="268">来源：原被告双方</text>
+    <text class="evidence-meta" x="100" y="284">时间：2025-03-18</text>
+    <text class="evidence-meta" x="100" y="300">载体：纸质原件 / PDF / 邮件链</text>
+    <line x1="100" y1="312" x2="380" y2="312" stroke="#22D3EE" stroke-width="0.8" stroke-opacity="0.5"/>
+    <text class="evidence-purpose-h" x="100" y="332">证明目的</text>
+    <text class="evidence-purpose" x="100" y="352">① 双方就货物名称、数量、交付时间、</text>
+    <text class="evidence-purpose" x="100" y="370">　 违约责任等核心条款达成一致</text>
+    <text class="evidence-purpose" x="100" y="392">② 合同经双方多轮确认，并非单方制作</text>
+  </g>
+
+  <!-- 证据 2 · 物流签收（右上） -->
+  <g>
+    <rect class="evidence-box" x="800" y="220" width="320" height="200" rx="8" stroke="#34D399"/>
+    <rect x="800" y="220" width="320" height="200" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34D399" stroke-width="1.5"/>
+    <text class="evidence-title" x="820" y="248">证据 2 · 物流签收</text>
+    <text class="evidence-meta" x="820" y="268">来源：承运平台</text>
+    <text class="evidence-meta" x="820" y="284">时间：2025-04-02 至 2025-04-09</text>
+    <text class="evidence-meta" x="820" y="300">载体：网页截图 / 公证书附件</text>
+    <line x1="820" y1="312" x2="1100" y2="312" stroke="#34D399" stroke-width="0.8" stroke-opacity="0.5"/>
+    <text class="evidence-purpose-h" x="820" y="332">证明目的</text>
+    <text class="evidence-purpose" x="820" y="352">涉案货物已经送达被告指定仓库，</text>
+    <text class="evidence-purpose" x="820" y="370">签收人身份与合同约定收货人一致</text>
+    <text class="evidence-purpose" x="820" y="392">　</text>
+  </g>
+
+  <!-- 证据 3 · 对账确认单（左下） -->
+  <g>
+    <rect class="evidence-box" x="80" y="500" width="320" height="200" rx="8" stroke="#A78BFA"/>
+    <rect x="80" y="500" width="320" height="200" rx="8" fill="rgba(76,29,149,0.4)" stroke="#A78BFA" stroke-width="1.5"/>
+    <text class="evidence-title" x="100" y="528">证据 3 · 对账确认单</text>
+    <text class="evidence-meta" x="100" y="548">来源：双方财务人员</text>
+    <text class="evidence-meta" x="100" y="564">时间：2025-05-12</text>
+    <text class="evidence-meta" x="100" y="580">载体：电子签章 PDF</text>
+    <line x1="100" y1="592" x2="380" y2="592" stroke="#A78BFA" stroke-width="0.8" stroke-opacity="0.5"/>
+    <text class="evidence-purpose-h" x="100" y="612">证明目的</text>
+    <text class="evidence-purpose" x="100" y="632">被告确认截至 2025-05-12 尚欠货款</text>
+    <text class="evidence-purpose" x="100" y="650">且未提出质量异议（骑缝章）</text>
+    <text class="evidence-purpose" x="100" y="672">　</text>
+  </g>
+
+  <!-- 证据 4 · 情况说明（右下） -->
+  <g>
+    <rect class="evidence-box" x="800" y="500" width="320" height="200" rx="8" stroke="#FB923C"/>
+    <rect x="800" y="500" width="320" height="200" rx="8" fill="rgba(120,53,15,0.3)" stroke="#FB923C" stroke-width="1.5"/>
+    <text class="evidence-title" x="820" y="528">证据 4 · 情况说明</text>
+    <text class="evidence-meta" x="820" y="548">来源：原告业务部门</text>
+    <text class="evidence-meta" x="820" y="564">时间：2025-06-01</text>
+    <text class="evidence-meta" x="820" y="580">载体：情况说明（长中文事实）</text>
+    <line x1="820" y1="592" x2="1100" y2="592" stroke="#FB923C" stroke-width="0.8" stroke-opacity="0.5"/>
+    <text class="evidence-purpose-h" x="820" y="612">证明目的</text>
+    <text class="evidence-purpose" x="820" y="632">被告收到货物后长期占有使用，</text>
+    <text class="evidence-purpose" x="820" y="650">未按合同付款，催告仍拖延</text>
+    <text class="evidence-purpose" x="820" y="672">　</text>
+  </g>
+
+  <!-- 中心：待证事实 -->
+  <g>
+    <rect class="center-box" x="490" y="380" width="220" height="140" rx="6"/>
+    <text class="center-title" x="600" y="412">待证事实</text>
+    <text class="center-money" x="600" y="448">1,286,430.75</text>
+    <text class="center-sub" x="600" y="468">人民币 · 截至 2025-05-12</text>
+    <text class="center-sub" x="600" y="490">原告主张被告欠货款</text>
+  </g>
+
+  <!-- 四角 → 中心 · 证明关系 -->
+  <line class="edge-prove" x1="400" y1="320" x2="490" y2="410" stroke="#22D3EE" marker-end="url(#arr-prove)"/>
+  <line class="edge-prove" x1="800" y1="320" x2="710" y2="410" stroke="#34D399" marker-end="url(#arr-prove)"/>
+  <line class="edge-prove" x1="400" y1="600" x2="490" y2="490" stroke="#A78BFA" marker-end="url(#arr-prove)"/>
+  <line class="edge-prove" x1="800" y1="600" x2="710" y2="490" stroke="#FB923C" marker-end="url(#arr-prove)"/>
+
+  <text class="time-label" x="438" y="368" fill="#22D3EE">合同成立</text>
+  <text class="time-label" x="762" y="368" fill="#34D399">货物已交付</text>
+  <text class="time-label" x="438" y="556" fill="#A78BFA">金额确认</text>
+  <text class="time-label" x="762" y="556" fill="#FB923C">长期拖欠</text>
+
+  <!-- 阶段标签 -->
+  <text class="footer" x="240" y="200" fill="#94A3B8">阶段一 · 合同与交付（3-4 月）</text>
+  <text class="footer" x="960" y="200" fill="#94A3B8" text-anchor="end">阶段二 · 对账与催告（5-6 月）</text>
+
+  <!-- 图例 -->
+  <g transform="translate(60, 750)">
+    <text class="footer" x="0" y="0" fill="#94A3B8">图例</text>
+    <line x1="0" y1="18" x2="30" y2="18" stroke="#64748B" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text class="footer" x="38" y="22" fill="#94A3B8">时间先后关系</text>
+    <line x1="170" y1="18" x2="200" y2="18" stroke="#FBBF24" stroke-width="1.5"/>
+    <text class="footer" x="208" y="22" fill="#94A3B8">证明指向</text>
+    <rect x="320" y="10" width="14" height="14" fill="rgba(8,51,68,0.4)" stroke="#22D3EE" stroke-width="1.5"/>
+    <text class="footer" x="342" y="22" fill="#94A3B8">证据节点</text>
+  </g>
+
+  <line x1="60" y1="830" x2="1140" y2="830" stroke="#1E293B" stroke-width="1"/>
+  <text class="footer" x="60" y="858">来源：fixtures/legal-html-tables/evidence-directory.md</text>
+  <text class="footer" x="1140" y="858" text-anchor="end">深色科技 · 风格 03 · 关系图</text>
+</svg>

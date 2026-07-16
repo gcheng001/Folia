@@ -31,7 +31,7 @@ export async function save(options: SaveOptions): Promise<string | null> {
       return path ?? null;
     } catch (error) {
       // P1-7: Tauri save失败必须抛错
-      throw new Error(`保存失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`保存失败: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
   // 浏览器：返回建议文件名，让调用方走 downloadBlob
@@ -45,7 +45,7 @@ export async function writeFile(path: string, contents: Uint8Array): Promise<voi
       return;
     } catch (error) {
       // P1-7: Tauri write失败必须抛错
-      throw new Error(`写入失败: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`写入失败: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
   // P1-7: 浏览器fallback：只使用basename，绝不把绝对路径当下载文件名

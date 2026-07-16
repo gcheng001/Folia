@@ -46,10 +46,10 @@ type ToolbarProps = {
   newDraftActive: boolean;
   /** 是否处于分屏视图（高亮分屏按钮）。 */
   splitViewActive: boolean;
-  /** AI 抽取正在进行（按钮显示为不可点的旋转图标）。 */
-  aiExtractionRunning: boolean;
-  /** AI 抽取按钮的禁用态：非 Markdown、未保存或正在抽取时为 true。 */
-  aiExtractionDisabled: boolean;
+  /** Skill 成品图正在生成（按钮显示旋转图标，点击可重新展开进度）。 */
+  skillVisualRunning: boolean;
+  /** 成品图按钮的禁用态：非 Markdown 且没有后台任务时为 true；未保存时点击后给出明确说明。 */
+  skillVisualDisabled: boolean;
   onNew: () => void;
   onDiscardNewDraft: () => void;
   onOpenHtmlAnything: () => void;
@@ -57,7 +57,7 @@ type ToolbarProps = {
   onToggleEditorMode: () => void;
   onToggleMindMapMode: () => void;
   onCreateVisualization: () => void;
-  onRequestAiExtract: () => void;
+  onRequestSkillVisual: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
   onOpen: () => void;
@@ -71,7 +71,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, aiExtractionRunning, aiExtractionDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onRequestAiExtract, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, skillVisualRunning, skillVisualDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onRequestSkillVisual, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate,
 }: ToolbarProps) {
   const settings = useSettings();
@@ -194,18 +194,18 @@ export function Toolbar({
             <Share2 size={iconSize} strokeWidth={strokeWidth} />
           </button>
           <button
-            className={aiExtractionRunning ? 'ai-extract-running' : ''}
-            onClick={onRequestAiExtract}
-            disabled={aiExtractionDisabled}
+            className={skillVisualRunning ? 'skill-visual-trigger skill-visual-trigger--running' : 'skill-visual-trigger'}
+            onClick={onRequestSkillVisual}
+            disabled={skillVisualDisabled}
             data-no-window-drag="true"
-            title={aiExtractionRunning
-              ? t('aiExtractionRunning')
-              : t('toolbarAiVisualizationTitle')}
-            aria-label={aiExtractionRunning
-              ? t('aiExtractionRunning')
-              : t('toolbarAiVisualizationLabel')}
+            title={skillVisualRunning
+              ? t('skillVisualRunning')
+              : t('toolbarSkillVisualTitle')}
+            aria-label={skillVisualRunning
+              ? t('skillVisualRunning')
+              : t('toolbarSkillVisualLabel')}
           >
-            <Sparkles size={iconSize} strokeWidth={strokeWidth} className={aiExtractionRunning ? 'spinning' : ''} />
+            <Sparkles size={iconSize} strokeWidth={strokeWidth} className={skillVisualRunning ? 'spinning' : ''} />
           </button>
           <button
             className={wordPreviewVisible ? 'active' : ''}

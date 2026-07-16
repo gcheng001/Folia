@@ -25,13 +25,23 @@ import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
 import { TabBar } from '../components/TabBar';
-import { AiExtractionOverlay } from '../components/AiExtractionOverlay';
+import { SkillVisualDialog } from '../components/SkillVisualDialog';
 import type { TabDragPayload } from '../components/tabDragPayload';
 import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 import { detectCurrentWindowLabel } from '../services/tabWindowService';
+import { reconcilePersistedDirtyFile } from '../services/sessionStore';
+import {
+  createSkillVisualJobId,
+  getDocumentSkillVisualStyle,
+  recommendSkillVisualType,
+  rememberDocumentSkillVisualStyle,
+  type SkillVisualStage,
+  type SkillVisualStyle,
+  type SkillVisualType,
+} from '../services/skillVisualService';
 
 const EditorPane = lazy(() =>
   import('../components/EditorPane').then((module) => ({ default: module.EditorPane })),
@@ -86,6 +96,10 @@ const MindMapPane = lazy(() =>
 
 const VisualWorkbookPane = lazy(() =>
   import('../components/visualization/VisualWorkbookPane').then((module) => ({ default: module.VisualWorkbookPane })),
+);
+
+const DiagramEditorPane = lazy(() =>
+  import('../components/DiagramEditorPane').then((module) => ({ default: module.DiagramEditorPane })),
 );
 
 const HtmlTableViewerOverlay = lazy(() =>
@@ -167,6 +181,7 @@ export function AppLayout() {
   const reopenAttempted = useRef(false);
   const autoUpdateCheckStarted = useRef(false);
   const updateDownloadVersionRef = useRef<string | null>(null);
+  const reconciledDirtyTabsRef = useRef(new Set<string>());
   const mainContentRef = useRef<HTMLDivElement>(null);
   // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
   const tocRefreshTimerRef = useRef<number | null>(null);
@@ -182,6 +197,7 @@ export function AppLayout() {
     activeFile: file,
     activeTab,
     openInNewTab,
+    openInSplit,
     closeTab,
     activeTabId,
     updateActiveFile,
@@ -189,12 +205,27 @@ export function AppLayout() {
     updateActiveTabMeta,
     splitFile,
     splitView,
+    toggleSplit,
     setSplitTab,
     closeSplit,
     updateSplitTabFile,
     tearOffViaDrag,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
+
+  // 重启恢复时核对“磁盘已写入、会话仍残留 dirty=true”的保存竞态。
+  // 只在内容逐字一致时清除 dirty；真正未保存的草稿绝不覆盖、绝不静默丢弃。
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    for (const tab of session.tabs) {
+      if (!tab.file.dirty || !tab.file.path || tab.file.fileType === 'docx' || reconciledDirtyTabsRef.current.has(tab.id)) continue;
+      reconciledDirtyTabsRef.current.add(tab.id);
+      void import('../services/fileService')
+        .then(({ openPath }) => openPath(tab.file.path!, settings.defaultEncoding))
+        .then((diskFile) => updateTabFile(tab.id, (current) => reconcilePersistedDirtyFile(current, diskFile.content)))
+        .catch(() => undefined);
+    }
+  }, [isTauriRuntime, session.tabs, settings.defaultEncoding, updateTabFile]);
   // 新建空白草稿标签：工具栏「新建 Markdown」按钮与 Cmd+N 共用此 handler
   const handleNew = useCallback(() => {
     openInNewTab(createEmptyFile());
@@ -207,7 +238,7 @@ export function AppLayout() {
   }, [activeTabId, closeTab]);
   // Anything HTML：把当前内容发到本地 localhost:3000 窗口
   const handleOpenHtmlAnything = useCallback(() => {
-    if (file.fileType === 'visualization') return;
+    if (file.fileType === 'visualization' || file.fileType === 'svg') return;
     void import('@tauri-apps/api/core').then(({ invoke }) => {
       invoke('open_html_anything', {
         content: file.content,
@@ -215,15 +246,17 @@ export function AppLayout() {
       }).catch((error) => console.warn('open_html_anything failed:', error));
     });
   }, [file.content, file.fileType, file.name]);
-  // 分屏开关：开启时自动选第一个非 active、非占位标签作为右侧分屏；关闭时清分屏。
+  // 分屏开关：开启时优先选择已有标签；没有候选时进入“等待拖入”的分屏状态。
   const handleToggleSplit = useCallback(() => {
     if (splitView) {
       closeSplit();
       return;
     }
-    const candidate = session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder);
+    const candidate = session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder && t.file.fileType === 'svg')
+      ?? session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder);
     if (candidate) setSplitTab(candidate.id);
-  }, [splitView, closeSplit, session.tabs, activeTabId, setSplitTab]);
+    else toggleSplit();
+  }, [splitView, closeSplit, session.tabs, activeTabId, setSplitTab, toggleSplit]);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -253,7 +286,7 @@ export function AppLayout() {
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
   const [toc, setToc] = useState<TocItem[]>(() => {
     const initial = activeTab;
-    return initial?.file.fileType === 'docx' || initial?.file.fileType === 'visualization'
+    return initial?.file.fileType === 'docx' || initial?.file.fileType === 'visualization' || initial?.file.fileType === 'svg'
       ? []
       : extractToc(initial?.file.content ?? '');
   });
@@ -264,12 +297,16 @@ export function AppLayout() {
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
-  // ADR-0004：AI 抽取 UI 状态。
-  // - awaitingConfirmation：用户点了按钮但还没确认隐私说明。
-  // - running：已发起 spawn_agent_extraction，等 Rust 端返回。
-  // - null：空闲。错误与完成用临时 toast 走状态栏，不留在 aiExtractionPhase。
-  type AiExtractionPhase = 'awaitingConfirmation' | 'running' | null;
-  const [aiExtractionPhase, setAiExtractionPhase] = useState<AiExtractionPhase>(null);
+  const [skillVisualPhase, setSkillVisualPhase] = useState<'configure' | 'running' | null>(null);
+  const [skillVisualDialogVisible, setSkillVisualDialogVisible] = useState(false);
+  const [skillVisualStage, setSkillVisualStage] = useState<SkillVisualStage>('preparing');
+  const [skillVisualModel, setSkillVisualModel] = useState<string>();
+  const [skillVisualElapsed, setSkillVisualElapsed] = useState(0);
+  const [skillVisualError, setSkillVisualError] = useState<string>();
+  const [skillVisualRecommendation, setSkillVisualRecommendation] = useState<SkillVisualType>('mindmap');
+  const [skillVisualInitialStyle, setSkillVisualInitialStyle] = useState<SkillVisualStyle>('light-formal');
+  const [skillVisualJobId, setSkillVisualJobId] = useState<string>();
+  const [skillVisualSourceName, setSkillVisualSourceName] = useState('');
   const editorMode = session.editorMode;
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
   const rightPanelMode = session.rightPanelMode;
@@ -288,7 +325,7 @@ export function AppLayout() {
   // 不会造成级联渲染。
   if (lastTocTabId !== activeTabId) {
     setLastTocTabId(activeTabId);
-    setToc(activeTab?.file.fileType === 'docx' || activeTab?.file.fileType === 'visualization'
+    setToc(activeTab?.file.fileType === 'docx' || activeTab?.file.fileType === 'visualization' || activeTab?.file.fileType === 'svg'
       ? []
       : extractToc(activeTab?.file.content ?? ''));
   }
@@ -324,7 +361,7 @@ export function AppLayout() {
     if (opened) {
       openInNewTab(opened);
       cancelPendingTocRefresh();
-      setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' ? [] : extractToc(opened.content));
+      setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' || opened.fileType === 'svg' ? [] : extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       setHtmlPresentationVisible(false);
     }
@@ -335,10 +372,24 @@ export function AppLayout() {
     const opened = await openPath(path, settings.defaultEncoding);
     openInNewTab(opened);
     cancelPendingTocRefresh();
-    setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' ? [] : extractToc(opened.content));
+    setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' || opened.fileType === 'svg' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab]);
+
+  const handleDropPath = useCallback(async (path: string) => {
+    const { openPath } = await import('../services/fileService');
+    const opened = await openPath(path, settings.defaultEncoding);
+    if (splitView && activeTabId) {
+      openInSplit(opened, activeTabId);
+    } else {
+      openInNewTab(opened);
+      setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' || opened.fileType === 'svg' ? [] : extractToc(opened.content));
+    }
+    cancelPendingTocRefresh();
+    setLastOpenedPath(path);
+    setHtmlPresentationVisible(false);
+  }, [settings.defaultEncoding, splitView, activeTabId, cancelPendingTocRefresh, openInSplit, openInNewTab]);
 
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
@@ -346,15 +397,43 @@ export function AppLayout() {
     const updated = await saveFile(file);
     updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
-  }, [file, updateActiveFile]);
+    if (splitFile?.dirty && splitFile.path && splitFile.fileType !== 'docx') {
+      const updatedSplit = await saveFile(splitFile);
+      updateSplitTabFile(() => updatedSplit);
+    }
+  }, [file, splitFile, updateActiveFile, updateSplitTabFile]);
 
   const handleSaveAs = useCallback(async () => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'svg') return;
     const { saveFileAs } = await import('../services/fileService');
     const updated = await saveFileAs(file);
     updateActiveFile(() => updated);
     if (updated.path) setLastOpenedPath(updated.path);
   }, [file, updateActiveFile]);
+
+  const handleSaveSvgCopy = useCallback(async (content?: string) => {
+    if (file.fileType !== 'svg') return;
+    const { saveSvgCopy } = await import('../services/fileService');
+    await saveSvgCopy(content ?? file.content, file.name);
+  }, [file.content, file.fileType, file.name]);
+
+  const handleUpgradeLegacySvg = useCallback(async (upgradedSvg: string) => {
+    if (file.fileType !== 'svg' || !file.path) throw new Error('请先把旧 SVG 保存到本地');
+    const { invoke } = await import('@tauri-apps/api/core');
+    const outputPath = await invoke<string>('save_editable_svg_copy', { sourcePath: file.path, content: upgradedSvg });
+    const { openPath } = await import('../services/fileService');
+    openInNewTab(await openPath(outputPath, 'UTF-8'));
+  }, [file.fileType, file.path, openInNewTab]);
+
+  const handleUpgradeSplitLegacySvg = useCallback(async (upgradedSvg: string) => {
+    if (!splitFile || splitFile.fileType !== 'svg' || !splitFile.path) throw new Error('请先把旧 SVG 保存到本地');
+    const { invoke } = await import('@tauri-apps/api/core');
+    const outputPath = await invoke<string>('save_editable_svg_copy', { sourcePath: splitFile.path, content: upgradedSvg });
+    const { openPath } = await import('../services/fileService');
+    const opened = await openPath(outputPath, 'UTF-8');
+    if (activeTabId) openInSplit(opened, activeTabId);
+    else openInNewTab(opened);
+  }, [activeTabId, openInNewTab, openInSplit, splitFile]);
 
   const handleExportWord = useCallback(async () => {
     if (!file.path || file.fileType !== 'markdown') return;
@@ -372,7 +451,7 @@ export function AppLayout() {
       content: value,
       dirty: value !== prev.lastSavedContent,
     }));
-    if (file.fileType === 'visualization') {
+    if (file.fileType === 'visualization' || file.fileType === 'svg') {
       setToc([]);
       return;
     }
@@ -387,7 +466,7 @@ export function AppLayout() {
   }, [file.fileType, updateActiveFile]);
 
   const handleToggleEditorMode = useCallback(() => {
-    if (file.fileType === 'docx' || file.fileType === 'visualization') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization' || file.fileType === 'svg') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ editorMode: editorMode === 'source' ? 'wysiwyg' : 'source' });
   }, [file.fileType, editorMode, updateActiveTabMeta]);
@@ -416,86 +495,158 @@ export function AppLayout() {
     });
   }, [file.content, file.fileType, file.name, file.path, openInNewTab]);
 
-  // ADR-0004：AI 抽取通道。
-  // 用户先看到隐私说明 → 确认后 → 调 Rust spawn_agent_extraction → 读 .foliaviz →
-  // 经宽容导入（按 excerpt 重定位）→ 在新标签打开为可编辑工作簿。
-  // 三类中断：未保存（无 path）/ 未确认（不调命令）/ 用户点关闭。
-  const handleRequestAiExtract = useCallback(() => {
+  const handleRequestSkillVisual = useCallback(() => {
+    if (skillVisualPhase === 'running') {
+      setSkillVisualDialogVisible(true);
+      return;
+    }
     if (file.fileType !== 'markdown') return;
     if (!file.path) {
-      window.alert(t('aiExtractionNeedsSave'));
+      window.alert('请先保存当前 Markdown。成品图会以新版本保存在原文件旁。');
       return;
     }
-    setAiExtractionPhase('awaitingConfirmation');
-  }, [file.fileType, file.path, t]);
+    setSkillVisualRecommendation(recommendSkillVisualType(file.content));
+    setSkillVisualInitialStyle(getDocumentSkillVisualStyle(file.path));
+    setSkillVisualSourceName(file.name);
+    setSkillVisualError(undefined);
+    setSkillVisualPhase('configure');
+    setSkillVisualDialogVisible(true);
+  }, [file.content, file.fileType, file.name, file.path, skillVisualPhase]);
 
-  const handleCancelAiExtract = useCallback(() => {
-    setAiExtractionPhase(null);
-  }, []);
-
-  const handleConfirmAiExtract = useCallback(async () => {
-    if (file.fileType !== 'markdown' || !file.path) {
-      setAiExtractionPhase(null);
-      return;
-    }
-    setAiExtractionPhase('running');
-    const tStatus = (key: Parameters<typeof translate>[1]) => translate(settings.locale, key);
+  const handleGenerateSkillVisual = useCallback(async (visualType: SkillVisualType, style: SkillVisualStyle, openComparison: boolean) => {
+    if (file.fileType !== 'markdown' || !file.path) return;
+    const jobId = createSkillVisualJobId();
+    const sourcePath = file.path;
+    const sourceContent = file.content;
+    rememberDocumentSkillVisualStyle(sourcePath, style);
+    setSkillVisualInitialStyle(style);
+    setSkillVisualSourceName(file.name);
+    setSkillVisualJobId(jobId);
+    setSkillVisualStage('preparing');
+    setSkillVisualModel(undefined);
+    setSkillVisualElapsed(0);
+    setSkillVisualError(undefined);
+    setSkillVisualPhase('running');
+    setSkillVisualDialogVisible(true);
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<{
         outputPath: string | null;
+        structureJson: string | null;
         durationMs: number;
         kind: string;
         message: string;
-      }>('spawn_agent_extraction', { sourcePath: file.path });
-      if (result.kind !== 'ok' || !result.outputPath) {
-        const prefix = result.kind === 'cli_not_found'
-          ? tStatus('aiExtractionCliMissing')
-          : result.kind === 'timeout'
-            ? tStatus('aiExtractionTimedOut')
-            : result.kind === 'spawn_failed'
-              ? tStatus('aiExtractionSpawnFailed')
-              : tStatus('aiExtractionAgentFailed');
-        window.alert(`${prefix}${result.message}`);
+      }>('generate_skill_visual', {
+        jobId,
+        sourcePath,
+        sourceContent,
+        visualType,
+        style,
+      });
+      if (result.kind !== 'ok' || !result.structureJson) {
+        if (result.kind === 'cancelled') {
+          setSkillVisualPhase(null);
+          setSkillVisualDialogVisible(false);
+          return;
+        }
+        setSkillVisualError(result.message || '生成没有完成，请稍后重试。');
+        setSkillVisualPhase('configure');
+        setSkillVisualDialogVisible(true);
         return;
       }
-      // 读取并宽容导入 agent 产出的 .foliaviz，按 excerpt 重定位锚点。
-      const [{ readTextWithEncoding }, { importExternalWorkbook, serializeVisualWorkbook }] = await Promise.all([
-        import('../services/fileService'),
-        import('../services/visualization/schema'),
+      setSkillVisualStage('validating');
+      const [{ validateVisualStructure, structureToScene }, { projectDiagramSvg }, { inspectDiagramQuality }, { repairDiagramLocally }] = await Promise.all([
+        import('../services/diagram/structure'),
+        import('../services/diagram/svgProjection'),
+        import('../services/diagram/collision'),
+        import('../services/diagram/localRepair'),
       ]);
-      const rawJson = await readTextWithEncoding(result.outputPath, 'UTF-8');
-      const { workbook, demotedCount } = importExternalWorkbook(rawJson, file.content);
-      const name = result.outputPath.split(/[\\/]/).pop() ?? `${file.name}.foliaviz`;
-      openInNewTab({
-        path: result.outputPath,
-        name,
-        content: serializeVisualWorkbook(workbook),
-        dirty: false,
-        lastSavedContent: serializeVisualWorkbook(workbook),
-        fileType: 'visualization',
+      const structure = validateVisualStructure(JSON.parse(result.structureJson));
+      let scene = await structureToScene(structure, {
+        visualType,
+        style,
+        source: { path: sourcePath, start: 0, end: sourceContent.length },
       });
-      const doneMsg = demotedCount > 0
-        ? tStatus('aiExtractionDoneWithDemoted').replace('{count}', String(demotedCount))
-        : tStatus('aiExtractionDone');
-      window.alert(doneMsg);
+      if (inspectDiagramQuality(scene).some((issue) => issue.kind === 'node-overlap')) {
+        scene = repairDiagramLocally(scene);
+      }
+      const blockingIssues = inspectDiagramQuality(scene).filter((issue) =>
+        issue.kind === 'text-overflow' || issue.kind === 'node-overlap' || issue.kind === 'out-of-canvas' || issue.kind === 'small-font');
+      if (blockingIssues.length > 0) {
+        throw new Error(`本地排版验收未通过：${blockingIssues[0].message}`);
+      }
+      const svg = projectDiagramSvg(scene);
+      setSkillVisualStage('saving');
+      const outputPath = await invoke<string>('save_skill_visual_svg', {
+        sourcePath,
+        visualType,
+        content: svg,
+      });
+      const { openPath } = await import('../services/fileService');
+      const opened = await openPath(outputPath, 'UTF-8');
+      if (openComparison && activeTabId) openInSplit(opened, activeTabId);
+      else openInNewTab(opened);
+      setSkillVisualPhase(null);
+      setSkillVisualDialogVisible(false);
     } catch (error) {
-      console.warn('ai extraction failed:', error);
+      console.warn('skill visual generation failed:', error);
       const detail = error instanceof Error ? error.message : String(error);
-      window.alert(`${tStatus('aiExtractionAgentFailed')}${detail}`);
+      setSkillVisualError(detail);
+      setSkillVisualPhase('configure');
+      setSkillVisualDialogVisible(true);
     } finally {
-      setAiExtractionPhase(null);
+      setSkillVisualJobId((current) => current === jobId ? undefined : current);
     }
-  }, [file.content, file.fileType, file.name, file.path, openInNewTab, settings.locale]);
+  }, [activeTabId, file.content, file.fileType, file.name, file.path, openInNewTab, openInSplit]);
+
+  const handleCancelSkillVisual = useCallback(() => {
+    if (!skillVisualJobId) {
+      setSkillVisualPhase(null);
+      return;
+    }
+    void import('@tauri-apps/api/core').then(({ invoke }) =>
+      invoke('cancel_skill_visual', { jobId: skillVisualJobId }),
+    ).catch((error) => console.warn('cancel skill visual failed:', error));
+  }, [skillVisualJobId]);
+
+  useEffect(() => {
+    if (skillVisualPhase !== 'running') return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setSkillVisualElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [skillVisualPhase]);
+
+  useEffect(() => {
+    if (!skillVisualJobId || !isTauriRuntime) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen<{ jobId: string; stage: SkillVisualStage; model?: string }>('skill-visual:progress', (event) => {
+        if (!disposed && event.payload.jobId === skillVisualJobId) {
+          setSkillVisualStage(event.payload.stage);
+          if (event.payload.model) setSkillVisualModel(event.payload.model);
+        }
+      }),
+    ).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isTauriRuntime, skillVisualJobId]);
 
   const handleToggleWordPreview = useCallback(() => {
-    if (file.fileType === 'docx' || file.fileType === 'visualization') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization' || file.fileType === 'svg') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'word' ? 'none' : 'word' });
   }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleToggleWechatPreview = useCallback(() => {
-    if (file.fileType === 'docx' || file.fileType === 'visualization') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization' || file.fileType === 'svg') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'wechat' ? 'none' : 'wechat' });
   }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
@@ -576,7 +727,7 @@ export function AppLayout() {
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
       if (e.key === 'b' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleMindMapMode(); return; }
       if (e.key === 'g' && e.altKey && !e.shiftKey) { e.preventDefault(); handleCreateVisualization(); return; }
-      if (e.key === 'g' && e.altKey && e.shiftKey) { e.preventDefault(); handleRequestAiExtract(); return; }
+      if (e.key === 'g' && e.altKey && e.shiftKey) { e.preventDefault(); handleRequestSkillVisual(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
@@ -592,7 +743,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleCreateVisualization, handleRequestAiExtract, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleCreateVisualization, handleRequestSkillVisual, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -602,7 +753,7 @@ export function AppLayout() {
       if (!items || items.length === 0) return;
       const f = items[0];
       const path = (f as unknown as { path?: string }).path;
-      if (path && isOpenableDocumentPath(path)) await handleOpenPath(path);
+      if (path && isOpenableDocumentPath(path)) await handleDropPath(path);
     };
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
     window.addEventListener('dragover', prevent);
@@ -611,7 +762,7 @@ export function AppLayout() {
       window.removeEventListener('dragover', prevent);
       window.removeEventListener('drop', handler);
     };
-  }, [handleOpenPath]);
+  }, [handleDropPath]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -623,7 +774,7 @@ export function AppLayout() {
       .onDragDropEvent((event) => {
         if (event.payload.type !== 'drop') return;
         const path = firstOpenableDocumentPath(event.payload.paths);
-        if (path) void handleOpenPath(path);
+        if (path) void handleDropPath(path);
       })
       .then((fn) => {
         if (cancelled) {
@@ -638,7 +789,7 @@ export function AppLayout() {
       cancelled = true;
       unlisten?.();
     };
-  }, [handleOpenPath, isTauriRuntime]);
+  }, [handleDropPath, isTauriRuntime]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -789,6 +940,7 @@ export function AppLayout() {
 
   const isDocx = file.fileType === 'docx';
   const isVisualization = file.fileType === 'visualization';
+  const isSvg = file.fileType === 'svg';
   const visualSource = isVisualization ? visualSourceInfo(file.content) : null;
   const boundSourceTab = isVisualization
     ? session.tabs.find((tab) => tab.file.fileType === 'markdown'
@@ -820,11 +972,11 @@ export function AppLayout() {
   const rightPanelEffective = splitView ? 'none' : rightPanelMode;
   const mainContentClassName = [
     'main-content',
-    isDocx ? 'docx-layout' : isVisualization ? 'visualization-layout' : 'writing-layout',
-    rightPanelEffective !== 'none' && !isDocx ? 'right-panel-open' : '',
-    rightPanelEffective === 'word' && !isDocx ? 'word-preview-open' : '',
-    rightPanelEffective === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
-    splitView && !isDocx ? 'split-view' : '',
+    isDocx ? 'docx-layout' : isVisualization ? 'visualization-layout' : isSvg ? 'svg-layout' : 'writing-layout',
+    rightPanelEffective !== 'none' && !isDocx && !isSvg ? 'right-panel-open' : '',
+    rightPanelEffective === 'word' && !isDocx && !isSvg ? 'word-preview-open' : '',
+    rightPanelEffective === 'wechat' && !isDocx && !isSvg ? 'wechat-preview-open' : '',
+    splitView && !isDocx && !isSvg ? 'split-view' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
     resizing ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
@@ -931,6 +1083,18 @@ export function AppLayout() {
     <div className="editor-pane readonly-pane">
       <span>Word 文件为只读</span>
     </div>
+  ) : isSvg ? (
+    <Suspense fallback={<div className="svg-preview-pane lazy-pane"><span>SVG 成品图加载中</span></div>}>
+      <DiagramEditorPane
+        key={file.path || file.name}
+        source={file.content}
+        fileName={file.name}
+        onChange={handleContentChange}
+        onSaveCopy={(content) => void handleSaveSvgCopy(content)}
+        onUpgradeLegacy={handleUpgradeLegacySvg}
+        sourceMarkdown={undefined}
+      />
+    </Suspense>
   ) : isVisualization ? (
     <Suspense fallback={<div className="visual-workbook lazy-pane"><span>可视化工作簿加载中</span></div>}>
       <VisualWorkbookPane
@@ -979,6 +1143,19 @@ export function AppLayout() {
   const splitEditorPane = splitFile ? (
     splitFile.fileType === 'docx' ? (
       <div className="editor-pane readonly-pane"><span>Word 文件为只读</span></div>
+    ) : splitFile.fileType === 'svg' ? (
+      <Suspense fallback={<div className="svg-preview-pane lazy-pane"><span>SVG 成品图加载中</span></div>}>
+        <DiagramEditorPane
+          key={splitFile.path || splitFile.name}
+          source={splitFile.content}
+          fileName={splitFile.name}
+          onChange={(value) => updateSplitTabFile((opened) => ({ ...opened, content: value, dirty: value !== opened.lastSavedContent }))}
+          onSaveCopy={(content) => void import('../services/fileService').then(({ saveSvgCopy }) => saveSvgCopy(content ?? splitFile.content, splitFile.name))}
+          onUpgradeLegacy={handleUpgradeSplitLegacySvg}
+          sourceMarkdown={file.fileType === 'markdown' ? file.content : undefined}
+          onRegenerate={file.fileType === 'markdown' ? handleRequestSkillVisual : undefined}
+        />
+      </Suspense>
     ) : splitFile.fileType === 'visualization' ? (
       <Suspense fallback={<div className="visual-workbook lazy-pane"><span>可视化工作簿加载中</span></div>}>
         <VisualWorkbookPane
@@ -1003,7 +1180,7 @@ export function AppLayout() {
     )
   ) : null;
 
-  const rightPanel = rightPanelMode === 'word' && !isDocx ? (
+  const rightPanel = rightPanelMode === 'word' && !isDocx && !isSvg ? (
     <Suspense fallback={<aside className="word-preview-panel" aria-label={t('wordPreviewAria')} />}>
       <WordPaperPreviewPane
         source={file.content}
@@ -1014,7 +1191,7 @@ export function AppLayout() {
         filePath={file.path}
       />
     </Suspense>
-  ) : rightPanelMode === 'wechat' && !isDocx ? (
+  ) : rightPanelMode === 'wechat' && !isDocx && !isSvg ? (
     <Suspense fallback={<aside className="wechat-preview-panel" aria-label={t('wechatPreviewAria')} />}>
       <WechatPreviewPane
         source={file.content}
@@ -1058,12 +1235,12 @@ export function AppLayout() {
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
-        editingDisabled={isDocx}
-        viewActionsDisabled={isDocx || isVisualization}
+        editingDisabled={isDocx || isSvg}
+        viewActionsDisabled={isDocx || isVisualization || isSvg}
         visualizationActive={isVisualization}
         visualizationDisabled={file.fileType !== 'markdown'}
-        aiExtractionRunning={aiExtractionPhase === 'running'}
-        aiExtractionDisabled={file.fileType !== 'markdown' || !file.path || aiExtractionPhase === 'running'}
+        skillVisualRunning={skillVisualPhase === 'running'}
+        skillVisualDisabled={skillVisualPhase !== 'running' && file.fileType !== 'markdown'}
         newDraftActive={newDraftActive}
         splitViewActive={splitView}
         onNew={handleNew}
@@ -1073,7 +1250,7 @@ export function AppLayout() {
         onToggleEditorMode={handleToggleEditorMode}
         onToggleMindMapMode={handleToggleMindMapMode}
         onCreateVisualization={handleCreateVisualization}
-        onRequestAiExtract={handleRequestAiExtract}
+        onRequestSkillVisual={handleRequestSkillVisual}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
         onOpen={handleOpen}
@@ -1135,7 +1312,7 @@ export function AppLayout() {
             ) : editorPane}
           </>
         )}
-        {rightPanelEffective !== 'none' && !isDocx && (
+        {rightPanelEffective !== 'none' && !isDocx && !isSvg && (
           <div
             className={`word-preview-resizer ${resizing ? 'dragging' : ''}`}
             role="separator"
@@ -1171,10 +1348,23 @@ export function AppLayout() {
           isPlaceholder={session.tabs.find((t) => t.id === contextMenu.tabId)?.isPlaceholder ?? false}
         />
       )}
-      {aiExtractionPhase === 'awaitingConfirmation' && (
-        <AiExtractionOverlay
-          onConfirm={() => void handleConfirmAiExtract()}
-          onCancel={handleCancelAiExtract}
+      {skillVisualPhase && skillVisualDialogVisible && (
+        <SkillVisualDialog
+          sourceName={skillVisualSourceName || file.name}
+          recommendedType={skillVisualRecommendation}
+          initialStyle={skillVisualInitialStyle}
+          phase={skillVisualPhase}
+          stage={skillVisualStage}
+          model={skillVisualModel}
+          elapsedSeconds={skillVisualElapsed}
+          error={skillVisualError}
+          onGenerate={(visualType, style, openComparison) => void handleGenerateSkillVisual(visualType, style, openComparison)}
+          onCancel={handleCancelSkillVisual}
+          onMinimize={() => setSkillVisualDialogVisible(false)}
+          onClose={() => {
+            setSkillVisualPhase(null);
+            setSkillVisualDialogVisible(false);
+          }}
         />
       )}
       {settingsVisible && (

@@ -40,6 +40,32 @@
 └──────────────────────────────────────────────┘
 ```
 
+## 可编辑可视化目标架构
+
+可视化编辑采用“共用无界面核心 + 两类画布适配器 + 专用视图”的结构：
+
+```text
+模型结构数据 / 旧 SVG / Markdown / .foliaviz
+                    ↓
+ 场景校验与迁移 → 真实测字 → 布局与走线 → 碰撞/事实检查
+                    ↓
+        共用命令、历史、样式、画布和导出规则
+             ↙                         ↘
+  原生 SVG 场景适配器              React Flow 适配器
+  成品图、旧 SVG 升级              Markdown 脑图、结构/关系/流程
+                    ↘             ↙
+          专用时间轴、矩阵、图表渲染器
+                    ↓
+      可编辑保存 / 净化 SVG、PNG、PDF
+```
+
+- 模型不再输出最终像素 SVG，只输出内容、关系和样式意图；最终几何由本地布局决定。
+- 可编辑 SVG 以版本化场景元数据为编辑依据，可见 SVG 只是投影；旧 SVG 升级先保留原投影，再逐步建立可编辑映射。
+- 原生 SVG 适配器用于保留旧成品外观；React Flow 继续承载结构图交互，不能为了代码统一而把旧 SVG 强制改画。
+- 保存由 Tauri 提供同目录临时文件和原子替换，失败不改变工作文件；交付净化从结构数据重建，不能只靠隐藏 DOM 属性。
+- 原文—图表对照模式在同一工作区组合两个独立文档会话。Markdown 与图表各自保留内容、dirty、最后保存版本和写入队列；对照协调层只负责来源定位、待更新状态、焦点工具栏和双侧保存排空，不合并两种文件状态。
+- 联网生成使用开始时的内存快照并进入全局单并发队列；退出对照不终止任务。任务记录可以跨会话恢复，但重启后必须由用户明确触发联网重试。
+
 ## 数据流
 
 ```
@@ -122,6 +148,11 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | 文件 | 职责 |
 |------|------|
 | `fileService.ts` | 封装 Tauri dialog、桌面端后端文档读写命令与浏览器 fallback，提供 openFile / saveFile / saveFileAs |
+| `diagram/structure.ts` | 校验模型返回的紧凑图结构，按真实测字结果计算节点尺寸，并用 ELK 完成本地分层布局和正交走线 |
+| `diagram/sceneSchema.ts` | 可编辑 SVG 场景 v1、校验和、元数据注入/读取与版本边界 |
+| `diagram/legacySvgImport.ts` / `legacyProjection.ts` | 安全解析旧 SVG、建立旧元素索引映射，并在保留未识别装饰的前提下定点投影编辑 |
+| `diagram/collision.ts` / `localRepair.ts` | 检查文字、节点、旧文字、越界和穿线，执行受保护元素感知的局部修复 |
+| `diagram/factAudit.ts` / `delivery.ts` | 对当前 Markdown 的日期、金额、案号和原文锚点做精确核对，并构造删除编辑信息与活动内容的交付 SVG |
 | `fileWatchService.ts` | 订阅 Rust `watch_path` 监听层 emit 的 `watch:changed` / `watch:error` 事件，懒加载 Tauri event listener、解析载荷并分发给前端监听器；非 Tauri 运行时（浏览器 / 测试）自动 no-op（ISS-162） |
 | `tabWindowService.ts` | 多窗口 tear-off / merge-back 的 IPC 封装：`create_tab_window` / `update_tab_window_tabs` / `close_tab_window` invoke + `tab:tear-off` / `tab:merge-back` / `tab:drop-requested` / `session:full-sync` / `window:closed` 事件订阅；懒监听 + 幂等 + payload 校验 + 非 Tauri 短路（ISS-164 / DEC-102） |
 | `fileDrop.ts` | 过滤可拖入打开的 Markdown / HTML / Word 文件路径 |
@@ -151,7 +182,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | 文件 | 职责 |
 |------|------|
 | `EditorPane.tsx` | CodeMirror 6 编辑器，Markdown 语言模式；接收 TOC 标题跳转请求并滚动到对应源码标题行 |
-| `WysiwygEditorPane.tsx` | Vditor IR 即时渲染编辑器，所有 Markdown / HTML 文档的默认主编辑体验（ISS-155 落地后成为唯一默认）；当前块显示 Markdown 标记，非当前块保持预览观感；含 `rowspan/colspan` 的复杂表格自动打 `contenteditable=false` + `data-folia-locked="table"`，hover 注入"查看原貌"按钮触发 AppLayout viewer 状态，输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表 |
+| `WysiwygEditorPane.tsx` | Vditor IR 即时渲染编辑器，所有 Markdown / HTML 文档的默认主编辑体验（ISS-155 落地后成为唯一默认）；当前块按需显示 Markdown 标记，但标题 `#` 只保留在 IR DOM 中供序列化、视觉层始终折叠，非当前块保持预览观感；含 `rowspan/colspan` 的复杂表格自动打 `contenteditable=false` + `data-folia-locked="table"`，hover 注入"查看原貌"按钮触发 AppLayout viewer 状态，输入回调对比 `classifyHtmlTableBlocks` 自动恢复被改动的复杂表 |
 | `HtmlTableViewerOverlay.tsx` | 复杂表格"查看原貌"独立 overlay：渲染 `createHtmlReadingPreviewHtml(block.html)` 的忠实 HTML，ESC / 关闭按钮 / 点击遮罩三种关闭路径（ISS-155 新增） |
 | `HtmlPresentationPane.tsx` | HTML 演示模式主视图：用 sandbox iframe 运行 `.html/.htm` 文件内容，提供上一页、下一页和返回阅读预览操作；ISS-155 落地后入口收紧为只对 `.html/.htm` 触发 |
 | `WordPaperPreviewPane.tsx` | 按需打开的 Word 多页纸张预览，包含启用预设弹出选择器、面板内导出按钮、A4 分页、长 HTML 表格按行拆页和整体缩放 |
@@ -160,6 +191,7 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
 | `FloatingToc.tsx` | 默认浮动大纲：标题层级刻度、横条 hover / click / focus 展开、面板内固定 / 取消固定 / 关闭、固定态“总是固定大纲”偏好、点击跳转和当前标题高亮 |
 | `LicenseSection.tsx` | Settings / 授权页面：输入内测码、显示授权状态和可用自定义预设槽位数 |
 | `StatusBar.tsx` | 底部状态栏：文件路径 + dirty 标记 |
+| `DiagramEditorPane.tsx` | 可编辑 SVG 预览/升级入口、节点与连接编辑、历史、质量/事实门、交付导出和对照重新生成控制 |
 
 ### app/
 
@@ -272,4 +304,3 @@ word/table-handler.ts 输出 docx Table；Markdown 管道表格使用专用 pars
   - 独立窗口位置 / 大小记忆。
   - macOS WKWebView HTML5 drag 行为差异实测（由开发者本地 `npm run etv:run` 复测）。
 - **依赖 / 权限**：`capabilities/default.json` 增加 `core:webview:allow-create-webview-window` / `core:webview:allow-webview-close` / `core:window:allow-close` / `core:event:default`，`windows` 含 `tab-window-*` glob。
-

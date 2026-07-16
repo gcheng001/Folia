@@ -12,6 +12,17 @@ export function makeTabFromFile(file: OpenedFile, isPlaceholder = false): Tab {
   return { id: newTabId(), file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder };
 }
 
+function normalizedDocumentPath(path: string | undefined): string | null {
+  const normalized = path?.trim();
+  return normalized ? normalized : null;
+}
+
+function findTabByDocumentPath(tabs: Tab[], file: OpenedFile): Tab | undefined {
+  const path = normalizedDocumentPath(file.path);
+  if (!path) return undefined;
+  return tabs.find((tab) => normalizedDocumentPath(tab.file.path) === path);
+}
+
 /** 启动引导：有持久化 tabs 则恢复（修正失效的 activeTabId），否则给一个空占位标签保证编辑器可用。 */
 export function bootstrapSession(loaded: SessionState): SessionState {
   // 兼容旧持久化（无 split 字段）：补默认值。
@@ -57,6 +68,7 @@ export function bootstrapSessionForWindow(
 
 export type SessionAction =
   | { type: 'openInNewTab'; file: OpenedFile }
+  | { type: 'openInSplit'; file: OpenedFile; sourceTabId: string }
   | { type: 'switchTab'; id: string }
   | { type: 'closeTab'; id: string; confirmed: boolean }
   | { type: 'closeOthers'; id: string }
@@ -100,6 +112,15 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
 function reduceInternal(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'openInNewTab': {
+      const existing = findTabByDocumentPath(state.tabs, action.file);
+      if (existing) {
+        return {
+          ...state,
+          activeTabId: existing.id,
+          splitTabId: state.splitTabId === existing.id ? null : state.splitTabId,
+          splitView: state.splitTabId === existing.id ? false : state.splitView,
+        };
+      }
       const active = state.tabs.find((t) => t.id === state.activeTabId);
       // 当前 active 是干净占位标签时替换它，避免占位标签累积成「未命名」空标签（I-1）。
       const replaceActivePlaceholder = !!active?.isPlaceholder && !active.file.dirty;
@@ -114,6 +135,22 @@ function reduceInternal(state: SessionState, action: SessionAction): SessionStat
         tabs = tabs.filter((_, i) => i !== idx);
       }
       return { ...state, tabs, activeTabId: newTab.id };
+    }
+    case 'openInSplit': {
+      if (!state.tabs.some((tab) => tab.id === action.sourceTabId)) return state;
+      const existing = findTabByDocumentPath(state.tabs, action.file);
+      if (existing) {
+        if (existing.id === action.sourceTabId) return state;
+        return { ...state, activeTabId: action.sourceTabId, splitTabId: existing.id, splitView: true };
+      }
+      const newTab = makeTabFromFile(action.file);
+      let tabs = [...state.tabs, newTab];
+      while (tabs.length > MAX_TABS) {
+        const index = tabs.findIndex((tab) => tab.id !== newTab.id && tab.id !== action.sourceTabId && !tab.file.dirty);
+        if (index === -1) break;
+        tabs = tabs.filter((_, tabIndex) => tabIndex !== index);
+      }
+      return { ...state, tabs, activeTabId: action.sourceTabId, splitTabId: newTab.id, splitView: true };
     }
     case 'switchTab':
       return state.tabs.some((t) => t.id === action.id) ? { ...state, activeTabId: action.id } : state;

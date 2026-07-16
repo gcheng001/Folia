@@ -10,6 +10,7 @@ import { FOLIA_IR_SVG_FRAGMENT_CLASS, FOLIA_IR_SVG_ROOT_CLASS } from '../service
 type VditorInstanceOptions = Record<string, unknown> & {
   after?: () => void;
   input?: (value: string) => void;
+  blur?: () => void;
 };
 
 type VditorConstructorCall = {
@@ -292,6 +293,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 模拟 input(value) 回调触发 sanitize
       await act(async () => {
         call.options.input?.('<svg viewBox="0 0 5 5"><rect width="5" height="5"/></svg>');
+        call.options.blur?.();
         await flushFrames();
       });
 
@@ -328,6 +330,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         call.options.after?.();
         await flushMicrotasks();
+        await flushFrames();
       });
 
       const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
@@ -352,6 +355,45 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       expect(saved).toContain('<img src="x"');
       expect(saved).not.toContain('onerror');
       expect(saved).not.toContain('alert(');
+
+      await act(async () => {
+        root?.unmount();
+      });
+    });
+
+    it('普通输入不清洗活 DOM，失焦后再清理危险属性', async () => {
+      let root: Root | null = null;
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined }));
+        await flushMicrotasks();
+      });
+
+      const call = vditorCalls[0];
+      await act(async () => {
+        call.options.after?.();
+        await flushMicrotasks();
+        await flushFrames();
+      });
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+      ir.innerHTML = '<p data-block="0">正在编辑<img src="x" onerror="alert(1)"></p>';
+      const editingParagraph = ir.firstElementChild;
+      ir.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      await act(async () => {
+        call.options.input?.('正在编辑');
+        await flushMicrotasks();
+      });
+      expect(ir.firstElementChild).toBe(editingParagraph);
+      expect(ir.querySelector('img')?.hasAttribute('onerror')).toBe(true);
+
+      expect(call.options.blur).toBeTypeOf('function');
+      await act(async () => {
+        call.options.blur?.();
+        await flushMicrotasks();
+      });
+      expect(ir.querySelector('img')?.hasAttribute('onerror')).toBe(false);
 
       await act(async () => {
         root?.unmount();

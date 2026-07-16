@@ -27,6 +27,13 @@ function createIrHtml(markdown: string): { lute: LuteInstance; html: string } {
 }
 
 describe('sanitizeVditorIrHtml', () => {
+  it('清理普通 IR 正文中的危险事件属性', () => {
+    const result = sanitizeVditorIrHtml('<p data-block="0">正文<img src="x" onerror="alert(1)"></p>');
+
+    expect(result.changed).toBe(true);
+    expect(result.html).not.toContain('onerror');
+  });
+
   it('同步清理 html-block marker，避免 VditorIRDOM2Md 保存时还原危险源码', () => {
     const { lute, html } = createIrHtml([
       '<div>',

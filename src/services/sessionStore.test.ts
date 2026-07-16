@@ -4,6 +4,7 @@ import {
   loadSession,
   saveSession,
   clearSession,
+  reconcilePersistedDirtyFile,
   SESSION_STORAGE_KEY,
 } from './sessionStore';
 import type { SessionState, PersistedSession } from '../types/session';
@@ -88,5 +89,17 @@ describe('sessionStore.clearSession', () => {
     localStorage.setItem(SESSION_STORAGE_KEY, '{}');
     clearSession();
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('sessionStore.reconcilePersistedDirtyFile', () => {
+  it('磁盘与草稿一致时清除保存即退出留下的假 dirty', () => {
+    const file = { ...createEmptyFile(), path: '/tmp/a.md', content: '已保存', lastSavedContent: '旧内容', dirty: true };
+    expect(reconcilePersistedDirtyFile(file, '已保存')).toMatchObject({ dirty: false, lastSavedContent: '已保存' });
+  });
+
+  it('磁盘与草稿不一致时保留真正未保存的内容', () => {
+    const file = { ...createEmptyFile(), path: '/tmp/a.md', content: '未保存草稿', lastSavedContent: '磁盘内容', dirty: true };
+    expect(reconcilePersistedDirtyFile(file, '磁盘内容')).toBe(file);
   });
 });

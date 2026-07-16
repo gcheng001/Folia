@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openPath, saveFile, saveFileAs } from './fileService';
+import { openPath, saveFile, saveFileAs, saveSvgCopy } from './fileService';
 import type { OpenedFile } from '../types/document';
 
 const tauriCoreMock = vi.hoisted(() => ({
@@ -196,6 +196,33 @@ describe('fileService', () => {
     tauriCoreMock.invoke.mockResolvedValue(arrayBufferOf('{"kind":"wrong"}'));
 
     await expect(openPath('/Users/demo/broken.foliaviz')).rejects.toThrow(/不是 Folia 可视化工作簿/);
+  });
+
+  it('opens an SVG as a read-only finished diagram', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
+    const content = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+    tauriCoreMock.invoke.mockResolvedValue(arrayBufferOf(content));
+
+    const opened = await openPath('/Users/demo/case-时间轴-01.svg', 'GBK');
+
+    expect(opened.fileType).toBe('svg');
+    expect(opened.content).toBe(content);
+    expect(opened.dirty).toBe(false);
+  });
+
+  it('saves an SVG copy without changing the generated original', async () => {
+    const content = '<svg viewBox="0 0 10 10"></svg>';
+    dialogMock.save.mockResolvedValue('/tmp/copy.svg');
+    tauriFsMock.writeTextFile.mockResolvedValue(undefined);
+
+    const savedPath = await saveSvgCopy(content, 'case-时间轴-01.svg');
+
+    expect(dialogMock.save).toHaveBeenCalledWith({
+      defaultPath: 'case-时间轴-01.svg',
+      filters: [{ name: 'SVG 成品图', extensions: ['svg'] }],
+    });
+    expect(tauriFsMock.writeTextFile).toHaveBeenCalledWith('/tmp/copy.svg', content);
+    expect(savedPath).toBe('/tmp/copy.svg');
   });
 
   it('validates foliaviz before saving an existing path', async () => {
