@@ -1,0 +1,44 @@
+delivery_handoff:
+  outcome: "第三阶段试点：把上游 legal-visualization 场景库(scene-library.md 241 例)与编排手册(scene-composition-playbook.md)中关系图家族的『怎么画』细则,提炼为按图类型注入的 Folia 内置资源 scene-details-rel-v1.md,在 build_skill_visual_prompt 中仅当 visual_type=relationship 时注入,指导模型按第一步路由选定的 REL 场景应用对应提取细则(节点抓什么、边的 label 规范、名义/实际关系到 status 五态的映射)。试点点验后给出是否向其余三个视图家族铺开的建议。不做二次模型调用——路由与提取仍在同一次零工具沙箱调用内完成,细则按家族静态注入。"
+  follows_up: "docs/plans/2026-07-17-visual-rules-internalization-handoff.yaml"
+  artifacts:
+    - path: "src-tauri/skills/legal-visualization/scene-details-rel-v1.md"
+      kind: "内置资源(编译进二进制)"
+      note: "5 个 REL 场景各一节:命中特征(对应上游场景 ID)、节点要素、边要素与 status 映射、常见失败。改编自上游 v0.6.14 (commit 48aedb4) scene-library.md 与 scene-composition-playbook.md,文件头注明来源、许可与重内化提示。体量预算 ≤ 10KB。"
+    - path: "src-tauri/src/lib.rs"
+      kind: "提示词注入"
+      note: "新增 include_str 常量与 skill_visual_scene_details(visual_type) 选择函数;build_skill_visual_prompt 仅对 relationship 注入『第二步半:选定场景提取细则』小节,其余三型 prompt 保持逐字节不变。"
+    - path: "docs/validation/scene-details-rel/README.md"
+      kind: "点验报告"
+      note: "≥3 份真实关系类法律文档,零工具沙箱复刻参数,记录细则生效信号(名义/实际关系分 status、股权比例/金额入 label、核心主体居前)与对照观察。"
+  acceptance:
+    - "scene-details-rel-v1.md 覆盖全部 5 个 REL 场景(REL-PARTIES/REL-EQUITY/REL-TRANSACTION/REL-EVIDENCE/REL-GENERIC),改编上游场景 ≥ 10 例,每节含节点要素、边要素+status 映射、常见失败;文件 ≤ 10KB。"
+    - "仅 relationship 类型的 prompt 包含细则小节;flowchart/timeline/mindmap 的 prompt 与本次改动前逐字节一致(Rust 测试守护)。"
+    - "Rust 一致性测试:资源文件的场景节标题集合与 skill_visual_scene_ids(\"relationship\") 完全一致。"
+    - "真实点验 ≥ 3 份文档:路由命中预期 REL 场景,且输出中至少各出现一次细则生效信号(如 asserted/disputed 状态边、比例/金额入 label)。"
+    - "npm test / npm run typecheck / npx eslint(触碰文件) / cargo test --offline --lib 全绿。"
+    - "CHANGELOG [Unreleased] → Changed 记录本条(含来源、许可、点验位置)。"
+    - "交付时附『是否铺开到 FLOW/TIME/MIND 家族』的建议与依据。"
+  out_of_scope:
+    - "其余三个视图家族(FLOW/TIME/MIND)的场景细则——待本试点点验结论后另行决策。"
+    - "上游数据图/空间图/矩阵类场景(Folia 无对应图型)。"
+    - ".drawio 输出与 18 份 P0 模板(ADR-0022 持续生效)。"
+    - "二次模型调用的动态路由(当前单次调用内路由+提取,细则按家族静态注入已够用)。"
+  repository: "/Users/Apple/Folia-source"
+  target_branch: "gaocheng/v0.4-integration"
+  checks:
+    - "npm test"
+    - "npm run typecheck"
+    - "npx eslint <touched files>"
+    - "cargo test --offline --lib"
+  authority:
+    build: "local_build"
+    commit: "允许在本地按主题提交(沿用 2026-07-17 用户对内化工作的提交授权);不推送。"
+    publish: "禁止"
+  upstream_pin:
+    repo: "cat-xierluo/legal-skills"
+    version: "0.6.14"
+    commit: "48aedb4"
+    license: "CC BY-NC 4.0(同作者授权,见 THIRD_PARTY_LICENSES/legal-skills-CC-BY-NC.txt 与 ADR-0022)"
+  routing_overrides: {}
+  budget_overrides: {}
