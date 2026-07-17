@@ -1,0 +1,14 @@
+legal-skills (legal-visualization Skill)
+https://github.com/cat-xierluo/legal-skills
+
+上游版本：v0.6.14（提交 f41fa158a4a22346793688169e31de07bdd109f4）
+上游许可证声明：SKILL.md frontmatter `license: CC-BY-NC`
+（Creative Commons Attribution-NonCommercial，上游仓库未附带完整许可证文本文件）
+作者：杨卫薪律师（微信 ywxlaw）
+
+Folia 对该 Skill 路由知识的内化复用（src-tauri/skills/legal-visualization/scene-routing-v1.md）
+经上游作者（与 Folia 同一作者）授权，决策与授权依据记录于
+docs/adr/0022-internalize-legal-visualization-knowledge.md。
+
+CC BY-NC 4.0 许可证全文见：
+https://creativecommons.org/licenses/by-nc/4.0/legalcode.zh-hans

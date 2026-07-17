@@ -182,10 +182,14 @@ export function DiagramEditorPane({ source, fileName, onChange, onSaveCopy, onUp
   };
 
   if (!editing || !scene) {
+    const routing = parsed?.document.routing;
     return (
       <section className="svg-preview-pane" aria-label="SVG 成品图预览">
         <header className="svg-preview-header">
-          <div><strong>{fileName}</strong><span>旧图会先生成可编辑副本，原文件不会覆盖。</span></div>
+          <div>
+            <strong>{fileName}</strong><span>旧图会先生成可编辑副本，原文件不会覆盖。</span>
+            {routing && <span className="diagram-routing-note" title="生成时的场景路由结论">场景 {routing.sceneId}：{routing.selectionReason}</span>}
+          </div>
           <div className="svg-preview-actions">
             {onRegenerate && <button type="button" className="svg-preview-save" onClick={onRegenerate}>重新生成</button>}
             <button type="button" className="svg-preview-save" onClick={() => void startEditing()} disabled={busy}>{busy ? '正在升级…' : parsed ? '开始编辑' : '升级并编辑'}</button>
@@ -215,6 +219,11 @@ export function DiagramEditorPane({ source, fileName, onChange, onSaveCopy, onUp
         <span className={factIssues.length ? 'diagram-quality-bad' : 'diagram-quality-ok'}>{factIssues.length ? `${factIssues.length} 个事实待核对` : sourceMarkdown ? '关键事实检查通过' : '未绑定 Markdown'}</span>
         <button type="button" onClick={() => onSaveCopy(prepareDeliverySvg(source))} disabled={exportBlocked} title={exportBlocked ? '请先修复排版问题并核对关键事实' : '导出不含编辑数据的 SVG'}>导出副本</button>
       </header>
+      {scene.document.routing && (
+        <p className="diagram-routing-note" title="生成时的场景路由结论">
+          场景 {scene.document.routing.sceneId}：{scene.document.routing.selectionReason}
+        </p>
+      )}
       <div className="diagram-editor-body">
         <div className="diagram-editor-canvas">
           <div className="diagram-editor-stage" style={{ aspectRatio: `${scene.canvas.width} / ${scene.canvas.height}` }}>

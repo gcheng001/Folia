@@ -1,0 +1,36 @@
+delivery_handoff:
+  outcome: "把 legal-visualization Skill（cat-xierluo/legal-skills，作者与 Folia 同一人）的场景路由知识内化为 Folia 随版本发布的资源，并注入 build_skill_visual_prompt：生成时模型先在法律场景库中路由（输出 scene_id 与 selection_reason），再输出结构 JSON，使『选得不对』的痛点在保持零工具沙箱的前提下得到修复。"
+  artifacts:
+    - "/Users/Apple/Folia-source/docs/adr/0022-internalize-legal-visualization-knowledge.md"
+    - "/Users/Apple/Folia-source/CONTEXT.md"
+    - "/Users/Apple/Folia-source/src-tauri/src/lib.rs"
+    - "https://github.com/cat-xierluo/legal-skills/tree/main/skills/legal-visualization"
+  acceptance:
+    - "场景路由知识（SKILL.md 路由速查表 + references/scene-routing-guide.md + chart-decision-tree.md 要点）被提炼为 Folia 仓库内随版本发布的资源文件，文件头记录上游来源仓库与版本（v0.6.14），是提示词的唯一知识来源，不在运行时读取或调用任何已安装 Skill。"
+    - "build_skill_visual_prompt 升级为 v3：注入路由知识，要求模型输出 routing.scene_id 与 routing.selection_reason；路由结果映射到现有四种图类型（flowchart/timeline/relationship/mindmap），不新增渲染类型。"
+    - "canonical_visual_structure 校验扩展：routing 字段必填且格式合法，缺失或非法时按现有失败路径处理；坐标、SVG、HTML 仍被禁止输出。"
+    - "沙箱契约不变：子进程仍以零工具权限 spawn claude -p，仅从 stdout 收结构化文本，源文档继续以 JSON 编码作为数据注入。"
+    - "从 Skill 仓库 references/scene-routing-evals.md 适配一组（≥10 例）映射到四种图类型的路由用例，作为验收集写入 docs/validation/，并对至少三份真实法律文档人工点验路由结果与理由合理。"
+    - "生成结果的元数据/版本记录中保留 scene_id 与 selection_reason，用户可见选型理由；全部既有测试与新增单元测试通过。"
+  out_of_scope:
+    - "不开放全权限 Skill 通道、不生成 .drawio 成品（ADR-0022 已拒绝）。"
+    - "不在本阶段改动本地布局引擎：视觉常量与编排规则（visual-composition-rules、legal-visual-constants）留待第二阶段。"
+    - "不改动抽取规格与视图路由器的确定性路由逻辑，不蒸馏场景库为新模板，不新增视图家族或渲染类型。"
+    - "不引入 draw.io/Python 依赖，不在运行时依赖 legal-skills 本地安装。"
+  repository: "/Users/Apple/Folia-source"
+  target_branch: "gaocheng/v0.4-integration"
+  checks:
+    - "npm test"
+    - "npm run typecheck"
+    - "npx eslint <touched-files> --config config/eslint.config.js"
+    - "cd src-tauri && cargo test --offline --lib"
+  authority:
+    local_build: true
+    package: false
+    install: false
+    push: false
+    pull_request: false
+    publish: false
+    deploy: false
+  routing_overrides: {}
+  budget_overrides: {}

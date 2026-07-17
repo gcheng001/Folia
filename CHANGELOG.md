@@ -21,6 +21,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Skill 成品图新增法律场景路由：生成前先在 Folia 内置的 20 个法律场景（流程/时间轴/关系/脑图各 5 个，含通用兜底）中选定最匹配材料的场景，再按该场景视角提取结构，缓解“选错图表类型”的问题。路由知识内化自 `cat-xierluo/legal-skills` v0.6.14（同作者授权，见 `THIRD_PARTY_LICENSES/legal-skills-CC-BY-NC.txt` 与 ADR-0022），随 Folia 版本内置，运行时不读取已安装 Skill；路由结论（场景 + 选型理由）随图持久化并在图表编辑器中展示，路由缺失或非法时拒绝保存。改编评测集与真实文档点验见 `docs/validation/scene-routing/`。
+- Skill 成品图升级到 v4：在场景路由基础上叠加 5 条编排约束（一图一观点、颜色含义、缺失事实显式标注、线型状态绑定、3S 精简）和 `main_view` 字段，要求模型在结构 JSON 顶部输出本图观点；同时接受关系 `status` 五态（`confirmed` / `disputed` / `asserted` / `inferred` / `missing`），与上游视觉常量一一对应。第二阶段新内化 4 份资源（`visual-constants-v1.md` / `composition-rules-v1.md` / `chart-decision-tree-v1.md` / `composition-playbook-v1.md`），并把上游调色板、字体、节点尺寸、状态线型与中文宽度公式翻译为前端 `src/services/visualization/legalVisuals.ts`，布局层（`layout.ts`）按节点数 1-7/8-15/16+ 吃三档尺寸常量、整体平移 (60,80) 与上游坐标系对齐，渲染层（`VisualRenderers.tsx` + `app.css`）按 status 选 stroke/dash/标签前缀。点验报告见 `docs/validation/visual-rules/`。本阶段仍按 ADR-0022 不生成 `.drawio` 成品，上游 241 个业务场景库按视图家族分批进入下一阶段，本期先落实与 Folia 四种图型强相关的 6 例编排套路。
+- 重做可视化工作簿的阅读层：结构、关系和流程图复用 ELK 分层布局，大型图按类型默认聚焦 12–18 个核心节点并可展开全部；节点支持多行自适应和双击编辑，关系文字回到连线上，点击节点可直接查看原文依据。顶部操作收敛为当前视图、更多和导出菜单，推荐分数不再因元素数量简单堆叠到相同的 96%。
+- Skill 成品图改为信息导航输出：模型默认只保留 8–16 个核心节点、复杂材料硬上限 20 个，限制第一层分支和节点文字长度；本地投影增加标题带、强调节点层级和连接关系标签，降低超长脑图、极宽时间轴和大片无效留白。
 - Skill 成品图改为“模型只输出紧凑结构 JSON，Folia 本地真实测字、中文换行、ELK 布局、正交走线、碰撞检查和 SVG 投影”。模型不再猜最终像素坐标，生成结果未通过本地排版硬门不得保存。
 - 可编辑文档保存改为同目录临时文件写满并同步后替换；生成、旧图升级继续使用 `create_new` 版本化发布，任何路径均不覆盖既有成品。
 - DOMPurify 精确升级到 3.4.12，并更新现有版本范围内的 Babel、Undici 与 Vite；`npm audit` 生产和完整依赖均为 0 漏洞。

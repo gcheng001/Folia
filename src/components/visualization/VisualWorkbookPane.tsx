@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { ChevronDown, Download, FileCode2, FileImage, FileText, MessageSquarePlus, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
 import { addRecommendedSheet } from '../../services/visualization/draft';
 import { parseVisualWorkbook, serializeVisualWorkbook, VISUALIZATION_RULES_VERSION } from '../../services/visualization/schema';
 import { fingerprint } from '../../services/visualization/source';
@@ -36,6 +36,12 @@ function familyLabel(family: ViewFamily): string {
     matrix: '矩阵与对比',
     charts: '数值图表',
   } as const)[family];
+}
+
+// v4 一图一观点：长观点截断 16 字后省略，避免挤占工具栏。
+function truncateView(view: string, max = 16): string {
+  if (view.length <= max) return view;
+  return `${view.slice(0, max)}…`;
 }
 
 export function VisualWorkbookPane({ content, onChange, sourceMarkdown, onApplySourceChange }: VisualWorkbookPaneProps) {
@@ -120,6 +126,7 @@ export function VisualWorkbookPane({ content, onChange, sourceMarkdown, onApplyS
     ? buildSourceCorrection(lastEdited, displayLabel(workbook, lastEdited), sourceMarkdown)
     : null;
   const sourceChanged = sourceMarkdown !== undefined && fingerprint(sourceMarkdown) !== workbook.source.contentHash;
+  const activeFit = workbook.recommendation?.fits.find((fit) => fit.family === activeSheet?.family);
   const addAnnotation = () => {
     if (!activeSheet) return;
     const updatedAt = currentTimestamp();
@@ -166,20 +173,31 @@ export function VisualWorkbookPane({ content, onChange, sourceMarkdown, onApplyS
           <small>{t('visualSourcePrefix')}{workbook.source.relativePath}</small>
         </div>
         <div className="visual-workbook-fit" aria-label={t('visualRecommendationAria')}>
-          {(workbook.recommendation?.fits ?? []).map((fit) => (
-            <span key={fit.family}>{familyLabel(fit.family)} {fit.score}%</span>
-          ))}
+          <strong>{activeSheet ? familyLabel(activeSheet.family) : '可视化'}</strong>
+          {activeSheet?.routing?.sceneId && <span title={`选型理由：${activeSheet.routing.selectionReason}`}>场景 {activeSheet.routing.sceneId}</span>}
+          {activeSheet?.mainView && <span title="一图一观点">观点 {truncateView(activeSheet.mainView)}</span>}
+          {activeFit && <span title={activeFit.evidence.map((item) => `${item.label} ${item.count}`).join('；')}>推荐匹配 {activeFit.score}%</span>}
         </div>
         <div className="visual-workbook-actions">
           {sourceChanged && sourceMarkdown !== undefined && (
-            <button onClick={() => commit(refreshWorkbookFromSource(workbook, sourceMarkdown))}>{t('visualReviewSource')}</button>
+            <button onClick={() => commit(refreshWorkbookFromSource(workbook, sourceMarkdown))}><RefreshCw size={13} />{t('visualReviewSource')}</button>
           )}
-          <button onClick={addAnnotation}>{t('visualAddAnnotation')}</button>
-          <button disabled={!correctionCandidate || !onApplySourceChange} onClick={() => setCorrection(correctionCandidate)}>{t('visualSyncSource')}</button>
-          <button onClick={() => { void exportCurrent('png'); }}>PNG</button>
-          <button disabled={!activeSheet || exportSheetSvg(activeSheet) === null} onClick={() => { void exportCurrent('svg'); }}>SVG</button>
-          <button onClick={() => { void exportCurrent('pdf'); }}>PDF</button>
-          <button onClick={() => { void exportCurrent('html'); }}>HTML</button>
+          <details className="visual-action-menu">
+            <summary aria-label="更多可视化操作" title="更多操作"><MoreHorizontal size={15} /></summary>
+            <div className="visual-action-popover">
+              <button onClick={addAnnotation}><MessageSquarePlus size={13} />{t('visualAddAnnotation')}</button>
+              <button disabled={!correctionCandidate || !onApplySourceChange} onClick={() => setCorrection(correctionCandidate)}>{t('visualSyncSource')}</button>
+            </div>
+          </details>
+          <details className="visual-action-menu">
+            <summary className="visual-action-primary"><Download size={14} />导出<ChevronDown size={12} /></summary>
+            <div className="visual-action-popover">
+              <button onClick={() => { void exportCurrent('png'); }}><FileImage size={13} />PNG 图片</button>
+              <button disabled={!activeSheet || exportSheetSvg(activeSheet) === null} onClick={() => { void exportCurrent('svg'); }}><FileCode2 size={13} />SVG 矢量图</button>
+              <button onClick={() => { void exportCurrent('pdf'); }}><FileText size={13} />PDF 文档</button>
+              <button onClick={() => { void exportCurrent('html'); }}><FileCode2 size={13} />HTML 网页</button>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -200,7 +218,7 @@ export function VisualWorkbookPane({ content, onChange, sourceMarkdown, onApplyS
             onClick={() => commit(addRecommendedSheet(workbook, fit.family, sourceMarkdown))}
             title={fit.evidence.map((item) => `${item.label} ${item.count}`).join('；')}
           >
-            <Plus size={13} /> {familyLabel(fit.family)}
+            <Plus size={13} /> {familyLabel(fit.family)} <small>{fit.score}%</small>
           </button>
         ))}
       </nav>

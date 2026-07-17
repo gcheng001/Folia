@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+// jsdom 环境下 node:fs 会被 vite 外部化导致整套用例无法加载(本文件需要
+// DOMParser,不能切到 node 环境),改用 vite 的 ?raw 导入读取真实旧图 fixture。
+import mindmapLegacyFixture from '../../../docs/validation/editable-visual/fixtures/民事答辩状-脑图-legacy.svg?raw';
+import relationshipLegacyFixture from '../../../docs/validation/editable-visual/fixtures/民事答辩状-关系图-legacy.svg?raw';
 import { inspectDiagramQuality } from './collision';
 import { prepareDeliverySvg } from './delivery';
 import { auditDiagramFacts } from './factAudit';
@@ -51,6 +54,23 @@ describe('diagram core', () => {
     const delivery = stripSceneMetadata(editable);
     expect(delivery).not.toContain('folia-editable-visual');
     expect(delivery).toContain('<svg');
+  });
+
+  it('projects a visible title, emphasized node, and edge label', async () => {
+    const laidOut = await structureToScene({
+      version: 1,
+      title: '案件主线',
+      nodes: [
+        { id: 'root', text: '核心结论', emphasis: 'strong' },
+        { id: 'fact', text: '关键事实' },
+      ],
+      edges: [{ id: 'edge', sourceId: 'root', targetId: 'fact', label: '依据' }],
+    }, { visualType: 'mindmap', style: 'light-formal', measure: fallbackTextMeasurer });
+    const svg = projectDiagramSvg(laidOut, { editable: false, measure: fallbackTextMeasurer });
+    expect(svg).toContain('案件主线');
+    expect(svg).toContain('依据');
+    expect(svg).toContain('#f3e5d9');
+    expect(laidOut.elements.filter(isDiagramNode).every((node) => node.bounds.y >= 82)).toBe(true);
   });
 
   it('sanitizes delivery SVG and removes editable metadata', () => {
@@ -117,13 +137,41 @@ describe('diagram core', () => {
     expect(laidOut.elements.filter((element) => element.kind === 'edge').every((edge) => edge.kind === 'edge' && (edge.points?.length ?? 0) >= 2)).toBe(true);
   });
 
+  it('carries the routing conclusion into the scene and the persisted SVG metadata', async () => {
+    const structured = validateVisualStructure({
+      version: 1,
+      title: '当事人关系',
+      nodes: [
+        { id: 'root', text: '买卖合同关系' },
+        { id: 'a', text: '出卖人甲公司' },
+      ],
+      edges: [{ id: 'e1', sourceId: 'root', targetId: 'a' }],
+      routing: { scene_id: 'REL-PARTIES', selection_reason: '多主体合同关系是核心争点' },
+    });
+    const laidOut = await structureToScene(structured, { visualType: 'relationship', style: 'light-formal', measure: fallbackTextMeasurer });
+    expect(laidOut.document.routing).toEqual({ sceneId: 'REL-PARTIES', selectionReason: '多主体合同关系是核心争点' });
+    const projected = projectDiagramSvg(withSceneChecksum(laidOut), { measure: fallbackTextMeasurer });
+    expect(readSceneMetadata(projected)?.document.routing).toEqual({ sceneId: 'REL-PARTIES', selectionReason: '多主体合同关系是核心争点' });
+  });
+
+  it('keeps routing optional for the deterministic path but rejects malformed routing', async () => {
+    const base = {
+      version: 1,
+      title: '本地确定性布局',
+      nodes: [{ id: 'root', text: '仅有一个节点' }],
+      edges: [],
+    };
+    const withoutRouting = validateVisualStructure(base);
+    const laidOut = await structureToScene(withoutRouting, { visualType: 'mindmap', style: 'business', measure: fallbackTextMeasurer });
+    expect(laidOut.document.routing).toBeUndefined();
+    expect(() => validateVisualStructure({ ...base, routing: null })).toThrow('生成结果的场景路由结论无效');
+    expect(() => validateVisualStructure({ ...base, routing: { scene_id: '', selection_reason: '理由' } })).toThrow('生成结果的场景路由结论无效');
+    expect(() => validateVisualStructure({ ...base, routing: { scene_id: 'MIND-ISSUES', selection_reason: '   ' } })).toThrow('生成结果的场景路由结论无效');
+  });
+
   it('imports both required real legacy SVG fixtures and detects their known overlaps', () => {
-    const fixtures = [
-      '../../../docs/validation/editable-visual/fixtures/民事答辩状-脑图-legacy.svg',
-      '../../../docs/validation/editable-visual/fixtures/民事答辩状-关系图-legacy.svg',
-    ];
-    for (const fixture of fixtures) {
-      const svg = readFileSync(new URL(fixture, import.meta.url), 'utf8');
+    const fixtures = [mindmapLegacyFixture, relationshipLegacyFixture];
+    for (const svg of fixtures) {
       const imported = importLegacySvg(svg);
       const issues = inspectDiagramQuality(imported.scene, fallbackTextMeasurer);
       expect(imported.scene.elements.some((element) => element.kind === 'node')).toBe(true);

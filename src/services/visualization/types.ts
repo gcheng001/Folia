@@ -79,6 +79,10 @@ export interface VisualSheet {
   layout: Record<string, Record<string, JsonValue>>;
   createdAt: number;
   updatedAt: number;
+  /** v4：模型在生成时给出的"图表观点"（一图一观点）；用户可见。 */
+  mainView?: string;
+  /** v3：模型在生成时给出的场景路由结论（scene_id + selection_reason），用户可见。 */
+  routing?: { sceneId: string; selectionReason: string };
 }
 
 export interface VisualWorkbook {

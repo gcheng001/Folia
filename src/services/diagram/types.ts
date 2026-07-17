@@ -58,6 +58,8 @@ export type DiagramEdge = {
     dashed?: boolean;
     arrow?: 'none' | 'end' | 'both';
     fontSize?: number;
+    /** v4：上游视觉常量五态，缺省视作 confirmed。渲染层按 status 选 stroke/dash。 */
+    status?: 'confirmed' | 'disputed' | 'asserted' | 'inferred' | 'missing';
   };
   source?: DiagramSourceAnchor;
   protected?: ManualProtection;
@@ -85,6 +87,11 @@ export type DiagramHistoryEntry = {
   sceneJson: string;
 };
 
+export type VisualRouting = {
+  sceneId: string;
+  selectionReason: string;
+};
+
 export type DiagramScene = {
   version: typeof DIAGRAM_SCENE_VERSION;
   checksum: string;
@@ -96,6 +103,8 @@ export type DiagramScene = {
     createdAt: string;
     updatedAt: string;
     source?: DiagramSourceAnchor;
+    /** 模型的场景路由结论（scene_id + 选型理由），随场景元数据持久化，供用户核对选型。 */
+    routing?: VisualRouting;
     legacyProjection?: boolean;
   };
   canvas: {

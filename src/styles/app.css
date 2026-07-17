@@ -549,6 +549,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 }
 
 .visual-workbook {
+  --visual-grid: color-mix(in oklch, var(--border) 72%, transparent);
   position: relative;
   display: flex;
   flex: 1;
@@ -564,8 +565,9 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 14px 22px 10px;
+  gap: 18px;
+  min-height: 64px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -578,7 +580,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .visual-workbook-title > span {
   overflow: hidden;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -591,23 +593,43 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .visual-workbook-fit {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 5px 12px;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
   color: var(--muted);
+  font-size: 11px;
+}
+
+.visual-workbook-fit strong {
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.visual-workbook-fit span {
+  padding: 3px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .visual-workbook-actions {
   display: flex;
-  flex-wrap: wrap;
+  position: relative;
   justify-content: flex-end;
-  gap: 5px;
+  gap: 6px;
 }
 
 .visual-workbook-actions button,
+.visual-workbook-actions summary,
 .visual-correction-dialog button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  gap: 5px;
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -615,13 +637,48 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   color: var(--muted);
   cursor: pointer;
   font: 11px var(--font-body);
+  list-style: none;
 }
 
+.visual-workbook-actions summary::-webkit-details-marker { display: none; }
+
 .visual-workbook-actions button:hover,
+.visual-workbook-actions summary:hover,
 .visual-correction-dialog button:hover {
   border-color: var(--accent);
   color: var(--fg);
 }
+
+.visual-workbook-actions .visual-action-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.visual-action-menu { position: relative; }
+
+.visual-action-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  right: 0;
+  display: grid;
+  width: 176px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.visual-action-popover button {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  color: var(--fg);
+}
+
+.visual-action-popover button:hover { background: var(--control-hover-bg); }
+.visual-action-popover button:disabled { opacity: 0.38; cursor: default; }
 
 .visual-workbook-actions button:disabled {
   opacity: 0.4;
@@ -671,10 +728,15 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   border-left: 1px dashed var(--border);
 }
 
+.visual-sheet-suggestion small {
+  color: var(--border);
+  font: 9px var(--font-mono);
+}
+
 .visual-sheet {
   flex: 1;
   min-height: 0;
-  padding: 24px;
+  padding: 20px;
   overflow: auto;
 }
 
@@ -739,7 +801,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   width: 100%;
   height: 100%;
   min-height: 360px;
-  gap: 8px;
 }
 
 .visual-graph {
@@ -748,15 +809,16 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   min-height: 360px;
   overflow: hidden;
   border: 1px solid var(--border-soft);
-  border-radius: 3px;
-  background: var(--surface);
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--surface) 88%, var(--bg));
 }
 
 .visual-flow-node {
-  width: 210px;
-  padding: 8px;
+  min-width: 150px;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--border) !important;
-  border-radius: 3px !important;
+  border-radius: 5px !important;
   background: var(--surface) !important;
   box-shadow: none !important;
 }
@@ -764,6 +826,123 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .visual-flow-node--decision {
   border-style: dashed !important;
 }
+
+.visual-flow-node--root {
+  border-color: var(--accent) !important;
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface)) !important;
+}
+
+.visual-flow-node--group,
+.visual-flow-node--decision {
+  border-color: color-mix(in oklch, var(--accent) 48%, var(--border)) !important;
+}
+
+.visual-node-content {
+  display: grid;
+  height: 100%;
+  min-height: 56px;
+  align-content: center;
+  gap: 5px;
+  padding: 10px 12px 11px;
+  text-align: left;
+}
+
+.visual-node-role {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1;
+}
+
+.visual-node-content button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  cursor: text;
+  font: 13px/1.55 var(--font-reading);
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.visual-flow-node--root .visual-node-content button,
+.visual-flow-node--group .visual-node-content button { font-weight: 600; }
+
+.visual-node-content textarea {
+  width: 100%;
+  min-height: 52px;
+  resize: vertical;
+  padding: 5px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.5 var(--font-reading);
+}
+
+.visual-flow-edge .react-flow__edge-path {
+  stroke: color-mix(in oklch, var(--muted) 72%, var(--border));
+  stroke-width: 1.35;
+}
+
+.visual-flow-edge:hover .react-flow__edge-path,
+.visual-flow-edge.selected .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 1.8;
+}
+
+/* v4：边状态配色（与 legalVisuals.ts 的 EDGE_STATUS_STYLES 一一对应）。 */
+.visual-edge--confirmed .react-flow__edge-path { stroke: var(--legal-line-solid, #333333); }
+.visual-edge--disputed .react-flow__edge-path { stroke: var(--legal-accent-dispute, #C0392B); stroke-width: 1.6; }
+.visual-edge--asserted .react-flow__edge-path { stroke: var(--legal-primary, #1f77b4); }
+.visual-edge--inferred .react-flow__edge-path { stroke: var(--legal-line-dotted, #9E9E9E); }
+.visual-edge--missing .react-flow__edge-path { stroke: var(--legal-grey-missing, #9E9E9E); }
+
+.visual-edge--disputed .react-flow__edge-text,
+.visual-edge--disputed .react-flow__edge-textbg { fill: var(--legal-accent-dispute, #C0392B); }
+
+.react-flow__edge-text { fill: var(--muted); font-family: var(--font-body); }
+.react-flow__edge-textbg { fill: var(--surface); fill-opacity: 0.94; }
+
+.visual-graph-summary,
+.visual-graph-inspector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--surface) 94%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.visual-graph-summary strong { color: var(--fg); font-size: 11px; }
+
+.visual-graph-summary button,
+.visual-graph-inspector button {
+  padding: 2px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: 10px var(--font-body);
+}
+
+.visual-graph-inspector {
+  display: grid;
+  width: min(330px, 42vw);
+  align-items: stretch;
+  gap: 7px;
+  padding: 10px;
+}
+
+.visual-graph-inspector > div { display: flex; align-items: center; justify-content: space-between; }
+.visual-graph-inspector strong { color: var(--fg); font-size: 11px; }
+.visual-graph-inspector p { max-height: 92px; overflow: auto; line-height: 1.55; }
+.visual-graph-inspector input { width: 100%; padding: 5px 6px; border: 1px solid var(--accent); background: var(--bg); color: var(--fg); }
 
 .visual-flow-node input,
 .visual-timeline input,
@@ -789,7 +968,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 
 .visual-timeline {
   display: grid;
-  width: min(860px, 100%);
+  width: min(920px, 100%);
   margin: 0 auto;
   padding: 0;
   list-style: none;
@@ -798,22 +977,27 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .visual-timeline li {
   position: relative;
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) auto;
+  grid-template-columns: 34px 130px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  min-height: 52px;
-  padding: 8px 10px 8px 28px;
-  border-left: 1px solid var(--border);
+  min-height: 66px;
+  padding: 9px 10px 9px 22px;
+  border-left: 1px solid color-mix(in oklch, var(--accent) 42%, var(--border));
 }
 
 .visual-timeline li::before {
   position: absolute;
   left: -4px;
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--accent);
   content: '';
+}
+
+.visual-timeline-index {
+  color: var(--border);
+  font: 10px var(--font-mono);
 }
 
 .visual-timeline time {
@@ -827,22 +1011,42 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   overflow: auto;
 }
 
+.visual-specialized-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.visual-specialized-heading strong {
+  color: var(--fg);
+  font: 16px var(--font-display);
+}
+
 .visual-matrix {
   width: 100%;
   border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
   background: var(--surface);
 }
 
 .visual-matrix td {
   min-width: 140px;
-  padding: 7px;
+  padding: 9px;
   border: 1px solid var(--border-soft);
   vertical-align: top;
 }
 
 .visual-matrix tr:first-child td {
-  background: var(--control-hover-bg);
-  font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in oklch, var(--accent) 7%, var(--surface));
+  font-weight: 600;
 }
 
 .visual-chart {
@@ -855,7 +1059,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   width: 100%;
   max-height: 430px;
   border: 1px solid var(--border-soft);
-  border-radius: 3px;
+  border-radius: 4px;
   background: var(--surface);
 }
 
@@ -878,22 +1082,6 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 6px;
   margin-top: 10px;
-}
-
-.visual-edge-editor {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.visual-edge-editor input {
-  width: 130px;
-  padding: 4px 6px;
-  border: 1px dashed var(--border);
-  border-radius: 2px;
-  background: var(--surface);
-  color: var(--muted);
-  font: 11px var(--font-body);
 }
 
 .visual-sheet-empty,
@@ -4711,6 +4899,16 @@ html[data-theme='dark'] .word-paper-content td {
 .diagram-editor-toolbar span { margin-left: auto; font-size: 10px; white-space: nowrap; }
 .diagram-quality-bad { color: #b94a48; }
 .diagram-quality-ok { color: #3d7b58; }
+.diagram-routing-note {
+  display: block;
+  margin: 0;
+  padding: 4px 10px;
+  overflow: hidden;
+  color: var(--fg-muted, #6b7280);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .diagram-editor-error { padding: 8px 18px; color: #b94a48; background: color-mix(in srgb, #b94a48 8%, transparent); font-size: 12px; }
 
 .diagram-editor-body { display: flex; min-height: 0; flex: 1; }
