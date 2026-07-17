@@ -52,6 +52,11 @@ export interface MindNode {
   evidence?: EvidenceStatus;
   /** 本节点 outline 行在原文 lines 中的下标（虚拟根为 -1）。 */
   lineIndex: number;
+  /**
+   * 该节点是否由稀疏 Markdown 的普通文本推断而来。
+   * 只影响脑图投影，不改写 Markdown；用户编辑后会自然规范化为真实标题。
+   */
+  inferred?: boolean;
 }
 
 export interface MindMapDoc {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseMarkdown } from './parser';
-import { layoutMindMap } from './layout';
+import { layoutMindMap, measureMindMapNode } from './layout';
 import realisticMd from './__fixtures__/hearing-realistic.md?raw';
 
 describe('layoutMindMap (M-B 布局算法)', () => {
@@ -49,6 +49,19 @@ describe('layoutMindMap (M-B 布局算法)', () => {
         expect(sorted[i] - sorted[i - 1]).toBeGreaterThan(0);
       }
     }
+  });
+
+  it('长短节点按实际文字高度留出间距，不发生外框重叠', () => {
+    const longText = '这是一段需要自动换行的长节点文字，'.repeat(16);
+    const doc = parseMarkdown(`# 根\n\n## ${longText}\n\n## 短节点\n`);
+    const { nodes } = layoutMindMap(doc.root);
+    const longNode = nodes.find((node) => node.data.label === longText)!;
+    const shortNode = nodes.find((node) => node.data.label === '短节点')!;
+    const outline = doc.root.children[0];
+    const longSize = measureMindMapNode(outline);
+
+    expect(longSize.height).toBeGreaterThan(100);
+    expect(longNode.position.y + longSize.height + 26).toBeLessThanOrEqual(shortNode.position.y);
   });
 
   it('单节点树（仅虚拟根）：无边，一个节点', () => {

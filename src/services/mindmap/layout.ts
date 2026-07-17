@@ -15,55 +15,65 @@ import type { MindNode } from './types';
 const LAYOUT_CONFIG = {
   horizontalSpacing: 120,
   minVerticalSpacing: 26,
-  baseNodeHeight: 60,
   rootX: 100,
   rootY: 0,
-  nodeMaxWidth: 300,
-  nodeMinWidth: 80,
-  nodePadding: 20,
-  fontSize: 14,
+  nodeMaxWidth: 340,
 } as const;
 
 function nodeKey(node: MindNode): string {
   return `n${node.lineIndex}`;
 }
 
-function estimateNodeWidth(node: MindNode): number {
-  const textLength = node.text.length;
-  if (textLength === 0) return LAYOUT_CONFIG.nodeMinWidth;
-
-  const avgCharWidth = LAYOUT_CONFIG.fontSize * 0.6;
-  const textWidth = avgCharWidth * textLength;
-  const totalWidth = textWidth + 30;
-
-  return Math.min(LAYOUT_CONFIG.nodeMaxWidth, Math.max(LAYOUT_CONFIG.nodeMinWidth, totalWidth));
+function textUnits(text: string): number {
+  return Array.from(text).reduce((sum, char) => {
+    if (/\s/u.test(char)) return sum + 0.35;
+    if ((char.codePointAt(0) ?? 0) <= 0xff) return sum + 0.58;
+    return sum + 1;
+  }, 0);
 }
 
-function estimateNodeHeight(node: MindNode): number {
-  const textLength = node.text.length;
-  if (textLength === 0) return LAYOUT_CONFIG.baseNodeHeight;
-
-  const availableWidth = LAYOUT_CONFIG.nodeMaxWidth - 30;
-  const avgCharWidth = LAYOUT_CONFIG.fontSize * 0.6;
-  const charsPerLine = Math.floor(availableWidth / avgCharWidth);
-  const effectiveCharsPerLine = Math.max(10, Math.floor(charsPerLine * 0.85));
-  const estimatedLines = Math.max(1, Math.ceil(textLength / effectiveCharsPerLine));
-
-  const lineHeight = LAYOUT_CONFIG.fontSize * 1.4;
-  const contentHeight = lineHeight * estimatedLines + LAYOUT_CONFIG.nodePadding;
-
-  return Math.max(LAYOUT_CONFIG.baseNodeHeight, contentHeight);
+export interface MindMapNodeSize {
+  width: number;
+  height: number;
 }
 
-function calculateSubtreeHeight(node: MindNode): number {
-  if (node.children.length === 0) return estimateNodeHeight(node);
+/** 与 CustomNode 的字体、内边距和最大宽度一致的确定性尺寸估算。 */
+export function measureMindMapNode(
+  node: MindNode,
+  isRoot = node.kind === 'root',
+): MindMapNodeSize {
+  const fontSize = isRoot ? 16 : 14;
+  const horizontalPadding = isRoot ? 40 : 32;
+  const verticalPadding = isRoot ? 22 : 18;
+  const minWidth = isRoot ? 120 : 96;
+  const minHeight = isRoot ? 48 : 42;
+  const maxContentWidth = LAYOUT_CONFIG.nodeMaxWidth - horizontalPadding;
+  const paragraphs = (node.text || '未命名').split('\n');
+  const widestUnits = Math.max(...paragraphs.map(textUnits), 1);
+  const contentWidth = Math.min(maxContentWidth, Math.max(fontSize * 4, widestUnits * fontSize));
+  const width = Math.min(
+    LAYOUT_CONFIG.nodeMaxWidth,
+    Math.max(minWidth, Math.ceil(contentWidth + horizontalPadding)),
+  );
+  const unitsPerLine = Math.max(1, (width - horizontalPadding) / fontSize);
+  const lineCount = paragraphs.reduce(
+    (sum, paragraph) => sum + Math.max(1, Math.ceil(textUnits(paragraph) / unitsPerLine)),
+    0,
+  );
+  const height = Math.max(minHeight, Math.ceil(lineCount * fontSize * 1.4 + verticalPadding));
+  return { width, height };
+}
+
+function calculateSubtreeHeight(node: MindNode, root: MindNode): number {
+  const nodeHeight = measureMindMapNode(node, node === root).height;
+  if (node.children.length === 0) return nodeHeight;
 
   const childrenHeight = node.children.reduce((sum, child, index) => {
     const spacing = index < node.children.length - 1 ? LAYOUT_CONFIG.minVerticalSpacing : 0;
-    return sum + calculateSubtreeHeight(child) + spacing;
+    return sum + calculateSubtreeHeight(child, root) + spacing;
   }, 0);
 
-  return Math.max(childrenHeight, estimateNodeHeight(node));
+  return Math.max(childrenHeight, nodeHeight);
 }
 
 interface Position {
@@ -74,29 +84,27 @@ interface Position {
 /** 先序遍历计算每个节点的画布坐标（父在左，子在右，水平树）。 */
 function calculateHorizontalLayout(root: MindNode): Map<MindNode, Position> {
   const positions = new Map<MindNode, Position>();
-  positions.set(root, { x: LAYOUT_CONFIG.rootX, y: LAYOUT_CONFIG.rootY });
-
-  const calculatePositions = (node: MindNode, startY: number): void => {
+  const calculatePositions = (node: MindNode, x: number, startY: number): void => {
+    const nodeSize = measureMindMapNode(node, node === root);
+    const subtreeHeight = calculateSubtreeHeight(node, root);
+    positions.set(node, { x, y: startY + (subtreeHeight - nodeSize.height) / 2 });
     if (node.children.length === 0) return;
 
-    let currentY = startY;
-    const parentPos = positions.get(node)!;
-    const childX = parentPos.x + estimateNodeWidth(node) + LAYOUT_CONFIG.horizontalSpacing;
-
+    const childrenHeight = node.children.reduce(
+      (sum, child, index) => sum + calculateSubtreeHeight(child, root) +
+        (index < node.children.length - 1 ? LAYOUT_CONFIG.minVerticalSpacing : 0),
+      0,
+    );
+    let childStartY = startY + (subtreeHeight - childrenHeight) / 2;
+    const childX = x + nodeSize.width + LAYOUT_CONFIG.horizontalSpacing;
     for (const child of node.children) {
-      const subtreeHeight = calculateSubtreeHeight(child);
-      const childY = currentY + subtreeHeight / 2;
-      positions.set(child, { x: childX, y: childY });
-      calculatePositions(child, currentY);
-      currentY += subtreeHeight;
+      calculatePositions(child, childX, childStartY);
+      childStartY += calculateSubtreeHeight(child, root) + LAYOUT_CONFIG.minVerticalSpacing;
     }
-
-    const firstChildY = positions.get(node.children[0])!.y;
-    const lastChildY = positions.get(node.children[node.children.length - 1])!.y;
-    positions.set(node, { x: parentPos.x, y: (firstChildY + lastChildY) / 2 });
   };
 
-  calculatePositions(root, LAYOUT_CONFIG.rootY - calculateSubtreeHeight(root) / 2);
+  const rootHeight = calculateSubtreeHeight(root, root);
+  calculatePositions(root, LAYOUT_CONFIG.rootX, LAYOUT_CONFIG.rootY - rootHeight / 2);
   return positions;
 }
 
@@ -110,9 +118,12 @@ export function layoutMindMap(root: MindNode): { nodes: Node[]; edges: Edge[] } 
   // 主题按一级分支轮转配色（节点下划线与入边同色）。
   const walk = (node: MindNode, branchIndex: number): void => {
     const pos = positions.get(node) ?? { x: LAYOUT_CONFIG.rootX, y: LAYOUT_CONFIG.rootY };
+    const size = measureMindMapNode(node, node === root);
     nodes.push({
       id: nodeKey(node),
       position: pos,
+      width: size.width,
+      height: size.height,
       data: {
         // label 保持原始文本（编辑态输入框的初值）；空文本的占位展示由节点组件负责
         label: node.text,

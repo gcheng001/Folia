@@ -41,7 +41,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { parseMarkdown, collectOutlineNodes } from '../../services/mindmap/parser';
 import type { MindNode } from '../../services/mindmap/types';
-import { layoutMindMap } from '../../services/mindmap/layout';
+import { layoutMindMap, measureMindMapNode } from '../../services/mindmap/layout';
 import {
   deleteNode,
   editNodeText,
@@ -327,14 +327,12 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   // 派生节点：layout → 加 sidecar 坐标 → 加主题/选择/编辑态。
   const derivedNodes = useMemo(() => {
     // 用 collectOutlineNodes 拿真实节点行号 → 估算尺寸（与 layout.ts 一致）。
-    const nodeList = collectOutlineNodes(doc.root);
+    const outlineNodes = collectOutlineNodes(doc.root);
+    const nodeList = doc.root.kind === 'root' ? [doc.root, ...outlineNodes] : outlineNodes;
     const sizeByLine = new Map<number, { w: number; h: number }>();
     for (const n of nodeList) {
-      const text = n.text;
-      const w = Math.min(300, Math.max(80, text.length * 8.4 + 30));
-      const lines = Math.max(1, Math.ceil(text.length / 22));
-      const h = Math.max(40, lines * 20 + 18);
-      sizeByLine.set(n.lineIndex, { w, h });
+      const size = measureMindMapNode(n, n === doc.root);
+      sizeByLine.set(n.lineIndex, { w: size.width, h: size.height });
     }
     const layout = layoutMindMap(doc.root);
     return layout.nodes.map((n) => {

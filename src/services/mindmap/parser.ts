@@ -28,6 +28,11 @@ const FENCE_OPEN = /^(\s*)(`{3,}|~{3,})(.*)$/;
 const FRONTMATTER_DELIM = /^---\s*$/;
 /** 主题分隔线：3+ 同字符（- * _）以空格分隔，整行匹配。 */
 const THEMATIC_BREAK = /^(\s*)([-*_])(?:\s*\2){2,}\s*$/;
+const STANDALONE_EMPHASIS = /^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*$/;
+const CHINESE_SECTION = /^(?:第[一二三四五六七八九十百千0-9]+(?:部分|篇|章|节)|[一二三四五六七八九十百千]+[、.．])\s*/;
+const PAREN_SECTION = /^[（(][一二三四五六七八九十百千0-9]+[）)]\s*/;
+const DECIMAL_SECTION = /^(\d+(?:\.\d+)+)[、.．]?\s*/;
+const SHORT_LABEL = /^[^。！？；.!?]{2,36}[：:]$/;
 
 const TYPE_VOCAB: NodeType[] = ['要件', '争点', '证据', '法条', '事实', '质证'];
 const EVIDENCE_VERDICTS: EvidenceVerdict[] = ['认可', '不认可', '部分认可'];
@@ -63,6 +68,131 @@ function makeNode(kind: MindNode['kind'], level: number, text: string, lineIndex
     links: [],
     lineIndex,
   };
+}
+
+interface InferredLine {
+  lineIndex: number;
+  level: number;
+  text: string;
+}
+
+function cleanInferredText(line: string): string {
+  const trimmed = line.trim();
+  const emphasized = trimmed.match(STANDALONE_EMPHASIS);
+  return (emphasized?.[1] ?? trimmed)
+    .replace(/^\s*[-*+]\s+/, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .trim();
+}
+
+function inferredRank(line: string): number | null {
+  const text = cleanInferredText(line);
+  if (CHINESE_SECTION.test(text)) return 1;
+  if (PAREN_SECTION.test(text)) return 2;
+  const decimal = text.match(DECIMAL_SECTION);
+  if (decimal) return Math.min(5, decimal[1].split('.').length);
+  if (STANDALONE_EMPHASIS.test(line) || SHORT_LABEL.test(text)) return 1;
+  return null;
+}
+
+function inferableProseLine(line: string): boolean {
+  const text = line.trim();
+  if (!text || text.length < 2) return false;
+  if (
+    ATX_HEADING.test(line) ||
+    LIST_ITEM.test(line) ||
+    THEMATIC_BREAK.test(line) ||
+    /^\s*(?:>|\||<|!\[)/.test(line) ||
+    /^\s*\[[^\]]+\]:/.test(line)
+  ) return false;
+  return true;
+}
+
+/**
+ * 标题/列表节点过少时，从普通文本中补出一个只用于脑图的隐式大纲。
+ * 优先识别编号章节、独立加粗行和短标签；完全没有结构信号时退化为逐自然行节点，
+ * 确保非标准 MD 也不会只剩一个中心节点。代码块、frontmatter、表格和引用不参与推断。
+ */
+function augmentSparseOutline(root: MindNode, lines: string[]): void {
+  const explicit = collectOutlineNodes(root);
+  if (explicit.length > 2) return;
+
+  const occupied = new Set(explicit.map((node) => node.lineIndex));
+  const protectedLines = new Set<number>();
+  let inFence = false;
+  let fenceMarker = '';
+  let fenceLen = 0;
+  let frontmatterEnd = -1;
+  if (FRONTMATTER_DELIM.test(lines[0] ?? '')) {
+    for (let i = 1; i < lines.length; i++) {
+      if (FRONTMATTER_DELIM.test(lines[i])) {
+        frontmatterEnd = i;
+        break;
+      }
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    if (i <= frontmatterEnd) {
+      protectedLines.add(i);
+      continue;
+    }
+    const fence = lines[i].match(FENCE_OPEN);
+    if (fence) {
+      protectedLines.add(i);
+      const marker = fence[2][0];
+      const len = fence[2].length;
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker;
+        fenceLen = len;
+      } else if (marker === fenceMarker && len >= fenceLen && fence[3].trim() === '') {
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence) protectedLines.add(i);
+  }
+
+  const leadingH1 = explicit.some(
+    (node) => node.kind === 'heading' && node.level === 1 && onlyPrefaceBefore(lines, node.lineIndex),
+  );
+  const baseLevel = leadingH1 ? 1 : 0;
+  const structural: InferredLine[] = [];
+  const prose: InferredLine[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    if (occupied.has(i) || protectedLines.has(i) || !inferableProseLine(lines[i])) continue;
+    const text = cleanInferredText(lines[i]);
+    if (!text) continue;
+    const rank = inferredRank(lines[i]);
+    const candidate = {
+      lineIndex: i,
+      level: Math.min(6, baseLevel + (rank ?? 1)),
+      text,
+    };
+    prose.push(candidate);
+    if (rank !== null) structural.push(candidate);
+  }
+
+  const inferred = structural.length >= 2 ? structural : explicit.length <= 1 ? prose : [];
+  if (inferred.length === 0) return;
+
+  const all = [
+    ...explicit,
+    ...inferred.map(({ lineIndex, level, text }) => ({
+      ...makeNode('heading', level, text, lineIndex),
+      inferred: true,
+    })),
+  ].sort((a, b) => a.lineIndex - b.lineIndex);
+
+  root.children = [];
+  const stack: MindNode[] = [root];
+  for (const node of all) {
+    while (stack.length > 1 && stack[stack.length - 1].level >= node.level) stack.pop();
+    stack[stack.length - 1].children.push(node);
+    stack.push(node);
+  }
 }
 
 /** 抽取行内 wiki 链接 [[...]]，区分本文件锚点（关联线）与他文件引用。 */
@@ -315,6 +445,8 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
     }
   }
 
+  augmentSparseOutline(syntheticRoot, lines);
+
   // 目录章节（目录/TOC/Contents）不入图：脑图本身就是目录。
   // 序列化按行区间回填，被排除节的原文行归入前驱节点区间，往返无损。
   removeTocSections(syntheticRoot);
@@ -326,6 +458,7 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   if (
     first &&
     first.kind === 'heading' &&
+    !first.inferred &&
     first.level === 1 &&
     onlyPrefaceBefore(lines, first.lineIndex)
   ) {

@@ -235,7 +235,40 @@ describe('mindmap 解析/序列化内核 (M-A)', () => {
     });
     it('无标题的纯段落往返', () => {
       const md = '第一段。\n\n第二段。\n';
-      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+      const doc = parseMarkdown(md, '分析报告.md');
+      expect(doc.root.text).toBe('分析报告.md');
+      expect(doc.root.children.map((node) => node.text)).toEqual(['第一段。', '第二段。']);
+      expect(doc.root.children.every((node) => node.inferred)).toBe(true);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('只有一个 H1 的报告会把普通段落识别为子节点', () => {
+      const md = '# 分析报告\n\n第一项分析结论。\n\n第二项风险提示。\n';
+      const doc = parseMarkdown(md, '分析报告.md');
+      expect(doc.root.text).toBe('分析报告');
+      expect(doc.root.children.map((node) => node.text)).toEqual([
+        '第一项分析结论。',
+        '第二项风险提示。',
+      ]);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('稀疏报告能识别编号章节、加粗小标题和层级', () => {
+      const md = [
+        '案件分析报告',
+        '',
+        '一、基本事实',
+        '这是事实正文。',
+        '',
+        '（一）合同签订',
+        '双方于某日签订合同。',
+        '',
+        '**二、争议焦点**',
+        '争点正文。',
+        '',
+      ].join('\n');
+      const doc = parseMarkdown(md, '案件分析报告.md');
+      expect(doc.root.children.map((node) => node.text)).toEqual(['一、基本事实', '二、争议焦点']);
+      expect(doc.root.children[0].children.map((node) => node.text)).toEqual(['（一）合同签订']);
+      expect(serializeMarkdown(doc)).toBe(md);
     });
     it('id 基于内容路径生成', () => {
       const doc = parseMarkdown(templateMd);

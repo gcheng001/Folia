@@ -299,15 +299,20 @@ export function evaluateFamily(family: ViewFamily, source: string, blocks: Markd
   const formal = extraction.elements.filter((element) => element.kind !== 'edge').length;
   const edges = extraction.elements.length - formal;
   const minimum = family === 'timeline' || family === 'charts' ? 2 : 1;
-  const base = ({
-    'structure-overview': 50,
-    timeline: 46,
-    relationship: 48,
-    flow: 48,
-    matrix: 42,
-    charts: 42,
+  const strongSignalCount = ({
+    'structure-overview': 6,
+    timeline: 3,
+    relationship: 3,
+    flow: 3,
+    matrix: 6,
+    charts: 4,
   } as const)[family];
-  const score = formal === 0 ? (family === 'structure-overview' && source.trim() ? 30 : 0) : Math.min(96, base + formal * 10 + edges * 3);
+  const graphFamily = family === 'structure-overview' || family === 'relationship' || family === 'flow';
+  const coverage = Math.min(1, formal / strongSignalCount);
+  const connectivity = graphFamily && formal > 1 ? Math.min(1, edges / (formal - 1)) : 0;
+  const score = formal === 0
+    ? (family === 'structure-overview' && source.trim() ? 24 : 0)
+    : Math.max(0, Math.min(92, Math.round(31 + coverage * 48 + connectivity * 12 - extraction.review.length * 8)));
   return {
     family,
     score,

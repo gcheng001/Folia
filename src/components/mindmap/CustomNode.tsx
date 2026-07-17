@@ -121,8 +121,12 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     fontSize: `${Math.max(11, Math.round(baseFontSize * Math.min(sizeScale, 1.22)))}px`,
     fontWeight: isRoot ? 600 : 400,
     fontFamily: 'var(--font-body)',
+    width: '100%',
     minWidth: `${Math.round((isRoot ? 120 : 96) * sizeScale)}px`,
-    maxWidth: `${Math.round(340 * Math.max(1, sizeScale))}px`,
+    maxWidth: 'none',
+    lineHeight: 1.4,
+    whiteSpace: 'normal',
+    overflowWrap: 'anywhere',
     textAlign: 'center',
   };
 
