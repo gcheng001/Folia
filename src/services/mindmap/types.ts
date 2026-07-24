@@ -11,8 +11,8 @@
 /** 固定词表的节点类型（行内 #要件 等识别而来）。 */
 export type NodeType = '要件' | '争点' | '证据' | '法条' | '事实' | '质证';
 
-/** 节点种类：根 / 标题 / 列表项。 */
-export type NodeKind = 'root' | 'heading' | 'list';
+/** 节点种类：根 / 标题 / 列表项 / 正文段落投影。 */
+export type NodeKind = 'root' | 'heading' | 'list' | 'paragraph';
 
 /** Obsidian wiki 引用：[[target]] 或 [[target#anchor]]。 */
 export interface WikiRef {
@@ -42,6 +42,13 @@ export interface MindNode {
   level: number;
   /** 显示文本（标题/列表项原文行内文本，原样含 #tag 与 [[link]]）。 */
   text: string;
+  /**
+   * 本节点大纲行之后、下一个大纲节点之前的完整 Markdown 正文。
+   * 仅用于脑图阅读全文投影；编辑与序列化仍以原始 lines 为唯一来源。
+   */
+  body: string;
+  /** 可编辑正文段落投影；视觉上作为下级节点，结构编辑仍只操作 children。 */
+  projections: MindNode[];
   children: MindNode[];
   // —— 领域字段（3.3，非破坏性抽取；text 不变，往返不受影响）——
   types: NodeType[];
@@ -52,11 +59,18 @@ export interface MindNode {
   evidence?: EvidenceStatus;
   /** 本节点 outline 行在原文 lines 中的下标（虚拟根为 -1）。 */
   lineIndex: number;
+  /** 正文段落投影对应的原文结束行（开区间）；仅 paragraph 节点存在。 */
+  sourceEndLineIndex?: number;
   /**
    * 该节点是否由稀疏 Markdown 的普通文本推断而来。
    * 只影响脑图投影，不改写 Markdown；用户编辑后会自然规范化为真实标题。
    */
   inferred?: boolean;
+  /**
+   * 正文块投影：显示在所属论点之下，可原位编辑正文，但不参与标题层级编辑、
+   * 结构拖动或 sidecar 持久化。
+   */
+  projected?: boolean;
 }
 
 export interface MindMapDoc {

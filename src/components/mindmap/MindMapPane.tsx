@@ -39,11 +39,12 @@ import {
   applyEdgeChanges,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { parseMarkdown, collectOutlineNodes } from '../../services/mindmap/parser';
+import { collectMindMapNodes, collectOutlineNodes, parseMarkdown } from '../../services/mindmap/parser';
 import type { MindNode } from '../../services/mindmap/types';
 import { layoutMindMap, measureMindMapNode } from '../../services/mindmap/layout';
 import {
   deleteNode,
+  editParagraphText,
   editNodeText,
   insertChild,
   insertSibling,
@@ -53,6 +54,7 @@ import {
 } from '../../services/mindmap/edit';
 import { alignNodes, distributeNodes, type NodeBox } from '../../services/mindmap/align';
 import { CustomNode } from './CustomNode';
+import { MindMapNodeReader } from './MindMapNodeReader';
 import { CustomEdge } from './CustomEdge';
 import { CustomFlowEdge, EdgeMarkerDefs } from './CustomFlowEdge';
 import { AnnotationGroupNode, computeGroupBbox, makeGroupNode } from './AnnotationGroupNode';
@@ -86,6 +88,13 @@ import {
   type FlowPoint,
   type FreeLineNodeBox,
 } from '../../services/mindmap/freeFlow';
+
+const MINDMAP_FIT_PADDING = {
+  top: '144px',
+  right: '24px',
+  bottom: '24px',
+  left: '24px',
+} as const;
 import {
   computeExportBounds,
   snapshotToPng,
@@ -228,6 +237,21 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   const doc = useMemo(() => parseMarkdown(markdown, fileName), [markdown, fileName]);
   const docRef = useRef(doc);
   docRef.current = doc;
+  const readableNodes = useMemo(() => {
+    return [doc.root, ...collectMindMapNodes(doc.root)];
+  }, [doc]);
+  const defaultReadingNode = useMemo(
+    () => readableNodes.find((node) => node !== doc.root && node.body.trim())
+      ?? readableNodes.find((node) => node.body.trim())
+      ?? doc.root,
+    [doc.root, readableNodes],
+  );
+  const [readingNodeId, setReadingNodeId] = useState(() => `n${defaultReadingNode.lineIndex}`);
+  const readingNode = readableNodes.find((node) => `n${node.lineIndex}` === readingNodeId) ?? defaultReadingNode;
+
+  useEffect(() => {
+    setReadingNodeId(`n${defaultReadingNode.lineIndex}`);
+  }, [documentKey, defaultReadingNode.lineIndex]);
 
   // 文档 key 变化时重读 sidecar
   useEffect(() => {
@@ -297,7 +321,10 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       return;
     }
     pendingNewLineRef.current = null;
-    const md = editNodeText(current, lineIndex, trimmed);
+    const target = collectMindMapNodes(current.root).find((node) => node.lineIndex === lineIndex);
+    const md = target?.projected
+      ? editParagraphText(current, lineIndex, text)
+      : editNodeText(current, lineIndex, trimmed);
     if (md !== null && md !== current.lines.join('\n')) {
       recordBefore(markdown, sidecar);
       onChangeRef.current?.(md);
@@ -326,9 +353,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
 
   // 派生节点：layout → 加 sidecar 坐标 → 加主题/选择/编辑态。
   const derivedNodes = useMemo(() => {
-    // 用 collectOutlineNodes 拿真实节点行号 → 估算尺寸（与 layout.ts 一致）。
-    const outlineNodes = collectOutlineNodes(doc.root);
-    const nodeList = doc.root.kind === 'root' ? [doc.root, ...outlineNodes] : outlineNodes;
+    const nodeList = [doc.root, ...collectMindMapNodes(doc.root)];
     const sizeByLine = new Map<number, { w: number; h: number }>();
     for (const n of nodeList) {
       const size = measureMindMapNode(n, n === doc.root);
@@ -339,7 +364,8 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
       const positionKey = String(n.data.positionKey ?? n.id);
       const lineIndex = Number(n.id.slice(1));
       const outlineNode = nodeList.find((node) => node.lineIndex === lineIndex);
-      const lookupKeys = sidecarLookupKeys(outlineNode, n.id, positionKey);
+      const projected = !!n.data.projected;
+      const lookupKeys = projected ? [] : sidecarLookupKeys(outlineNode, n.id, positionKey);
       const pos = lookupKeys.map((key) => sidecar.positions[key]).find(Boolean) ?? n.position;
       const isSelected = selectedIds.includes(n.id);
       // P0-9: 获取 per-node 样式
@@ -356,7 +382,9 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         type: 'custom',
         width: size.w,
         height: size.h,
-        connectable: tool === 'connect',
+        connectable: tool === 'connect' && !projected,
+        draggable: !!onChange && !projected && tool !== 'connect' && !isDrawingTool(tool),
+        selectable: true,
         handles: FALLBACK_NODE_HANDLES,
         data: {
           ...n.data,
@@ -366,7 +394,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
           editable: !!onChange,
           isSelected,
           isEditing: n.id === editingId,
-          isConnectMode: tool === 'connect',
+          isConnectMode: tool === 'connect' && !projected,
           onStartEdit: startEdit,
           onCommitEdit: commitEdit,
           onCancelEdit: cancelEdit,
@@ -565,6 +593,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   // 单击节点：根据 detail 选择；detail=2 立即进入编辑
   const handleNodeClick = useCallback((event: ReactMouseEvent, node: Node) => {
     if (isDrawingTool(tool)) return;
+    setReadingNodeId(node.id);
     if ((event.detail >= 2 || selectedIds.length === 1 && selectedIds[0] === node.id) && onChangeRef.current) {
       startEdit(node.id);
       return;
@@ -966,7 +995,7 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
     recordBefore(markdown, sidecar);
     setSidecar((sc) => ({ ...sc, positions: {} }));
     requestAnimationFrame(() => {
-      rf.fitView({ duration: 300, padding: 0.15 });
+      rf.fitView({ duration: 300, padding: MINDMAP_FIT_PADDING });
     });
   }, [markdown, sidecar, recordBefore, rf]);
 
@@ -1465,11 +1494,12 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
   }, [derivedGroups, derivedNodesWithHover]);
 
   return (
-    <div
-      ref={wrapperRef}
-      tabIndex={0}
-      style={{ width: '100%', height: '100%', position: 'relative', outline: 'none' }}
-    >
+    <div className="mindmap-workspace">
+      <div
+        ref={wrapperRef}
+        className="mindmap-canvas"
+        tabIndex={0}
+      >
       {pendingStructure && (
         <div
           data-testid="mm-structure-hint"
@@ -1531,12 +1561,13 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
         onDeleteEdges={deleteSelectedEdges}
         onDeleteGroups={deleteSelectedGroups}
       />
-      <ReactFlow
+        <ReactFlow
         nodes={finalNodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
+        fitViewOptions={{ padding: MINDMAP_FIT_PADDING }}
         nodesDraggable={!!onChange && tool !== 'connect' && !isDrawingTool(tool)}
         nodesConnectable={tool === 'connect'}
         elementsSelectable={!!onChange && !isDrawingTool(tool)}
@@ -1593,7 +1624,9 @@ function MindMapInner({ markdown, fileName = '', filePath = '', onChange }: Mind
             ))}
           </defs>
         </svg>
-      </ReactFlow>
+        </ReactFlow>
+      </div>
+      <MindMapNodeReader title={readingNode.text || fileName} markdown={readingNode.body} />
     </div>
   );
 }

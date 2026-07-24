@@ -154,6 +154,33 @@ export function editNodeText(doc: MindMapDoc, lineIndex: number, newText: string
   return lines.join('\n');
 }
 
+/**
+ * 原位修改正文段落投影，只替换该段对应的原文行区间。
+ * 空字符串表示删除该段文字；段落间原有空行仍保留，重解析后自然消失为节点。
+ */
+export function editParagraphText(doc: MindMapDoc, lineIndex: number, newText: string): string | null {
+  let paragraph: MindNode | undefined;
+  const walk = (node: MindNode): void => {
+    if (paragraph) return;
+    paragraph = node.projections.find((projection) => projection.lineIndex === lineIndex);
+    if (paragraph) return;
+    for (const child of node.children) walk(child);
+  };
+  walk(doc.root);
+
+  if (!paragraph || paragraph.kind !== 'paragraph' || paragraph.sourceEndLineIndex === undefined) {
+    return null;
+  }
+  const replacement = newText.trim().split('\n');
+  if (replacement.length === 1 && replacement[0] === '') replacement.pop();
+  const lines = [
+    ...doc.lines.slice(0, paragraph.lineIndex),
+    ...replacement,
+    ...doc.lines.slice(paragraph.sourceEndLineIndex),
+  ];
+  return lines.join('\n');
+}
+
 /** Enter：在节点子树末尾之后插入同级空节点。根节点不允许。 */
 export function insertSibling(doc: MindMapDoc, lineIndex: number): EditResult | null {
   const hit = locate(doc.root, lineIndex);

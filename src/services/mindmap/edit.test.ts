@@ -3,6 +3,7 @@ import { parseMarkdown, collectOutlineNodes } from './parser';
 import { serializeMarkdown } from './serializer';
 import {
   deleteNode,
+  editParagraphText,
   editNodeText,
   insertChild,
   insertSibling,
@@ -42,6 +43,35 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const out = editNodeText(doc, doc.root.lineIndex, '案件分析报告');
       expect(out).toBe('---\ncase: 2026\n---\n\n# 案件分析报告\n\n开篇正文。\n\n## 第一部分\n');
       expect(parseMarkdown(out ?? '').root.text).toBe('案件分析报告');
+      assertStable(out ?? '');
+    });
+  });
+
+  describe('editParagraphText', () => {
+    it('只替换目标自然段，保留标题、相邻段落与空行', () => {
+      const md = '# 根\n\n## 论点\n\n第一段。\n\n第二段。\n\n第三段。\n';
+      const doc = parseMarkdown(md);
+      const argument = doc.root.children[0];
+      const second = argument.projections[1];
+      const out = editParagraphText(doc, second.lineIndex, '第二段修改后第一行。\n第二行。');
+
+      expect(out).toBe('# 根\n\n## 论点\n\n第一段。\n\n第二段修改后第一行。\n第二行。\n\n第三段。\n');
+      expect(parseMarkdown(out ?? '').root.children[0].projections.map((node) => node.text)).toEqual([
+        '第一段。',
+        '第二段修改后第一行。\n第二行。',
+        '第三段。',
+      ]);
+      assertStable(out ?? '');
+    });
+
+    it('清空正文节点只删除该段文字', () => {
+      const md = '# 根\n\n## 论点\n\n第一段。\n\n第二段。\n';
+      const doc = parseMarkdown(md);
+      const first = doc.root.children[0].projections[0];
+      const out = editParagraphText(doc, first.lineIndex, '   ');
+
+      expect(out).toBe('# 根\n\n## 论点\n\n\n第二段。\n');
+      expect(parseMarkdown(out ?? '').root.children[0].projections.map((node) => node.text)).toEqual(['第二段。']);
       assertStable(out ?? '');
     });
   });

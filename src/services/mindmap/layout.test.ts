@@ -90,4 +90,28 @@ describe('layoutMindMap (M-B 布局算法)', () => {
       expect(edge.data?.branchIndex).toBe(target?.data.branchIndex);
     }
   });
+
+  it('标题后的完整正文保留在节点数据中，但不撑大结构画布', () => {
+    const body = '代理意见正文。'.repeat(80);
+    const doc = parseMarkdown(`# 代理词\n\n## 第一项\n\n${body}\n`);
+    const { nodes } = layoutMindMap(doc.root);
+    const first = nodes.find((node) => node.data.label === '第一项');
+
+    expect(first?.data.body).toBe(body);
+    expect(first?.width).toBeLessThanOrEqual(340);
+    expect(first?.height).toBeLessThanOrEqual(60);
+  });
+
+  it('正文自然段显示为论点的下级节点，并与结构节点分别连线', () => {
+    const doc = parseMarkdown('# 代理词\n\n## 第一项\n\n第一段。\n\n第二段。\n');
+    const { nodes, edges } = layoutMindMap(doc.root);
+    const argument = nodes.find((node) => node.data.label === '第一项')!;
+    const paragraphs = nodes.filter((node) => node.data.kind === 'paragraph');
+
+    expect(paragraphs.map((node) => node.data.label)).toEqual(['第一段。', '第二段。']);
+    expect(paragraphs.every((node) => node.data.projected === true)).toBe(true);
+    expect(edges.filter((edge) => edge.source === argument.id).map((edge) => edge.target)).toEqual(
+      paragraphs.map((node) => node.id),
+    );
+  });
 });

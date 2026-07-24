@@ -61,6 +61,8 @@ function makeNode(kind: MindNode['kind'], level: number, text: string, lineIndex
     kind,
     level,
     text,
+    body: '',
+    projections: [],
     children: [],
     types: [],
     tags: [],
@@ -446,10 +448,11 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   }
 
   augmentSparseOutline(syntheticRoot, lines);
+  assignNodeBodiesAndParagraphs(syntheticRoot, lines);
 
   // 目录章节（目录/TOC/Contents）不入图：脑图本身就是目录。
   // 序列化按行区间回填，被排除节的原文行归入前驱节点区间，往返无损。
-  removeTocSections(syntheticRoot);
+  removeTocSections(syntheticRoot, lines);
 
   // 首标题为 H1 且其前只有空行/frontmatter 时提升为根（文档大标题即中心节点），
   // 其余 H1 作为一级分支挂到根下——先序仍与文档顺序一致，序列化不受影响。
@@ -472,17 +475,157 @@ export function parseMarkdown(md: string, fileName = ''): MindMapDoc {
   return { root, lines };
 }
 
+/**
+ * 把每个节点紧随其后的非大纲原文完整投影到节点正文。
+ * 空行只用于保留段落分隔；首尾空行去掉，正文中的 Markdown 标记不改写。
+ */
+interface BodyParagraph {
+  lineIndex: number;
+  endLineIndex: number;
+  markdown: string;
+}
+
+/**
+ * 按 CommonMark 的段落边界切分正文：空行结束一个块，连续非空物理行仍属于同一段。
+ * 代码围栏、表格、主题分隔线和 HTML 块继续留在右侧完整正文中，不膨胀脑图。
+ */
+function splitBodyParagraphs(bodyLines: string[], startLineIndex: number): BodyParagraph[] {
+  const paragraphs: BodyParagraph[] = [];
+  let blockStart = -1;
+  let blockEnd = -1;
+  let blockLines: string[] = [];
+  let inFence = false;
+  let fenceMarker = '';
+  let fenceLen = 0;
+
+  const flush = (): void => {
+    if (blockStart < 0 || blockLines.length === 0) return;
+    const markdown = blockLines.join('\n').trim();
+    const first = blockLines[0] ?? '';
+    const isVisualParagraph = markdown
+      && !FENCE_OPEN.test(first)
+      && !THEMATIC_BREAK.test(first)
+      && !/^\s*(?:\||<|!\[)/.test(first);
+    if (isVisualParagraph) {
+      paragraphs.push({ lineIndex: blockStart, endLineIndex: blockEnd, markdown });
+    }
+    blockStart = -1;
+    blockEnd = -1;
+    blockLines = [];
+  };
+
+  for (let offset = 0; offset < bodyLines.length; offset++) {
+    const line = bodyLines[offset];
+    const fence = line.match(FENCE_OPEN);
+    if (fence) {
+      const marker = fence[2][0];
+      const len = fence[2].length;
+      if (!inFence) {
+        flush();
+        inFence = true;
+        fenceMarker = marker;
+        fenceLen = len;
+      } else if (marker === fenceMarker && len >= fenceLen && fence[3].trim() === '') {
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence) continue;
+    if (line.trim() === '') {
+      flush();
+      continue;
+    }
+    if (blockStart < 0) blockStart = startLineIndex + offset;
+    blockLines.push(line);
+    blockEnd = startLineIndex + offset + 1;
+  }
+  flush();
+  return paragraphs;
+}
+
+function makeParagraphNode(parent: MindNode, paragraph: BodyParagraph): MindNode {
+  const node = makeNode('paragraph', Math.min(7, parent.level + 1), paragraph.markdown, paragraph.lineIndex);
+  node.body = paragraph.markdown;
+  node.projected = true;
+  node.sourceEndLineIndex = paragraph.endLineIndex;
+  return node;
+}
+
+/**
+ * 诉讼文书末尾常以“综上……”收束，再依次出现“此致”、法院、署名和日期。
+ * 仅在确实存在独立“此致”时截断脑图投影，避免把结语和落款误当成最后一个论点的正文节点。
+ * node.body 仍保留完整区间，右侧阅读与 Markdown 原文不受影响。
+ */
+function projectionBodyLines(bodyLines: string[]): string[] {
+  const salutationIndex = bodyLines.findIndex((line) => /^\s*此致\s*[，,。]?$/.test(line));
+  if (salutationIndex < 0) return bodyLines;
+
+  for (let index = salutationIndex - 1; index >= 0; index--) {
+    const text = bodyLines[index].trim();
+    if (!text) continue;
+    if (/^综上(?:所述)?[，,]/.test(text)) return bodyLines.slice(0, index);
+    break;
+  }
+  return bodyLines.slice(0, salutationIndex);
+}
+
+function assignNodeBodiesAndParagraphs(root: MindNode, lines: string[]): void {
+  const nodes = collectOutlineNodes(root).sort((a, b) => a.lineIndex - b.lineIndex);
+  const boundaries = nodes.map((node) => node.lineIndex);
+
+  if (root.kind === 'root') {
+    let start = 0;
+    if (FRONTMATTER_DELIM.test(lines[0] ?? '')) {
+      const end = lines.findIndex((line, index) => index > 0 && FRONTMATTER_DELIM.test(line));
+      if (end >= 0) start = end + 1;
+    }
+    const prefixLines = lines.slice(start, boundaries[0] ?? lines.length);
+    while (prefixLines.length > 0 && prefixLines[0].trim() === '') prefixLines.shift();
+    while (prefixLines.length > 0 && prefixLines[prefixLines.length - 1].trim() === '') prefixLines.pop();
+    root.body = prefixLines.join('\n');
+  }
+
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const end = boundaries[i + 1] ?? lines.length;
+    const bodyStart = node.lineIndex + 1;
+    const rawBodyLines = lines.slice(bodyStart, end);
+    const bodyLines = [...rawBodyLines];
+    while (bodyLines.length > 0 && bodyLines[0].trim() === '') bodyLines.shift();
+    while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === '') bodyLines.pop();
+    node.body = bodyLines.join('\n');
+    if (!node.body) continue;
+    node.projections = splitBodyParagraphs(projectionBodyLines(rawBodyLines), bodyStart)
+      .map((paragraph) => makeParagraphNode(node, paragraph));
+  }
+}
+
 const TOC_HEADING_TITLES = new Set(['目录', 'toc', 'contents', 'table of contents']);
 
-/** 从树中整节移除标题为「目录/TOC/Contents」的 heading 子树（任意层级、大小写不敏感）。 */
-function removeTocSections(node: MindNode): void {
-  node.children = node.children.filter((child) => {
+/**
+ * 从树中移除「目录/TOC/Contents」章节。
+ *
+ * 一些生成器会输出 `# 目录`，再用主题分隔线结束目录，正文却从 `##` 继续。
+ * 单看标题层级，正文会被误挂为目录子树；删除目录时必须把分隔线后的节点提升回父级。
+ */
+function removeTocSections(node: MindNode, lines: string[]): void {
+  const kept: MindNode[] = [];
+  for (const child of node.children) {
     if (child.kind === 'heading' && TOC_HEADING_TITLES.has(child.text.trim().toLowerCase())) {
-      return false;
+      const dividerLine = lines.findIndex(
+        (line, index) => index > child.lineIndex && THEMATIC_BREAK.test(line),
+      );
+      if (dividerLine >= 0) {
+        const promoted = child.children.filter((descendant) => descendant.lineIndex > dividerLine);
+        for (const descendant of promoted) removeTocSections(descendant, lines);
+        kept.push(...promoted);
+      }
+      continue;
     }
-    removeTocSections(child);
-    return true;
-  });
+    removeTocSections(child, lines);
+    kept.push(child);
+  }
+  node.children = kept;
 }
 
 /** lineIndex 之前是否只有空行与 frontmatter，即该标题位于文档开头（是文档大标题）。 */
@@ -503,12 +646,17 @@ function assignFieldsAndIds(root: MindNode): void {
   const walk = (node: MindNode, idPath: string, siblings: MindNode[]): void => {
     const sameName = siblings.filter((sibling) => sibling.kind === node.kind && sibling.text === node.text);
     const occurrence = sameName.indexOf(node) + 1;
-    const segment = node.kind === 'root' ? '' : `${node.kind}:${node.text}${sameName.length > 1 ? `#${occurrence}` : ''}`;
+    const segment = node.kind === 'root'
+      ? ''
+      : node.projected
+        ? `paragraph:line-${node.lineIndex}`
+        : `${node.kind}:${node.text}${sameName.length > 1 ? `#${occurrence}` : ''}`;
     node.id = idPath ? `${idPath}/${segment}` : segment;
     extractTags(node.text, node);
     extractWiki(node.text, node);
     const ev = extractEvidence(node.text);
     if (ev) node.evidence = ev;
+    for (const projection of node.projections) walk(projection, node.id, node.projections);
     for (const child of node.children) walk(child, node.id, node.children);
   };
   walk(root, '', [root]);
@@ -518,7 +666,19 @@ function assignFieldsAndIds(root: MindNode): void {
 export function collectOutlineNodes(root: MindNode): MindNode[] {
   const out: MindNode[] = [];
   const walk = (node: MindNode): void => {
+    if (node.kind === 'heading' || node.kind === 'list') out.push(node);
+    for (const child of node.children) walk(child);
+  };
+  walk(root);
+  return out;
+}
+
+/** 脑图渲染/阅读所需的全部节点，包括可原位编辑的正文段落投影。 */
+export function collectMindMapNodes(root: MindNode): MindNode[] {
+  const out: MindNode[] = [];
+  const walk = (node: MindNode): void => {
     if (node.kind !== 'root') out.push(node);
+    for (const projection of node.projections) walk(projection);
     for (const child of node.children) walk(child);
   };
   walk(root);

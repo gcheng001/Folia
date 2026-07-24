@@ -57,6 +57,54 @@ describe('MindMapPane (M-B 只读画布)', () => {
     host.remove();
   });
 
+  it('四点代理词在紧凑脑图中点击节点后显示该点完整正文', () => {
+    const host = document.createElement('div');
+    host.style.width = '1200px';
+    host.style.height = '900px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const markdown = [
+      '# 代理词',
+      '',
+      '## 第一节点',
+      '',
+      '第一段全部正文。',
+      '',
+      '## 第二节点',
+      '',
+      '第二段全部正文。',
+      '',
+      '## 第三节点',
+      '',
+      '第三段全部正文。',
+      '',
+      '## 第四节点',
+      '',
+      '第四段全部正文。',
+      '',
+    ].join('\n');
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown, fileName: '代理词.md' }));
+    });
+
+    expect(host.querySelector('[data-mindmap-node-body="true"]')).toBeNull();
+    expect(host.querySelector('[data-testid="mindmap-node-reader"]')?.textContent).toContain('第一段全部正文。');
+
+    const second = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '第二节点');
+    act(() => {
+      second?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    expect(host.querySelector('[data-testid="mindmap-node-reader"]')?.textContent).toContain('第二段全部正文。');
+    expect(host.querySelector('[data-testid="mindmap-node-reader"]')?.textContent).not.toContain('第一段全部正文。');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
   it('节点不可拖拽/不可连接/不可选中（只读约束）', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -116,6 +164,48 @@ describe('MindMapPane (M-B 只读画布)', () => {
     act(() => {
       root.unmount();
     });
+    host.remove();
+  });
+
+  it('双击正文段落节点可多行编辑，并只回写该自然段', () => {
+    const host = document.createElement('div');
+    host.style.width = '1000px';
+    host.style.height = '700px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const markdown = '# 根\n\n## 论点\n\n第一段。\n\n第二段。\n';
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown, onChange }));
+    });
+
+    const paragraph = Array.from(host.querySelectorAll('[data-mindmap-node-paragraph="true"]'))
+      .find((element) => element.textContent === '第一段。');
+    expect(paragraph).toBeTruthy();
+    act(() => {
+      paragraph?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+
+    const textarea = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="编辑正文段落"]');
+    expect(textarea).toBeTruthy();
+    expect(textarea?.classList.contains('nodrag')).toBe(true);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+      valueSetter?.call(textarea, '第一段修改。\n补充一行。');
+      textarea?.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      textarea?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith('# 根\n\n## 论点\n\n第一段修改。\n补充一行。\n\n第二段。\n');
+
+    act(() => root.unmount());
     host.remove();
   });
 

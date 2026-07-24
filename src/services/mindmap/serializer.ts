@@ -40,7 +40,7 @@ export function serializeMarkdown(doc: MindMapDoc): string {
 /** 先序 DFS 谓词版（供编辑期/渲染期复用）。当前 M-A 未使用。 */
 export function walkPreOrder(root: MindNode, visit: (node: MindNode) => void): void {
   const recurse = (node: MindNode): void => {
-    if (node.kind !== 'root') visit(node);
+    if (node.kind === 'heading' || node.kind === 'list') visit(node);
     for (const child of node.children) recurse(child);
   };
   recurse(root);

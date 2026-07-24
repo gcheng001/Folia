@@ -10,7 +10,9 @@ import { branchColor, getTheme, type MindMapTheme } from './themes';
 
 interface CustomNodeData {
   label: string;
+  body?: string;
   kind: string;
+  projected?: boolean;
   level: number;
   branchIndex: number;
   isRoot: boolean;
@@ -60,6 +62,8 @@ const SIZE_SCALE = { xs: 0.78, s: 0.9, m: 1, l: 1.16, xl: 1.34 } as const;
 export const CustomNode = memo(({ id, data }: NodeProps) => {
   const {
     label,
+    kind,
+    projected,
     branchIndex,
     isRoot,
     theme: maybeTheme,
@@ -74,13 +78,14 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     isStructureTarget,
     isStructureConfirmed,
   } = data as unknown as CustomNodeData;
+  const isParagraph = projected || kind === 'paragraph';
   const theme = maybeTheme ?? getTheme(undefined);
   // P0-9: per-node 颜色优先于主题分支颜色
   const customColor = perNodeStyle?.color;
   const color = customColor ?? branchColor(theme, branchIndex ?? -1);
   const sizeScale = SIZE_SCALE[perNodeStyle?.sizeLevel ?? 'm'];
   const lineIndex = Number(id.slice(1));
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   useLayoutEffect(() => {
     if (!isEditing) return;
@@ -106,7 +111,7 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
   }, [isEditing]);
 
   const classic = theme.nodeVariant === 'classic';
-  const baseFontSize = isRoot ? 16 : 14;
+  const baseFontSize = isRoot ? 16 : isParagraph ? 13 : 14;
   const nodeStyle: React.CSSProperties = {
     boxSizing: 'border-box',
     padding: isRoot
@@ -122,12 +127,13 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
     fontWeight: isRoot ? 600 : 400,
     fontFamily: 'var(--font-body)',
     width: '100%',
-    minWidth: `${Math.round((isRoot ? 120 : 96) * sizeScale)}px`,
+    minWidth: `${Math.round((isRoot ? 120 : isParagraph ? 150 : 96) * sizeScale)}px`,
     maxWidth: 'none',
     lineHeight: 1.4,
     whiteSpace: 'normal',
     overflowWrap: 'anywhere',
-    textAlign: 'center',
+    textAlign: isParagraph ? 'left' : 'center',
+    opacity: isParagraph ? 0.94 : 1,
   };
 
   if (customColor) {
@@ -159,19 +165,60 @@ export const CustomNode = memo(({ id, data }: NodeProps) => {
       />
       <div
         data-mindmap-node="true"
+        data-mindmap-node-paragraph={isParagraph ? 'true' : undefined}
         data-mindmap-selected={isSelected && !isEditing ? 'true' : undefined}
         data-mindmap-node-color={customColor ?? undefined}
         className="nowheel nopan"
-        style={{ ...nodeStyle, cursor: isEditing ? 'text' : (editable ? 'grab' : 'default') }}
+        style={{
+          ...nodeStyle,
+          cursor: isEditing || isParagraph && editable ? 'text' : (editable ? 'grab' : 'default'),
+        }}
         onDoubleClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          onStartEdit?.(id);
+          if (editable) onStartEdit?.(id);
         }}
       >
-        {isEditing ? (
+        {isEditing && isParagraph ? (
+          <textarea
+            ref={inputRef as React.RefObject<HTMLTextAreaElement | null>}
+            className="nodrag nowheel nopan"
+            autoFocus
+            defaultValue={label}
+            aria-label="编辑正文段落"
+            onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                onCommitEdit?.(lineIndex, e.currentTarget.value);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                onCancelEdit?.(lineIndex);
+              } else if (e.key === 'Tab') {
+                e.preventDefault();
+              }
+            }}
+            onBlur={(e) => onCommitEdit?.(lineIndex, e.currentTarget.value)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            style={{
+              font: 'inherit',
+              lineHeight: 'inherit',
+              color: 'inherit',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              resize: 'none',
+              width: '100%',
+              minHeight: `${Math.max(56, label.split('\n').length * 20)}px`,
+              padding: 0,
+            }}
+          />
+        ) : isEditing ? (
           <input
-            ref={inputRef}
+            ref={inputRef as React.RefObject<HTMLInputElement | null>}
             className="nodrag nowheel nopan"
             autoFocus
             defaultValue={label}

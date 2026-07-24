@@ -21,6 +21,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Markdown 脑图不再只提取稀疏文档中的编号论点：会按 CommonMark 自然段边界，把每个论点后的正文逐段投影为下一级可编辑节点；双击可多行编辑并原位回写该自然段，连续非空换行保持为同一段，空行才拆段，原 Markdown 与右侧完整正文阅读保持无损。
+
 - Skill 成品图新增法律场景路由：生成前先在 Folia 内置的 20 个法律场景（流程/时间轴/关系/脑图各 5 个，含通用兜底）中选定最匹配材料的场景，再按该场景视角提取结构，缓解“选错图表类型”的问题。路由知识内化自 `cat-xierluo/legal-skills` v0.6.14（同作者授权，见 `THIRD_PARTY_LICENSES/legal-skills-CC-BY-NC.txt` 与 ADR-0022），随 Folia 版本内置，运行时不读取已安装 Skill；路由结论（场景 + 选型理由）随图持久化并在图表编辑器中展示，路由缺失或非法时拒绝保存。改编评测集与真实文档点验见 `docs/validation/scene-routing/`。
 - Skill 成品图升级到 v4：在场景路由基础上叠加 5 条编排约束（一图一观点、颜色含义、缺失事实显式标注、线型状态绑定、3S 精简）和 `main_view` 字段，要求模型在结构 JSON 顶部输出本图观点；同时接受关系 `status` 五态（`confirmed` / `disputed` / `asserted` / `inferred` / `missing`），与上游视觉常量一一对应。第二阶段新内化 4 份资源（`visual-constants-v1.md` / `composition-rules-v1.md` / `chart-decision-tree-v1.md` / `composition-playbook-v1.md`），并把上游调色板、字体、节点尺寸、状态线型与中文宽度公式翻译为前端 `src/services/visualization/legalVisuals.ts`，布局层（`layout.ts`）按节点数 1-7/8-15/16+ 吃三档尺寸常量、整体平移 (60,80) 与上游坐标系对齐，渲染层（`VisualRenderers.tsx` + `app.css`）按 status 选 stroke/dash/标签前缀。点验报告见 `docs/validation/visual-rules/`。本阶段仍按 ADR-0022 不生成 `.drawio` 成品，上游 241 个业务场景库按视图家族分批进入下一阶段，本期先落实与 Folia 四种图型强相关的 6 例编排套路。
 - Skill 成品图 v5 关系图场景细则按需注入：第三阶段试点把上游 `scene-library.md`（关系图条目）与 `scene-composition-playbook.md`（关系图通用套路）改写为 `scene-details-rel-v1.md`，仅在图类型为 `relationship` 时拼入生成提示词（按图型静态注入，非按路由结果动态挑小节），其余三型的提示词与试点前逐字节一致；五条场景（REL-PARTIES / REL-EQUITY / REL-TRANSACTION / REL-EVIDENCE / REL-GENERIC）的硬规则在沙箱输出中可被验证。3/3 路由命中预期、3/3 通过 `canonical_visual_structure`，点验报告见 `docs/validation/visual-rules/REL-pilot.md`。上游 241 个业务场景库的 flowchart / timeline / mindmap 三族仍按 handoff 计划延后。
@@ -33,6 +35,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- 修复脑图只显示 Markdown 标题/列表骨架、看不到代理词等法律文书完整正文的问题：保留现有标题层级作为分支，并把每个节点标题后的全部原始 Markdown 正文显示在对应节点内，长文自动扩宽换行，原文回写仍保持逐行无损。
 - 修复长 Markdown 在所见即所得编辑时偶发跳回文件首部：普通输入期间不再改写 Vditor 的活 DOM，完整安全清洗延迟到失焦、初始化或外部载入时执行，避免销毁光标、滚动锚点及 Vditor 内部编辑结构；SVG、Mermaid 与危险 HTML 清洗保持生效。
 - 修复保存后立即退出时，文件虽已写入磁盘但重启仍误显示“未保存”的会话同步竞态。
 

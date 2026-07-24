@@ -98,6 +98,88 @@ describe('mindmap 解析/序列化内核 (M-A)', () => {
     });
   });
 
+  describe('完整正文投影', () => {
+    it('四点代理词把每个自然段投影为下级节点，并排除结语与落款', () => {
+      const md = [
+        '代理词',
+        '',
+        '一、合同已经成立并生效',
+        '',
+        '第一点第一段完整正文。',
+        '',
+        '第一点第二段完整正文，包含 **强调内容**。',
+        '',
+        '二、对方已经构成违约',
+        '',
+        '第二点第一段完整正文。',
+        '',
+        '第二点第二段完整正文。',
+        '',
+        '三、损失计算有事实依据',
+        '',
+        '第三点第一段完整正文。',
+        '',
+        '第三点第二段完整正文。',
+        '',
+        '四、请求法院支持诉请',
+        '',
+        '第四点第一段完整正文。',
+        '',
+        '第四点第二段完整正文。',
+        '',
+        '第四点第三段完整正文。',
+        '',
+        '综上，请求法院支持全部诉讼请求。',
+        '',
+        '此致',
+        '',
+        '某某人民法院',
+        '',
+      ].join('\n');
+
+      const doc = parseMarkdown(md, '代理词.md');
+      expect(doc.root.children.map((node) => node.text)).toEqual([
+        '一、合同已经成立并生效',
+        '二、对方已经构成违约',
+        '三、损失计算有事实依据',
+        '四、请求法院支持诉请',
+      ]);
+      expect(doc.root.children.map((node) => node.body)).toEqual([
+        '第一点第一段完整正文。\n\n第一点第二段完整正文，包含 **强调内容**。',
+        '第二点第一段完整正文。\n\n第二点第二段完整正文。',
+        '第三点第一段完整正文。\n\n第三点第二段完整正文。',
+        '第四点第一段完整正文。\n\n第四点第二段完整正文。\n\n第四点第三段完整正文。\n\n综上，请求法院支持全部诉讼请求。\n\n此致\n\n某某人民法院',
+      ]);
+      expect(doc.root.children.map((node) => node.projections.length)).toEqual([2, 2, 2, 3]);
+      expect(doc.root.children[3].projections.map((node) => node.text)).not.toContain(
+        '综上，请求法院支持全部诉讼请求。',
+      );
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+
+    it('连续非空物理行属于同一自然段，只有空行才拆分', () => {
+      const md = [
+        '# 文档',
+        '',
+        '## 论点',
+        '',
+        '第一段第一行，',
+        '第一段第二行。',
+        '',
+        '第二段。',
+        '',
+      ].join('\n');
+      const doc = parseMarkdown(md);
+      const argument = doc.root.children[0];
+
+      expect(argument.projections.map((node) => node.text)).toEqual([
+        '第一段第一行，\n第一段第二行。',
+        '第二段。',
+      ]);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+  });
+
   describe('边缘用例：非大纲内容不误解析', () => {
     const doc = parseMarkdown(edgeMd);
     const nodes = collectOutlineNodes(doc.root);
@@ -223,6 +305,41 @@ describe('mindmap 解析/序列化内核 (M-A)', () => {
       expect(collectOutlineNodes(doc.root).map((n) => n.text)).not.toContain('Table of Contents');
       expect(serializeMarkdown(doc)).toBe(md);
     });
+
+    it('H1 目录后的分隔线结束目录，后续 H2 正文不会随目录一起删除', () => {
+      const md = [
+        '# 鉴定式案例分析报告',
+        '',
+        '# 目录',
+        '',
+        '## （一）大纲',
+        '- 请求权基础预选结果',
+        '',
+        '## （二）正文',
+        '- 请求权R1',
+        '',
+        '---',
+        '',
+        '## （一）大纲',
+        '',
+        '### 1. 请求权基础预选结果',
+        '',
+        '## （二）正文',
+        '',
+        '### 1. 请求权R1',
+        '',
+        '## 结论',
+        '',
+      ].join('\n');
+      const doc = parseMarkdown(md, '鉴定式分析报告.md');
+      expect(doc.root.text).toBe('鉴定式案例分析报告');
+      expect(doc.root.children.map((node) => node.text)).toEqual(['（一）大纲', '（二）正文', '结论']);
+      expect(doc.root.children[0].children.map((node) => node.text)).toEqual(['1. 请求权基础预选结果']);
+      expect(doc.root.children[1].children.map((node) => node.text)).toEqual(['1. 请求权R1']);
+      expect(collectOutlineNodes(doc.root).map((node) => node.text)).not.toContain('目录');
+      expect(doc.root.body).not.toContain('目录');
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
   });
 
   describe('空文档与无大纲文档', () => {
@@ -239,6 +356,14 @@ describe('mindmap 解析/序列化内核 (M-A)', () => {
       expect(doc.root.text).toBe('分析报告.md');
       expect(doc.root.children.map((node) => node.text)).toEqual(['第一段。', '第二段。']);
       expect(doc.root.children.every((node) => node.inferred)).toBe(true);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('已有多级大纲时，首标题前的开场正文显示在文件名根节点', () => {
+      const md = '审判长、审判员：\n\n## 第一项\n\n正文一。\n\n## 第二项\n\n正文二。\n';
+      const doc = parseMarkdown(md, '代理词.md');
+      expect(doc.root.kind).toBe('root');
+      expect(doc.root.body).toBe('审判长、审判员：');
+      expect(doc.root.children.map((node) => node.body)).toEqual(['正文一。', '正文二。']);
       expect(serializeMarkdown(doc)).toBe(md);
     });
     it('只有一个 H1 的报告会把普通段落识别为子节点', () => {
