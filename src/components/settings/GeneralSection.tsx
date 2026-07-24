@@ -70,6 +70,21 @@ export function GeneralSection() {
           onClick={() => handleChange({ reopenLastFile: !settings.reopenLastFile })}
         />
       </div>
+
+      <div className="settings-row">
+        <div>
+          <div className="settings-label">{t('tabModeLabel')}</div>
+          <div className="settings-desc">{t('tabModeDesc')}</div>
+        </div>
+        <select
+          className="settings-select"
+          value={settings.tabMode}
+          onChange={(e) => handleChange({ tabMode: e.target.value as 'multi' | 'single' })}
+        >
+          <option value="multi">{t('tabModeMulti')}</option>
+          <option value="single">{t('tabModeSingle')}</option>
+        </select>
+      </div>
     </div>
   );
 }

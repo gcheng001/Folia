@@ -17,6 +17,44 @@ function stateWith(tabs: SessionState['tabs'], activeTabId?: string): SessionSta
   return { tabs, activeTabId: activeTabId ?? tabs[0]?.id ?? '', recentFiles: [], splitTabId: null, splitView: false };
 }
 
+describe('openInNewTab — 单标签模式 (mode: single)', () => {
+  it('single 模式替换当前 tab，tabs 始终为 1', () => {
+    const t1 = makeTabFromFile(file('a.md', 'a'));
+    const state = stateWith([t1], t1.id);
+    const next = sessionReducer(state, { type: 'openInNewTab', file: file('b.md', 'b'), mode: 'single' as const });
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0].file.name).toBe('b.md');
+    expect(next.activeTabId).toBe(next.tabs[0].id);
+  });
+
+  it('single 模式收敛多 tab 并清空分屏', () => {
+    const t1 = makeTabFromFile(file('a.md', 'a'));
+    const t2 = makeTabFromFile(file('b.md', 'b'));
+    const state: SessionState = { tabs: [t1, t2], activeTabId: t1.id, recentFiles: [], splitTabId: t2.id, splitView: true };
+    const next = sessionReducer(state, { type: 'openInNewTab', file: file('c.md', 'c'), mode: 'single' as const });
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0].file.name).toBe('c.md');
+    expect(next.splitTabId).toBeNull();
+    expect(next.splitView).toBe(false);
+  });
+
+  it('single 模式打开已开文档时只保留它一个', () => {
+    const t1 = makeTabFromFile(file('a.md', 'a', false, '/tmp/a.md'));
+    const t2 = makeTabFromFile(file('b.md', 'b', false, '/tmp/b.md'));
+    const state = stateWith([t1, t2], t1.id);
+    const next = sessionReducer(state, { type: 'openInNewTab', file: file('b.md', 'b', false, '/tmp/b.md'), mode: 'single' as const });
+    expect(next.tabs).toHaveLength(1);
+    expect(next.tabs[0].file.path).toBe('/tmp/b.md');
+  });
+
+  it('multi 默认仍新开 tab（回归保护）', () => {
+    const t1 = makeTabFromFile(file('a.md', 'a'));
+    const state = stateWith([t1], t1.id);
+    const next = sessionReducer(state, { type: 'openInNewTab', file: file('b.md', 'b') });
+    expect(next.tabs).toHaveLength(2);
+  });
+});
+
 describe('bootstrapSession', () => {
   it('有 tabs 时保留并修正失效的 activeTabId 到首个', () => {
     const tab = makeTabFromFile(file('a.md'));

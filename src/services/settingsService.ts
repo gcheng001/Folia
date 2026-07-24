@@ -163,6 +163,8 @@ export interface AppSettings {
   autoUpdateCheck: boolean;
   defaultEncoding: DefaultEncoding;
   reopenLastFile: boolean;
+  /** 标签模式：multi 多标签（浏览器式）/ single 单标签（一次只留一个文档）。 */
+  tabMode: 'multi' | 'single';
   locale: AppLocale;
   // 导出
   exportPresetId: PresetId;
@@ -208,6 +210,7 @@ const defaults: AppSettings = {
   autoUpdateCheck: true,
   defaultEncoding: 'UTF-8',
   reopenLastFile: true,
+  tabMode: 'multi',
   locale: 'zh-CN',
   exportPresetId: 'legal',
   customExportPresets: {} as CustomPresetRegistry,
@@ -242,6 +245,10 @@ const defaults: AppSettings = {
 
 function normalizeStatusBarPathStyle(value: unknown): AppSettings['statusBarPathStyle'] {
   return value === 'basename' || value === 'full' ? value : 'middle';
+}
+
+function normalizeTabMode(value: unknown): AppSettings['tabMode'] {
+  return value === 'single' ? 'single' : 'multi';
 }
 
 function readStoredSettings(): Partial<AppSettings> {
@@ -694,6 +701,7 @@ export function getSettings(): AppSettings {
       previewHeadingCustomFont: normalizeCustomFontName(stored.previewHeadingCustomFont),
       tocAlwaysPinned: stored.tocAlwaysPinned === true,
       statusBarPathStyle: normalizeStatusBarPathStyle(stored.statusBarPathStyle),
+      tabMode: normalizeTabMode(stored.tabMode),
     };
   } catch {
     return { ...defaults };
@@ -755,6 +763,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     ),
     license,
     tocAlwaysPinned: (patch.tocAlwaysPinned ?? current.tocAlwaysPinned) === true,
+    tabMode: normalizeTabMode(patch.tabMode ?? current.tabMode),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   emitSettingsChanged(merged);

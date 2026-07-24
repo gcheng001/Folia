@@ -193,7 +193,12 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
     }
   }, []);
-  const session = useSession();
+  // 单标签模式：openInNewTab 替换当前 tab 前的未保存确认（文案区别于 closeTab 的关闭确认）。
+  const confirmReplaceDirty = useCallback(
+    () => window.confirm('当前文档有未保存改动，打开新文档将丢弃这些改动，是否继续？'),
+    [],
+  );
+  const session = useSession({ confirmDirty: confirmReplaceDirty });
   const {
     activeFile: file,
     activeTab,
@@ -213,6 +218,15 @@ export function AppLayout() {
     tearOffViaDrag,
   } = session;
   const confirmCloseDirty = useCallback(() => window.confirm('该标签有未保存改动，确定关闭吗？'), []);
+
+  // 切到单标签模式：关闭分屏并只保留当前标签（其余关闭）。多标签模式无副作用；
+  // reducer 已保证 single 模式下后续 openInNewTab 恒为替换，tabs 不会再次膨胀。
+  useEffect(() => {
+    if (settings.tabMode !== 'single') return;
+    if (session.splitView) session.closeSplit();
+    if (session.tabs.length > 1) session.closeOthers(session.activeTabId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.tabMode]);
 
   // 重启恢复时核对“磁盘已写入、会话仍残留 dirty=true”的保存竞态。
   // 只在内容逐字一致时清除 dirty；真正未保存的草稿绝不覆盖、绝不静默丢弃。
@@ -249,6 +263,8 @@ export function AppLayout() {
   }, [file.content, file.fileType, file.name]);
   // 分屏开关：开启时优先选择已有标签；没有候选时进入“等待拖入”的分屏状态。
   const handleToggleSplit = useCallback(() => {
+    // 单标签模式禁用分屏（分屏依赖 ≥2 标签，与单标签互斥）。
+    if (settings.tabMode === 'single') return;
     if (splitView) {
       closeSplit();
       return;
@@ -257,7 +273,7 @@ export function AppLayout() {
       ?? session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder);
     if (candidate) setSplitTab(candidate.id);
     else toggleSplit();
-  }, [splitView, closeSplit, session.tabs, activeTabId, setSplitTab, toggleSplit]);
+  }, [settings.tabMode, splitView, closeSplit, session.tabs, activeTabId, setSplitTab, toggleSplit]);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -1223,16 +1239,18 @@ export function AppLayout() {
         dirty={file.dirty}
         fileName={file.name}
         tabBar={
-          <TabBar
-            tabs={session.tabs}
-            activeTabId={session.activeTabId}
-            windowLabel={windowLabel}
-            onSelect={session.switchTab}
-            onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
-            onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
-            onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
-            onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
-          />
+          settings.tabMode === 'single' ? null : (
+            <TabBar
+              tabs={session.tabs}
+              activeTabId={session.activeTabId}
+              windowLabel={windowLabel}
+              onSelect={session.switchTab}
+              onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
+              onClose={(id) => session.closeTab(id, { confirmDirty: confirmCloseDirty })}
+              onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
+              onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
+            />
+          )
         }
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}

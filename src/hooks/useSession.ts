@@ -3,6 +3,7 @@ import type { OpenedFile } from '../types/document';
 import { createEmptyFile } from '../types/document';
 import type { Tab, EditorMode, RightPanelMode } from '../types/session';
 import { sessionReducer, bootstrapSessionForWindow, type SessionAction } from './sessionReducer';
+import { useSettings } from './useSettings';
 import { loadSession, saveSession } from '../services/sessionStore';
 import {
   closeTabWindow,
@@ -24,7 +25,8 @@ export interface CloseOptions {
  * 多标签会话 hook。状态转换走纯函数 sessionReducer（已单测覆盖），
  * 本 hook 负责：初始化（启动恢复）、debounce 持久化草稿、派生 activeFile/editorMode 等。
  */
-export function useSession() {
+export function useSession(options?: { confirmDirty?: () => boolean }) {
+  const settings = useSettings();
   const [state, reactDispatch] = useReducer(sessionReducer, undefined, () => {
     const windowLabel = detectCurrentWindowLabel();
     const initialTabIds = detectCurrentWindowTabIds();
@@ -34,6 +36,10 @@ export function useSession() {
   // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
+
+  // 单标签模式替换当前 tab 前的未保存确认（与 closeTab 共用同一确认逻辑）。
+  const confirmDirtyRef = useRef(options?.confirmDirty);
+  useEffect(() => { confirmDirtyRef.current = options?.confirmDirty; });
 
   // React dispatch 到下一次提交之间存在一个很短的窗口。若用户刚保存就 Cmd+Q，
   // pagehide 会在 useEffect 更新 stateRef 之前触发，进而把旧 dirty=true 写回会话。
@@ -163,9 +169,19 @@ export function useSession() {
   const splitFile = splitTab?.file ?? null;
 
   const openInNewTab = useCallback((file: OpenedFile) => {
-    dispatch({ type: 'openInNewTab', file });
+    // 单标签模式：替换当前 tab 前先确认未保存改动，再以 mode='single' 让
+    // reducer 只保留这一个 tab（标签栏隐藏 + 分屏禁用在 AppLayout 处理）。
+    if (settings.tabMode === 'single') {
+      const active = stateRef.current.tabs.find((t) => t.id === stateRef.current.activeTabId);
+      if (active?.file.dirty && confirmDirtyRef.current && !confirmDirtyRef.current()) {
+        return;
+      }
+      dispatch({ type: 'openInNewTab', file, mode: 'single' });
+    } else {
+      dispatch({ type: 'openInNewTab', file });
+    }
     dispatch({ type: 'recordRecentFile', file });
-  }, [dispatch]);
+  }, [dispatch, settings.tabMode]);
 
   const openInSplit = useCallback((file: OpenedFile, sourceTabId: string) => {
     dispatch({ type: 'openInSplit', file, sourceTabId });

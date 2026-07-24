@@ -67,7 +67,7 @@ export function bootstrapSessionForWindow(
 }
 
 export type SessionAction =
-  | { type: 'openInNewTab'; file: OpenedFile }
+  | { type: 'openInNewTab'; file: OpenedFile; mode?: 'multi' | 'single' }
   | { type: 'openInSplit'; file: OpenedFile; sourceTabId: string }
   | { type: 'switchTab'; id: string }
   | { type: 'closeTab'; id: string; confirmed: boolean }
@@ -113,6 +113,18 @@ function reduceInternal(state: SessionState, action: SessionAction): SessionStat
   switch (action.type) {
     case 'openInNewTab': {
       const existing = findTabByDocumentPath(state.tabs, action.file);
+      // 单标签模式：始终只保留一个 tab（替换当前），分屏清空。
+      // dirty 提示由 useSession 在 dispatch 前处理，reducer 只管执行替换。
+      if (action.mode === 'single') {
+        const target = existing ?? makeTabFromFile(action.file);
+        return {
+          ...state,
+          tabs: [target],
+          activeTabId: target.id,
+          splitTabId: null,
+          splitView: false,
+        };
+      }
       if (existing) {
         return {
           ...state,
