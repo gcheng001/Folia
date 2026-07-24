@@ -21,6 +21,7 @@ import {
 import { scheduleDelayedAutoUpdateCheck } from '../services/autoUpdateScheduler';
 import { translate } from '../services/i18n';
 import type { HtmlTableBlock } from '../services/htmlTableBlockService';
+import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
 import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
@@ -1216,6 +1217,7 @@ export function AppLayout() {
   } as CSSProperties;
 
   return (
+    <ImageAssetStoreProvider>
     <div className="app-layout" data-theme={settings.theme} style={appStyle}>
       <Toolbar
         dirty={file.dirty}
@@ -1384,5 +1386,6 @@ export function AppLayout() {
         </Suspense>
       )}
     </div>
+    </ImageAssetStoreProvider>
   );
 }

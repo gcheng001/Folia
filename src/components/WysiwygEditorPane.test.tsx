@@ -4,6 +4,21 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WysiwygEditorPane } from './WysiwygEditorPane';
 import { FOLIA_IR_SVG_FRAGMENT_CLASS, FOLIA_IR_SVG_ROOT_CLASS } from '../services/vditorIrSanitizeService';
+import { ImageAssetStoreProvider } from '../context/ImageAssetStoreProvider';
+
+/**
+ * DEC-119 / ISS-179 Phase 3 主编辑器接入：WysiwygEditorPane 现在依赖
+ * ImageAssetStoreContext（paste/drop 注册 pending asset 用）。既有测试
+ * 直接渲染 WysiwygEditorPane 而不挂 AppLayout，需要套一层 Provider 避免
+ * 「useImageAssetStore 抛错」。每个测试用新的 store 实例，保证互不干扰。
+ */
+function renderWithProvider(node: React.ReactElement): React.ReactElement {
+  return React.createElement(
+    ImageAssetStoreProvider,
+    null,
+    node,
+  );
+}
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -135,10 +150,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source,
-            onChange: () => undefined,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source,
+              onChange: () => undefined,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -180,10 +197,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '正常文本',
-            onChange: () => undefined,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '正常文本',
+              onChange: () => undefined,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -219,10 +238,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '',
-            onChange: () => undefined,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange: () => undefined,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -267,10 +288,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '',
-            onChange: () => undefined,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange: () => undefined,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -318,10 +341,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '',
-            onChange,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -366,7 +391,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
 
       await act(async () => {
         root = createRoot(host);
-        root.render(React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined }));
+        root.render(renderWithProvider(React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined })));
         await flushMicrotasks();
       });
 
@@ -407,10 +432,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '<p data-block="0"><span data-type="text">init</span></p>',
-            onChange,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '<p data-block="0"><span data-type="text">init</span></p>',
+              onChange,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -464,10 +491,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '',
-            onChange,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -510,10 +539,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         root = createRoot(host);
         root.render(
-          React.createElement(WysiwygEditorPane, {
-            source: '',
-            onChange,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: '',
+              onChange,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -521,10 +552,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 触发外部 setValue useEffect 路径（render 不同 source prop），安排 RAF 回调
       await act(async () => {
         root!.render(
-          React.createElement(WysiwygEditorPane, {
-            source: 'new content',
-            onChange,
-          }),
+          renderWithProvider(
+            React.createElement(WysiwygEditorPane, {
+              source: 'new content',
+              onChange,
+            }),
+          ),
         );
         await flushMicrotasks();
       });
@@ -552,10 +585,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
         await act(async () => {
           root = createRoot(host);
           root.render(
-            React.createElement(WysiwygEditorPane, {
-              source: '# 标题\n\n**加粗**\n',
-              onChange: () => undefined,
-            }),
+            renderWithProvider(
+              React.createElement(WysiwygEditorPane, {
+                source: '# 标题\n\n**加粗**\n',
+                onChange: () => undefined,
+              }),
+            ),
           );
           await vi.runAllTimersAsync();
         });

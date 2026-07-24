@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { MediaPlaceholder } from './MediaPlaceholder';
+import type { RenderDiagnostic } from '../services/renderCoordinator';
 import { VDITOR_PREVIEW_I18N } from '../services/vditorPreviewConfig';
 import {
   classifyHtmlTableBlocks,
@@ -10,6 +12,11 @@ import { translate } from '../services/i18n';
 import { resolveLocalImages } from '../services/localImageResolver';
 import { openExternalUrl } from '../services/urlOpener';
 import { repairSvgIrPreviewsFromMarkdown, sanitizeVditorIrHtml } from '../services/vditorIrSanitizeService';
+import { useImageAssetStore } from '../context/useImageAssetStore';
+import {
+  pickImageFiles,
+  registerImageAssetFromFile,
+} from '../services/mediaInsertionService';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -79,8 +86,12 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
  * 外部 setValue 后再应用完整清理。这样既不破坏 Vditor 的内部编辑结构，
  * 也不会在打字时销毁选区和滚动锚点。
  *
- * ISS-63 / DEC-119：当清理或 SVG 预览修复确实改动 DOM 时，重跑 Vditor
- * 代码块渲染器，确保 mermaid / echarts 等异步产物写入当前活节点。
+ * ISS-63 / DEC-118 sanitize 完成后重置 `.vditor-ir__preview[data-render="1"]`
+ * 的 data-render 为 "0" 并重跑 Vditor 内置代码块渲染器：DOMPurify 整体重写
+ * IR DOM 后 Vditor 内部 mermaid / echarts 等异步渲染拿到的是 detached 节
+ * 点引用，svg / canvas 写入被丢弃。重置 data-render 让 Vditor 知道这些 preview
+ * 需要重新处理；调 `Vditor.mermaidRender` / `Vditor.mathRender` 等静态方法
+ * 让渲染器找到新 IR DOM 节点引用，异步产物会写到活节点上。
  */
 function sanitizeIrDom(
   editor: import('vditor').default | null,
@@ -100,11 +111,12 @@ function sanitizeIrDom(
   if (shouldReplace) {
     ir.innerHTML = result.html;
   }
-  const previewRepaired = repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
-  // 只有清理或 SVG 修复实际改动 DOM 时才重跑异步渲染，普通输入不触发。
-  if (shouldReplace || previewRepaired) {
-    rerenderAsyncCodeBlocks(editor);
-  }
+  repairSvgIrPreviewsFromMarkdown(ir, markdownSource);
+  // ISS-63 / DEC-118 / DEC-119 Phase 2：sanitize 后总是重跑异步代码块渲染器，
+  // 让 mermaid / echarts 等异步产物写入当前活 IR DOM 节点（绕开
+  // detached-node 竞争）。rerenderAsyncCodeBlocks 内部已有 per-block
+  // source-hash 跳过，未变化的块零成本，普通 input 不会因此变慢。
+  rerenderAsyncCodeBlocks(editor);
   return shouldReplace && result.sourceChanged;
 }
 
@@ -131,12 +143,126 @@ function sanitizeIrDom(
  * 们直接调 Render 方法绕过 processCodeRender，data-render 维持 sanitize
  * 后的值，不影响功能）。
  *
+ * DEC-119 Phase 2 调度优化：每个 renderer 调用前先按 selector 扫 IR
+ * DOM 节点，对比每个节点 textContent 的 hash 与 data-source-hash
+ * attr；全部匹配时直接跳过整条 renderer（含 addScript 微任务 + 整片
+ * DOM 扫描）。高频 input 场景（5+ mermaid 块文档，20+ cps）下省去对
+ * 未变化语言的全量重跑。详细见下方 ASYNC_RENDERER_SPECS。
+ *
  * 已知高频 input 时 mermaid 渲染会被重复触发（Vditor Render API 是
  * fire-and-forget，folia 无法拦截过期产物），最终胜出者覆盖前者。功
  * 能正确，仅极短窗口 preview 闪烁；权衡修复 detached-node 竞争后这是
  * 可接受的副作用，未来如需消除可由 Vditor 上游 processCodeRender 暴露
  * promise-based API 后重构。
  */
+/**
+ * Vditor 内部代码块渲染器 + 触发它的 CSS selector + 调用形态。
+ *
+ * DEC-119 Phase 2 调度优化：对每种语言，rerenderAsyncCodeBlocks 先用
+ * selector 找 IR DOM 中所有匹配节点，对比每个节点 textContent 的 hash
+ * 与节点上 `data-source-hash` 属性：所有节点 hash 都匹配时直接跳过
+ * 整个 renderer 调用（包括 addScript 微任务 + 整片 DOM 扫描），省掉
+ * DEC-118 修 detached-node 竞争时引入的"每次 input 全量 10 renderer"
+ * 冗余。
+ *
+ * call 字段为四类：(ir, cdn, theme) / (ir, cdn) / (ir, cdn, theme) /
+ * (ir, { cdn, math }) 第四种仅 mathRender 用。`needsTheme` / `needsMath`
+ * 标记 call 形态，rerenderAsyncCodeBlocks 据此分发参数。
+ */
+type RendererSpec = {
+  selector: string;
+  needsTheme: boolean;
+  needsMath: boolean;
+  call: (Vditor: typeof import('vditor').default, ir: HTMLElement, cdn: string, theme: string) => void;
+  callMath: (Vditor: typeof import('vditor').default, ir: HTMLElement, cdn: string, math: Record<string, unknown>) => void;
+};
+
+const ASYNC_RENDERER_SPECS: ReadonlyArray<RendererSpec> = [
+  {
+    selector: '.language-mermaid',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.mermaidRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-flowchart',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.flowchartRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-plantuml',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.plantumlRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-graphviz',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.graphvizRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-markmap',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.markmapRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-mindmap',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.mindmapRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-echarts',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.chartRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-abc',
+    needsTheme: false,
+    needsMath: false,
+    call: (V, ir, cdn) => V.abcRender(ir, cdn),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-smiles',
+    needsTheme: true,
+    needsMath: false,
+    call: (V, ir, cdn, theme) => V.SMILESRender(ir, cdn, theme),
+    callMath: () => {},
+  },
+  {
+    selector: '.language-math',
+    needsTheme: false,
+    needsMath: true,
+    call: () => {},
+    callMath: (V, ir, cdn, math) => V.mathRender(ir, { cdn, math }),
+  },
+];
+
+/**
+ * 对一段 source text 算一个稳定的短 hash（djb2 xor variant），用于
+ * 比对"块源代码是否变化"。不需要加密强度，只需要稳定 + 冲突率极低
+ * （djb2 在 32-bit 空间碰撞概率 < 1e-9 for strings < 1000 chars）。
+ */
+function hashBlockSource(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h) ^ text.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
+
 function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
   try {
     if (!editor) return;
@@ -148,23 +274,61 @@ function rerenderAsyncCodeBlocks(editor: import('vditor').default): void {
     // microtask 链 flake。
     const Vditor = editor.constructor as typeof import('vditor').default;
     const opts = (editor as unknown as {
-      vditor?: { options?: { cdn?: string; theme?: string } };
+      vditor?: { options?: { cdn?: string; theme?: string; preview?: { math?: Record<string, unknown> } } };
     }).vditor?.options ?? {};
     const cdn = opts.cdn ?? '/vditor';
     const theme = opts.theme === 'dark' ? 'dark' : 'light';
-    const mathOptions = (editor as unknown as {
-      vditor?: { options?: { preview?: { math?: Record<string, unknown> } } };
-    }).vditor?.options?.preview?.math ?? { inlineDigit: false, macros: {} };
-    Vditor.mermaidRender(ir, cdn, theme);
-    Vditor.flowchartRender(ir, cdn);
-    Vditor.plantumlRender(ir, cdn);
-    Vditor.graphvizRender(ir, cdn);
-    Vditor.markmapRender(ir, cdn);
-    Vditor.mindmapRender(ir, cdn, theme);
-    Vditor.chartRender(ir, cdn, theme);
-    Vditor.abcRender(ir, cdn);
-    Vditor.SMILESRender(ir, cdn, theme);
-    Vditor.mathRender(ir, { cdn, math: mathOptions });
+    const mathOptions = opts.preview?.math ?? { inlineDigit: false, macros: {} };
+
+    // DEC-119 Phase 2 per-block source-hash skip：每个 renderer 在
+    // 调用前先扫 selector 找所有匹配节点，对比每个节点当前 textContent
+    // 的 hash 与 data-source-hash attr。若全部匹配，说明该语言下没有
+    // 任何"新增或源代码变化"的块，直接跳过该 renderer —— 省一次
+    // addScript().then() 微任务 hop 与一次 querySelectorAll 全片扫描。
+    // Vditor 自身的 mermaidRender / chartRender 内部虽然有
+    // `data-processed="true"` per-block skip，但即使没有变化的块，仍要
+    // 付出 addScript 微任务 + 内部 getElements().forEach 迭代成本。
+    // 高频 input 场景（5+ mermaid 块文档，20+ cps）下跳过未变化语言
+    // 收益显著。
+    //
+    // 必须注意：调用 renderer 前先把当前 textContent 的 hash 写回节点
+    // 的 data-source-hash attr —— Vditor 渲染器会把 textContent 替换为
+    // SVG / canvas / katex HTML，渲染后 textContent 不再是源代码，hash
+    // attr 必须保留才能在下次 input 时作为"上次成功渲染的源代码标识"。
+    for (const spec of ASYNC_RENDERER_SPECS) {
+      const elements = ir.querySelectorAll<HTMLElement>(spec.selector);
+      if (elements.length === 0) continue;
+
+      const hashes: string[] = [];
+      let allUpToDate = true;
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const source = el.textContent ?? '';
+        const hash = hashBlockSource(source);
+        hashes[i] = hash;
+        if (el.getAttribute('data-source-hash') !== hash) {
+          allUpToDate = false;
+        }
+      }
+
+      if (allUpToDate) {
+        // 没有任何块需要重新渲染，跳过整条 addScript 链
+        continue;
+      }
+
+      // 渲染前先把 hash 写回 attr（Vditor 渲染器随后会改 textContent）
+      for (let i = 0; i < elements.length; i++) {
+        elements[i].setAttribute('data-source-hash', hashes[i]);
+      }
+
+      if (spec.needsMath) {
+        spec.callMath(Vditor, ir, cdn, mathOptions);
+      } else if (spec.needsTheme) {
+        spec.call(Vditor, ir, cdn, theme);
+      } else {
+        spec.call(Vditor, ir, cdn, theme);
+      }
+    }
   } catch (error) {
     // mermaid / echarts / katex 等加载失败或渲染抛错时不能让 promise
     // 变成 unhandled rejection；记录 console.error 便于用户定位。
@@ -178,6 +342,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
     (key: Parameters<typeof translate>[1]) => translate(settings.locale, key),
     [settings.locale],
   );
+  const imageAssetStore = useImageAssetStore();
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<import('vditor').default | null>(null);
   const applyingExternalValue = useRef(false);
@@ -190,6 +355,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
   const initializingRef = useRef(false);
   const userInteractedRef = useRef(false);
   const [phase, setPhase] = useState<EditorPhase>('loading');
+  const [imageDiagnostics, setImageDiagnostics] = useState<RenderDiagnostic[]>([]);
   // retryKey 递增时强制重新初始化 Vditor
   const [retryKey, setRetryKey] = useState(0);
   // 如果 [source] effect 在 editor 就绪前触发，缓存待应用的内容
@@ -205,6 +371,49 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       onChange(sanitizedValue);
     }
   }, [onChange]);
+
+  /**
+   * DEC-119 / ISS-179 Phase 3：拦截 paste/drop 拖入的 image File，
+   * 注册到共享 ImageAssetStore 并把待落盘 markdown 片段插入 Vditor。
+   * 流程：pickImageFiles -> 若非空 -> preventDefault 阻止 Vditor 默认
+   * （Base64）行为 -> registerImageAssetFromFile -> editor.insertValue。
+   * 非 image 内容（如纯文本）放行 Vditor 默认处理。
+   *
+   * 复用 editorRef + imageAssetStore 闭包，避免触发 Vditor 重建。
+   * 注册 / 插入均 async，串行处理多张图，最后统一在 onChange 触发。
+   */
+  const handleImageFiles = useCallback(
+    async (event: ClipboardEvent | DragEvent): Promise<boolean> => {
+      const dt = 'clipboardData' in event ? event.clipboardData : event.dataTransfer;
+      if (!dt) return false;
+      const items = dt.items;
+      if (!items) return false;
+      const files = pickImageFiles(items as unknown as DataTransferItemList);
+      if (files.length === 0) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      const editor = editorRef.current;
+      if (!editor) return true;
+      try {
+        const fragments: string[] = [];
+        for (const file of files) {
+          const result = await registerImageAssetFromFile(imageAssetStore, file);
+          fragments.push(result.markdown);
+        }
+        if (fragments.length > 0) {
+          // 用换行分隔多张图，避免贴成一团
+          editor.insertValue(fragments.join('\n\n'));
+          // 触发 onChange 让上层 source prop 同步
+          emitEditorValueIfChanged(editor);
+        }
+      } catch (error) {
+        // registerImageAssetFromFile 失败不应让编辑器锁死；记录错误让用户感知
+        console.error('[Folia] 粘贴/拖入图片注册失败:', error);
+      }
+      return true;
+    },
+    [imageAssetStore, emitEditorValueIfChanged],
+  );
 
   const lockComplexTables = useCallback(() => {
     const editor = editorRef.current;
@@ -242,6 +451,51 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
       }
+    };
+  }, []);
+
+  // DEC-122 Phase 3 收口：监听主 IR 内 <img> 的 load / error 事件，
+  // 聚合失败的资源为 RenderDiagnostic[]，渲染在编辑器上方的 banner
+  // （不在 IR DOM 内，避免 caret / focus 风险）。onload 也收集以便
+  // 用户后续可点击「详情」查看 imageDiagnostics。
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+
+    const aggregate: RenderDiagnostic[] = [];
+    const seen = new Set<string>();
+
+    const classifyError = (img: HTMLImageElement, error: boolean): RenderDiagnostic | null => {
+      const src = img.currentSrc || img.src || '';
+      if (!src) return null;
+      const code: RenderDiagnostic['code'] = error
+        ? (src.startsWith('http://') ? 'blocked-scheme' : src.startsWith('asset:') || src.startsWith('data:') ? 'decode-failed' : 'not-found')
+        : 'decode-failed';
+      return {
+        code,
+        message: error
+          ? (code === 'blocked-scheme' ? '图片协议被阻止' : code === 'not-found' ? '找不到图片' : '图片数据损坏')
+          : '图片加载失败',
+        language: img.alt ?? undefined,
+      };
+    };
+
+    const handleImgError = (event: Event): void => {
+      const target = event.target as Element | null;
+      if (!(target instanceof HTMLImageElement)) return;
+      const src = target.currentSrc || target.src || '';
+      if (!src || seen.has(src)) return;
+      seen.add(src);
+      const diag = classifyError(target, true);
+      if (diag) {
+        aggregate.push(diag);
+        setImageDiagnostics([...aggregate]);
+      }
+    };
+
+    host.addEventListener('error', handleImgError, true);
+    return () => {
+      host.removeEventListener('error', handleImgError, true);
     };
   }, []);
 
@@ -283,6 +537,17 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       }, IR_MARKER_COLLAPSE_DELAY_MS);
     };
     host.addEventListener('mouseup', scheduleCollapseOnMouseUp, true);
+    // DEC-119 / ISS-179 Phase 3：拦截 paste/drop 中的 image File，
+    // 走 ImageAssetStore -> 待落盘 markdown 插入 Vditor。
+    // 非 image 内容返回 false，让 markUserInteracted / Vditor 默认处理。
+    const pasteHandler = (event: Event) => {
+      void handleImageFiles(event as ClipboardEvent);
+    };
+    const dropHandler = (event: Event) => {
+      void handleImageFiles(event as DragEvent);
+    };
+    host.addEventListener('paste', pasteHandler);
+    host.addEventListener('drop', dropHandler);
 
     void Promise.all([
       import('vditor/dist/index.css'),
@@ -419,6 +684,13 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
           } finally {
             sanitizingRef.current = false;
           }
+
+          // DEC-119 / ISS-179 Phase 2：用户输入 / 粘贴 / 拖入后重新解析
+          // 新插入的相对路径图片，无需重开文档即可显示。
+          // 仅在编辑器仍有焦点时调用，避免外部 setValue 路径误触发。
+          const irEl = editorRef.current?.vditor.ir?.element;
+          const host = irEl?.parentElement ?? null;
+          if (host) void resolveLocalImages(host, filePath);
           const nextValue = sanitized ? editor.getValue() : value;
 
           const complex = lastComplexBlocksRef.current;
@@ -529,6 +801,8 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       host.removeEventListener('paste', markUserInteracted, true);
       host.removeEventListener('drop', markUserInteracted, true);
       host.removeEventListener('mouseup', scheduleCollapseOnMouseUp, true);
+      host.removeEventListener('paste', pasteHandler);
+      host.removeEventListener('drop', dropHandler);
       if (collapseTimerRef.current !== null) {
         window.clearTimeout(collapseTimerRef.current);
         collapseTimerRef.current = null;
@@ -540,7 +814,7 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       initializingRef.current = false;
       userInteractedRef.current = false;
     };
-  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey]);
+  }, [filePath, lockComplexTables, emitEditorValueIfChanged, onChange, retryKey, handleImageFiles]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -664,6 +938,20 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
 
   return (
     <div className="wysiwyg-editor-pane" aria-label={t('editorAriaLabel')}>
+      {imageDiagnostics.length > 0 && (
+        <div className="wysiwyg-editor-diagnostics" data-testid="wysiwyg-editor-diagnostics">
+          {imageDiagnostics.map((d, i) => (
+            <MediaPlaceholder
+              key={`${d.code}-${d.message}-${i}`}
+              code={d.code}
+              message={d.message}
+              lang={d.language}
+              details={{ ...d, surface: 'editor' }}
+              surface="editor"
+            />
+          ))}
+        </div>
+      )}
       <div ref={hostRef} className="wysiwyg-editor-host" />
     </div>
   );
