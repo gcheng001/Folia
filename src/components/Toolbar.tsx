@@ -44,27 +44,27 @@ type ToolbarProps = {
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
   /** 当前文件不能进入源码/预览等文档视图时为 true；不影响保存。 */
-  viewActionsDisabled: boolean;
+  viewActionsDisabled?: boolean;
   /** 当前标签本身是可视化工作簿。 */
-  visualizationActive: boolean;
+  visualizationActive?: boolean;
   /** 当前文件不能作为一键可视化的 Markdown 来源。 */
-  visualizationDisabled: boolean;
+  visualizationDisabled?: boolean;
   /** 当前 active 标签是未命名草稿时为 true，用于显示“放弃新建”按钮。 */
-  newDraftActive: boolean;
+  newDraftActive?: boolean;
   /** 是否处于分屏视图（高亮分屏按钮）。 */
-  splitViewActive: boolean;
+  splitViewActive?: boolean;
   /** Skill 成品图正在生成（按钮显示旋转图标，点击可重新展开进度）。 */
-  skillVisualRunning: boolean;
+  skillVisualRunning?: boolean;
   /** 成品图按钮的禁用态：非 Markdown 且没有后台任务时为 true；未保存时点击后给出明确说明。 */
-  skillVisualDisabled: boolean;
-  onNew: () => void;
-  onDiscardNewDraft: () => void;
-  onOpenHtmlAnything: () => void;
-  onToggleSplit: () => void;
+  skillVisualDisabled?: boolean;
+  onNew?: () => void;
+  onDiscardNewDraft?: () => void;
+  onOpenHtmlAnything?: () => void;
+  onToggleSplit?: () => void;
   onToggleEditorMode: () => void;
-  onToggleMindMapMode: () => void;
-  onCreateVisualization: () => void;
-  onRequestSkillVisual: () => void;
+  onToggleMindMapMode?: () => void;
+  onCreateVisualization?: () => void;
+  onRequestSkillVisual?: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
   onOpen: () => void;
@@ -85,7 +85,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, skillVisualRunning, skillVisualDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onRequestSkillVisual, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled = false, visualizationActive = false, visualizationDisabled, skillVisualRunning, skillVisualDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onRequestSkillVisual, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate, onRetryUpdate,
   historyAvailable, onUndo, onRedo,
 }: ToolbarProps) {

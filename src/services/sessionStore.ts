@@ -98,8 +98,8 @@ function toPersisted(session: SessionState): PersistedSession {
     version: 1,
     activeTabId: session.activeTabId,
     recentFiles: session.recentFiles,
-    splitTabId: session.splitTabId,
-    splitView: session.splitView,
+    splitTabId: session.splitTabId ?? null,
+    splitView: session.splitView ?? false,
     tabs,
   };
 

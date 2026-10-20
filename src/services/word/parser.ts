@@ -578,9 +578,8 @@ function addHeading(
   level: 1 | 2 | 3 | 4 | 5 | 6,
   config: PresetConfig,
 ): Paragraph {
-  // 排版配置只定义到 level4：5/6 级沿用 level4 的字体排版，但大纲级别保留 Heading5/6
-  const styleLevel = Math.min(level, 4) as 1 | 2 | 3 | 4;
-  const headingKey = `level${styleLevel}` as keyof typeof config.titles;
+  // ISS-181 第二期：配置定义到 level6，各级直接读自己的排版（不再钳到 level4）。
+  const headingKey = `level${level}` as keyof typeof config.titles;
   const hc = config.titles[headingKey];
 
   const headingLevelMap: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
@@ -596,7 +595,7 @@ function addHeading(
     (hc.indent && hc.indent > 0)
       ? hc.indent * config.fonts.default.size * 20
       : undefined;
-  const styleName = getMarkdownStyleName(config, `heading${styleLevel}` as keyof NonNullable<PresetConfig['markdown_mapping']>);
+  const styleName = getMarkdownStyleName(config, `heading${level}` as keyof NonNullable<PresetConfig['markdown_mapping']>);
   const style = getStyle(config, styleName);
   const firstLineIndent =
     style?.first_line_indent && style.first_line_indent > 0
@@ -617,7 +616,7 @@ function addHeading(
     },
     indent: firstLineIndent || leftIndent ? { firstLine: firstLineIndent, left: leftIndent } : undefined,
     shading: style?.background_color ? { type: 'clear', fill: style.background_color } : undefined,
-    children: createFormattedRuns(text, config, { titleLevel: styleLevel, styleName }),
+    children: createFormattedRuns(text, config, { titleLevel: level, styleName }),
   });
 }
 

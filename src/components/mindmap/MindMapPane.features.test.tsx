@@ -28,7 +28,7 @@ beforeAll(() => {
   }
 });
 
-function mount(props: { markdown: string; onChange?: (s: string) => void; fileName?: string; filePath?: string }): { host: HTMLDivElement; root: ReturnType<typeof createRoot>; rerender: (next: { markdown?: string; onChange?: (s: string) => void }) => void; cleanup: () => void } {
+function mount(props: { markdown: string; onChange?: (s: string) => void; fileName?: string; filePath?: string }): { host: HTMLDivElement; root: ReturnType<typeof createRoot>; rerender: (next: { markdown?: string; onChange?: (s: string) => void; fileName?: string; filePath?: string }) => void; cleanup: () => void } {
   const host = document.createElement('div');
   host.style.width = '800px';
   host.style.height = '600px';
@@ -338,7 +338,7 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
         customEdges: [{ id: 'e-a-only', source: '子', target: 'A', arrow: 'one-way', shape: 'straight', dash: 'solid', color: '#ff0000', width: 2 }],
       });
 
-      const { host, rerender, cleanup } = mount({
+      const { rerender, cleanup } = mount({
         markdown: '# A\n\n## 子',
         onChange: onChangeMock,
         filePath: fileA,
@@ -375,7 +375,7 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
         groups: [{ id: 'g1', title: '测试框', memberIds: ['B', 'C'], style: DEFAULT_GROUP_STYLE }],
       });
 
-      const { host, rerender, cleanup } = mount({
+      const { rerender, cleanup } = mount({
         markdown: '# 根\n\n## A\n\n## B\n\n## C',
         onChange: onChangeMock,
         filePath,
@@ -587,7 +587,7 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
 
         if (selections.length > 0) {
           // 模拟多选（Shift+点击）
-          selections.forEach((el, idx) => {
+          selections.forEach((el) => {
             act(() => {
               const event = new MouseEvent('click', { bubbles: true, detail: 1, shiftKey: true });
               el.dispatchEvent(event);
@@ -634,7 +634,7 @@ describe('MindMapPane 画布功能（M-C 起）', () => {
       expect(input.value).toBe('ABC');
 
       // 记录初始Markdown
-      const initialMd = '# 根\n\n## ABC\n';
+      void '# 根\n\n## ABC\n';
 
       // 验证：在编辑态时，全局的keydown处理器不会处理Delete键
       // （因为代码中检查了ae instanceof HTMLInputElement就直接return了）

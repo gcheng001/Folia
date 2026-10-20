@@ -7,6 +7,7 @@ import type { EditorHistoryApi } from '../types/editor';
 import {
   bindRenderedTocHeadings,
   extractMarkdownToc,
+  extractMarkdownToc as extractToc,
   scrollTocHeadingIntoView,
 } from '../services/tocService';
 import {
@@ -60,7 +61,6 @@ import { SettingsPage } from '../components/SettingsPage';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 import { detectCurrentWindowLabel } from '../services/tabWindowService';
-import { reconcilePersistedDirtyFile } from '../services/sessionStore';
 import {
   createSkillVisualJobId,
   getDocumentSkillVisualStyle,
@@ -269,7 +269,6 @@ export function AppLayout() {
   // 重入 + 在 finally 中清理 ref，避免 stale controller 残留）。
   const downloadAbortRef = useRef<AbortController | null>(null);
   // 重启恢复核对 dirty 竞态的已处理集合（个人定制）。
-    const reconciledDirtyTabsRef = useRef(new Set<string>());
   const mainContentRef = useRef<HTMLDivElement>(null);
   // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
   const tocRefreshTimerRef = useRef<number | null>(null);
@@ -305,7 +304,6 @@ export function AppLayout() {
     activeTabId,
     updateFile,
     replaceFileIfUnchanged,
-    updateActiveFile,
     updateTabFile,
     updateActiveTabMeta,
     splitFile,
@@ -345,19 +343,6 @@ export function AppLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.tabMode]);
 
-  // 重启恢复时核对“磁盘已写入、会话仍残留 dirty=true”的保存竞态。
-  // 只在内容逐字一致时清除 dirty；真正未保存的草稿绝不覆盖、绝不静默丢弃。
-  useEffect(() => {
-    if (!isTauriRuntime) return;
-    for (const tab of session.tabs) {
-      if (!tab.file.dirty || !tab.file.path || tab.file.fileType === 'docx' || reconciledDirtyTabsRef.current.has(tab.id)) continue;
-      reconciledDirtyTabsRef.current.add(tab.id);
-      void import('../services/fileService')
-        .then(({ openPath }) => openPath(tab.file.path!, settings.defaultEncoding))
-        .then((diskFile) => updateTabFile(tab.id, (current) => reconcilePersistedDirtyFile(current, diskFile.content)))
-        .catch(() => undefined);
-    }
-  }, [isTauriRuntime, session.tabs, settings.defaultEncoding, updateTabFile]);
   // 新建空白草稿标签：工具栏「新建 Markdown」按钮与 Cmd+N 共用此 handler
   const handleNew = useCallback(() => {
     openInNewTab(createEmptyFile());
@@ -452,7 +437,6 @@ export function AppLayout() {
   const [rightPanelWidth, setRightPanelWidth] = useState(460);
   // 固定大纲左侧栏宽度（默认与 CSS .floating-toc.pinned 的 260px 一致）。
   const [tocWidth, setTocWidth] = useState(260);
-  const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
@@ -461,6 +445,7 @@ export function AppLayout() {
   }, []);
   // 固定大纲和导出栏在默认 980px 窗口内仍保持并排。先压缩大纲显示宽度
   // （不改用户拖拽记忆值），再按剩余空间收紧正文宽度和内边距。
+  const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
   const tocLayoutPinned = tocPinned && toc.length > 0;
   const preferredTocWidth = Math.min(tocWidth, viewportWidth * 0.4);
   const tocLayoutWidth = tocLayoutPinned && rightPanelMode !== 'none'
@@ -1805,7 +1790,6 @@ export function AppLayout() {
     startBackgroundUpdateDownload(updateState.source, updateState.update);
   }, [updateState, startBackgroundUpdateDownload]);
   const shouldShowHtmlPresentation = htmlPresentationVisible && file.fileType === 'html' && !isDocx;
-  const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
   // 分屏时右侧面板（Word/微信预览）不参与布局，避免与分屏区挤压。
   const rightPanelEffective = splitView ? 'none' : rightPanelMode;
   const mainContentClassName = [
@@ -2080,7 +2064,6 @@ export function AppLayout() {
             onSelect={session.switchTab}
             onContextMenu={(id, x, y) => setContextMenu({ tabId: id, x, y })}
             onClose={(id) => { void session.closeTab(id, { confirmDirty: confirmCloseDirty, onSave: saveDirtyTabById }); }}
-            onNew={() => session.newBlankTab()}
             onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
@@ -2096,7 +2079,7 @@ export function AppLayout() {
         skillVisualRunning={skillVisualPhase === 'running'}
         skillVisualDisabled={skillVisualPhase !== 'running' && file.fileType !== 'markdown'}
         newDraftActive={newDraftActive}
-        splitViewActive={splitView}
+        splitViewActive={!!splitView}
         onNew={handleNew}
         onDiscardNewDraft={handleDiscardNewDraft}
         onOpenHtmlAnything={handleOpenHtmlAnything}

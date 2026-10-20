@@ -462,6 +462,8 @@ it('#179: queued switch followed by old editor input cannot mutate the new activ
   const edited = sessionReducer(switched, { type: 'updateFile', id: b.id, updater: (prev) => ({ ...prev, content: '# B edit' }) });
   expect(edited.tabs[1].file.content).toBe('# B edit');
   expect(edited.tabs[0]).toBe(a);
+  });
+
 describe('sessionReducer split-view', () => {
   function splitState(tabs: Tab[], activeTabId: string, splitTabId: string | null = null, splitView = false): SessionState {
     return { tabs, activeTabId, recentFiles: [], splitTabId, splitView };

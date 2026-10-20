@@ -22,7 +22,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 报告\n\n## 第一章\n\n正文段落。\n';
       const doc = parseMarkdown(md);
       const ch = collectOutlineNodes(doc.root).find((n) => n.text === '第一章')!;
-      const out = editNodeText(doc, ch.lineIndex, '第一章（改）');
+      const out = editNodeText(doc, ch.lineIndex, '第一章（改）')!;
       expect(out).toBe('# 报告\n\n## 第一章（改）\n\n正文段落。\n');
       assertStable(out);
     });
@@ -31,7 +31,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n- a\n  - b\n';
       const doc = parseMarkdown(md);
       const b = collectOutlineNodes(doc.root).find((n) => n.text === 'b')!;
-      const out = editNodeText(doc, b.lineIndex, 'b2');
+      const out = editNodeText(doc, b.lineIndex, 'b2')!;
       expect(out).toBe('# 根\n\n- a\n  - b2\n');
       assertStable(out);
     });
@@ -40,7 +40,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '---\ncase: 2026\n---\n\n开篇正文。\n\n## 第一部分\n';
       const doc = parseMarkdown(md, '案件报告.md');
       expect(doc.root.kind).toBe('root');
-      const out = editNodeText(doc, doc.root.lineIndex, '案件分析报告');
+      const out = editNodeText(doc, doc.root.lineIndex, '案件分析报告')!;
       expect(out).toBe('---\ncase: 2026\n---\n\n# 案件分析报告\n\n开篇正文。\n\n## 第一部分\n');
       expect(parseMarkdown(out ?? '').root.text).toBe('案件分析报告');
       assertStable(out ?? '');
@@ -81,7 +81,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n## 甲\n\n甲的正文。\n\n## 乙\n';
       const doc = parseMarkdown(md);
       const jia = collectOutlineNodes(doc.root).find((n) => n.text === '甲')!;
-      const { markdown, newLineIndex } = insertSibling(doc, jia.lineIndex);
+      const { markdown, newLineIndex } = insertSibling(doc, jia.lineIndex)!;
       const lines = markdown.split('\n');
       expect(lines[newLineIndex]).toBe('## ');
       // 新节点在甲的正文之后、乙之前
@@ -97,7 +97,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n## 甲\n';
       const doc = parseMarkdown(md);
       const jia = collectOutlineNodes(doc.root).find((n) => n.text === '甲')!;
-      const { markdown, newLineIndex } = insertSibling(doc, jia.lineIndex);
+      const { markdown, newLineIndex } = insertSibling(doc, jia.lineIndex)!;
       expect(markdown.split('\n')[newLineIndex]).toBe('## ');
       const doc2 = parseMarkdown(markdown);
       expect(doc2.root.children.map((n) => n.text)).toEqual(['甲', '']);
@@ -108,7 +108,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n- a\n  - b\n- c\n';
       const doc = parseMarkdown(md);
       const b = collectOutlineNodes(doc.root).find((n) => n.text === 'b')!;
-      const { markdown, newLineIndex } = insertSibling(doc, b.lineIndex);
+      const { markdown, newLineIndex } = insertSibling(doc, b.lineIndex)!;
       expect(markdown.split('\n')[newLineIndex]).toBe('  - ');
       const doc2 = parseMarkdown(markdown);
       const a = collectOutlineNodes(doc2.root).find((n) => n.text === 'a')!;
@@ -127,7 +127,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n## 甲\n\n甲的正文。\n\n## 乙\n';
       const doc = parseMarkdown(md);
       const jia = collectOutlineNodes(doc.root).find((n) => n.text === '甲')!;
-      const { markdown, newLineIndex } = insertChild(doc, jia.lineIndex);
+      const { markdown, newLineIndex } = insertChild(doc, jia.lineIndex)!;
       expect(markdown.split('\n')[newLineIndex]).toBe('### ');
       const doc2 = parseMarkdown(markdown);
       const jia2 = collectOutlineNodes(doc2.root).find((n) => n.text === '甲')!;
@@ -139,7 +139,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '引言段。\n\n# 第一部分\n\n# 第二部分\n';
       const doc = parseMarkdown(md, '文件.md');
       expect(doc.root.kind).toBe('root');
-      const { markdown, newLineIndex } = insertChild(doc, doc.root.lineIndex);
+      const { markdown, newLineIndex } = insertChild(doc, doc.root.lineIndex)!;
       expect(markdown.split('\n')[newLineIndex]).toBe('# ');
       const doc2 = parseMarkdown(markdown, '文件.md');
       expect(doc2.root.children.map((n) => n.text)).toEqual(['第一部分', '第二部分', '']);
@@ -150,7 +150,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n1. 项目一\n';
       const doc = parseMarkdown(md);
       const item = collectOutlineNodes(doc.root).find((n) => n.text === '项目一')!;
-      const { markdown } = insertChild(doc, item.lineIndex);
+      const { markdown } = insertChild(doc, item.lineIndex)!;
       const doc2 = parseMarkdown(markdown);
       const item2 = collectOutlineNodes(doc2.root).find((n) => n.text === '项目一')!;
       // 子项必须真的嵌进去（缩进 ≥ 父内容列 3），而不是变成同级
@@ -169,7 +169,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n- a\n\t- b\n';
       const doc = parseMarkdown(md);
       const b = collectOutlineNodes(doc.root).find((n) => n.text === 'b')!;
-      const { markdown } = insertChild(doc, b.lineIndex);
+      const { markdown } = insertChild(doc, b.lineIndex)!;
       const doc2 = parseMarkdown(markdown);
       const b2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'b')!;
       // b 的内容列 = tab(4 列) + marker(1) + padding(1) = 6，子项必须真的嵌进去
@@ -183,7 +183,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n## 甲\n\n甲正文。\n\n### 甲一\n\n## 乙\n';
       const doc = parseMarkdown(md);
       const jia = collectOutlineNodes(doc.root).find((n) => n.text === '甲')!;
-      const out = deleteNode(doc, jia.lineIndex);
+      const out = deleteNode(doc, jia.lineIndex)!;
       expect(out).toBe('# 根\n\n## 乙\n');
       assertStable(out);
     });
@@ -192,7 +192,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const md = '# 根\n\n- a\n  - a1\n- b\n';
       const doc = parseMarkdown(md);
       const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a')!;
-      const out = deleteNode(doc, a.lineIndex);
+      const out = deleteNode(doc, a.lineIndex)!;
       expect(out).toBe('# 根\n\n- b\n');
       assertStable(out);
     });
@@ -386,7 +386,7 @@ describe('mindmap 编辑内核 (M-C，PRD 项 C)', () => {
       const out1 = moveSubtreeAsLastChild(doc, a1.lineIndex, b2.lineIndex)!;
       const doc2 = parseMarkdown(out1);
       // 再移回来：找到新的A1位置，移到根下（与A同级）
-      const b22 = collectOutlineNodes(doc2.root).find((n) => n.text === 'B2')!;
+      void collectOutlineNodes(doc2.root).find((n) => n.text === 'B2');
       const a12 = collectOutlineNodes(doc2.root).find((n) => n.text === 'A1')!;
       const a2 = collectOutlineNodes(doc2.root).find((n) => n.text === 'A')!;
       const out2 = moveSubtreeAsLastChild(doc2, a12.lineIndex, a2.lineIndex)!;

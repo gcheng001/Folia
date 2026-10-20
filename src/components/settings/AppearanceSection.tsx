@@ -546,7 +546,7 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
           className="settings-select"
           aria-label="状态栏路径"
           value={settings.statusBarPathStyle}
-          onChange={(e) => handleChange({ statusBarPathStyle: e.target.value as AppSettings['statusBarPathStyle'] })}
+          onChange={(e) => handleZoomChange({ statusBarPathStyle: e.target.value as AppSettings['statusBarPathStyle'] })}
         >
           <option value="basename">仅文件名</option>
           <option value="middle">中间省略</option>

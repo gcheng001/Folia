@@ -281,6 +281,99 @@ function nodeContainsLocalMedia(node: Node): boolean {
   return node.matches(LOCAL_MEDIA_NODE_SELECTOR) || node.querySelector(LOCAL_MEDIA_NODE_SELECTOR) !== null;
 }
 
+type IrSelectionSnapshot = { anchor: number; focus: number; backward: boolean } | null;
+
+function captureSelectionOffsets(ir: HTMLElement): IrSelectionSnapshot {
+  try {
+    const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!ir.contains(range.startContainer) || !ir.contains(range.endContainer)) return null;
+
+    const measureTo = (node: Node, offset: number): number => {
+      const probe = document.createRange();
+      probe.selectNodeContents(ir);
+      probe.setEnd(node, offset);
+      return probe.toString().length;
+    };
+
+    const anchor = measureTo(range.startContainer, range.startOffset);
+    const focus = measureTo(range.endContainer, range.endOffset);
+    return {
+      anchor,
+      focus,
+      backward: selection.anchorNode
+        ? (selection.anchorNode === range.endContainer
+          && selection.anchorOffset === range.endOffset)
+        : false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function restoreSelectionOffsets(ir: HTMLElement, snap: IrSelectionSnapshot): void {
+  if (!snap) return;
+  try {
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const walker = document.createTreeWalker(ir, NodeFilter.SHOW_TEXT, null);
+    let anchorNode: Text | null = null;
+    let anchorLocal = 0;
+    let focusNode: Text | null = null;
+    let focusLocal = 0;
+    let consumed = 0;
+
+    let current = walker.nextNode() as Text | null;
+    while (current) {
+      const length = current.data.length;
+      if (!anchorNode && consumed + length >= snap.anchor) {
+        anchorNode = current;
+        anchorLocal = Math.max(0, snap.anchor - consumed);
+      }
+      if (!focusNode && consumed + length >= snap.focus) {
+        focusNode = current;
+        focusLocal = Math.max(0, snap.focus - consumed);
+      }
+      consumed += length;
+      if (anchorNode && focusNode) break;
+      current = walker.nextNode() as Text | null;
+    }
+
+    // 找不到对应 text node（极端 sanitize 剥掉所有文本）时静默跳过
+    if (!anchorNode || !focusNode) return;
+
+    const range = document.createRange();
+    range.setStart(anchorNode, anchorLocal);
+    range.setEnd(focusNode, focusLocal);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    // anchor/focus 在 range 上的位置决定方向；backward 选区方向仅在
+    // anchor === range.end / focus === range.start 时需要重新设 base/extent，
+    // 否则 addRange 已按正向设好。这里不再额外调整以保持简洁，jsdom
+    // 不暴露 setBaseAndExtent，真实浏览器也由默认行为处理。
+  } catch {
+    // 静默降级，不影响 sanitize 安全处理
+  }
+}
+
+/**
+ * ISS-69：`sanitizeIrDom` 同时返回 `sourceChanged`（HTML-block marker
+ * 源码变化，决定是否要 emitEditorValueIfChanged 触发父组件 onChange）
+ * 与 `securityChanged`（是否真的剥除了危险内容，决定 input 回调取
+ * nextValue 时该用 `editor.getValue()` 还是 callback 参数 `value`）。
+ * 两个语义独立，调用方按需读取。
+ */
+type SanitizeIrDomResult = {
+  sourceChanged: boolean;
+  securityChanged: boolean;
+};
+
+
+function sanitizeIrDom(editor: import('vditor').default | null, markdownSource: string): SanitizeIrDomResult {
+  if (!editor) return { sourceChanged: false, securityChanged: false };
   const ir = getIrElement(editor);
   if (!ir) return { sourceChanged: false, securityChanged: false };
   const original = ir.innerHTML;

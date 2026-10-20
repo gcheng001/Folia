@@ -18,7 +18,7 @@ describe('DiagramEditorPane', () => {
     root = null;
   });
 
-  function render(source: string, onUpgradeLegacy = vi.fn(async () => undefined), onChange = vi.fn()) {
+  function render(source: string, onUpgradeLegacy = vi.fn(async (_svg: string) => undefined), onChange = vi.fn()) {
     host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
