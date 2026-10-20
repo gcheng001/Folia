@@ -2043,6 +2043,7 @@ html[data-runtime='tauri'][data-platform='macos'] .app-toolbar {
 .main-content.right-panel-open .wysiwyg-editor-pane .vditor-ir > .vditor-reset,
 .main-content.right-panel-open .wysiwyg-editor-pane .vditor-wysiwyg > .vditor-reset {
   padding-inline: 0 !important;
+}
 
 /* Vditor IR 会在光标进入标题时给节点加 --expand，并把 Markdown 的 `#`
    marker 恢复成可见尺寸。标题级别仍由 marker 文本参与序列化，因此不删
@@ -4862,6 +4863,7 @@ html[data-theme='dark'] .word-paper-content td {
   color: var(--fg);
   line-height: 1.3;
   overflow: hidden;
+}
 
 /* ===== ADR-0004：AI 抽取确认遮罩 ===== */
 .ai-extraction-overlay {
@@ -5256,6 +5258,7 @@ html[data-theme='dark'] .word-paper-content td {
 
 .settings-theme-example {
   margin-top: 2px;
+}
 
 .skill-visual-type small,
 .skill-visual-style small {
