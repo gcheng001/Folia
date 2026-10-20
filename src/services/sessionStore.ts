@@ -1,4 +1,5 @@
 import type { SessionState, PersistedSession, Tab } from '../types/session';
+import type { OpenedFile } from '../types/document';
 import { DRAFT_PERSIST_MAX_BYTES } from '../types/session';
 
 export const SESSION_STORAGE_KEY = 'folia.session.v1';
@@ -6,8 +7,17 @@ export const SESSION_STORAGE_KEY = 'folia.session.v1';
 /** 会话 JSON 序列化后占用 localStorage 的硬预算（2MB）。超预算时从最大 tab 起降级。ISS-198。 */
 export const SESSION_PERSIST_MAX_BYTES = 2 * 1024 * 1024;
 
+/**
+ * 关窗可能发生在异步保存完成、React dirty 状态提交之前。重启时以磁盘为事实来源：
+ * 磁盘内容与恢复草稿完全一致才清除假 dirty；不一致时保留草稿和警示。
+ */
+export function reconcilePersistedDirtyFile(file: OpenedFile, diskContent: string): OpenedFile {
+  if (!file.dirty || !file.path || file.content !== diskContent) return file;
+  return { ...file, dirty: false, lastSavedContent: file.content };
+}
+
 function emptySession(): SessionState {
-  return { tabs: [], activeTabId: '', recentFiles: [] };
+  return { tabs: [], activeTabId: '', recentFiles: [], splitTabId: null, splitView: false };
 }
 
 function isPersistedSession(value: unknown): value is PersistedSession {
@@ -33,6 +43,9 @@ export function loadSession(): SessionState {
       tabs: parsed.tabs.map((t) => ({ ...t, isPlaceholder: t.isPlaceholder ?? false })) as Tab[],
       activeTabId: parsed.activeTabId,
       recentFiles: parsed.recentFiles,
+      // 兼容旧持久化（无 split 字段）；splitTabId 有效性由 bootstrapSession 再校验一次。
+      splitTabId: parsed.splitTabId ?? null,
+      splitView: parsed.splitView ?? false,
     };
   } catch {
     return emptySession();
@@ -85,6 +98,8 @@ function toPersisted(session: SessionState): PersistedSession {
     version: 1,
     activeTabId: session.activeTabId,
     recentFiles: session.recentFiles,
+    splitTabId: session.splitTabId,
+    splitView: session.splitView,
     tabs,
   };
 

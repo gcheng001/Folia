@@ -1,10 +1,10 @@
 import type { OpenedFile } from './document';
 
 /**
- * 编辑模式：所见即所得 / 源码。
+ * 编辑模式：所见即所得 / 源码 / 脑图（M-B，只读画布，MD 仍是唯一源）。
  * 与 components/Toolbar.tsx 的 EditorMode 结构一致；Task 4 改造时统一让 Toolbar 从此处 import。
  */
-export type EditorMode = 'wysiwyg' | 'source';
+export type EditorMode = 'wysiwyg' | 'source' | 'mindmap';
 
 /** 右侧面板模式。从 app/AppLayout.tsx:82 迁移。 */
 export type RightPanelMode = 'none' | 'word' | 'wechat';
@@ -32,6 +32,10 @@ export interface SessionState {
   tabs: Tab[];
   activeTabId: string;
   recentFiles: RecentFileEntry[];
+  /** 窗口内分屏：右侧并排显示的 tab id；null 表示无分屏。该 tab 仍在 tabs[] 中，只是额外在右侧渲染。 */
+  splitTabId: string | null;
+  /** 是否处于分屏视图（splitTabId 非 null 时通常为 true）。 */
+  splitView: boolean;
 }
 
 /** localStorage 持久化结构（带版本号，用于 schema 校验与未来迁移）。 */

@@ -1,0 +1,737 @@
+import { describe, expect, it } from 'vitest';
+import { parseMarkdown, collectOutlineNodes } from './parser';
+import { serializeMarkdown } from './serializer';
+import type { MindMapDoc } from './types';
+import templateMd from './__fixtures__/hearing-template.md?raw';
+import realisticMd from './__fixtures__/hearing-realistic.md?raw';
+import edgeMd from './__fixtures__/edge-cases.md?raw';
+
+/** 节点指纹列表：先序 DFS 的 [level, kind, text]，用于结构相等比较。 */
+function fingerprints(doc: MindMapDoc): Array<{ level: number; kind: string; text: string }> {
+  return collectOutlineNodes(doc.root).map((n) => ({ level: n.level, kind: n.kind, text: n.text }));
+}
+
+describe('mindmap 解析/序列化内核 (M-A)', () => {
+  describe('往返不变式 serialize(parse(md)) === md', () => {
+    it('庭审记录空白模板（4 级标题 + 列表 + key:value）', () => {
+      expect(serializeMarkdown(parseMarkdown(templateMd))).toBe(templateMd);
+    });
+
+    it('庭审记录实战脑图（脱敏后 58 标题 / 5 层深 / 临时插入同级章节）', () => {
+      const doc = parseMarkdown(realisticMd);
+      expect(serializeMarkdown(doc)).toBe(realisticMd);
+    });
+
+    it('边缘用例合集（frontmatter/代码块/表格/引用/嵌套列表/三性/wiki）', () => {
+      expect(serializeMarkdown(parseMarkdown(edgeMd))).toBe(edgeMd);
+    });
+  });
+
+  describe('幂等：parse ∘ serialize ∘ parse 结构稳定', () => {
+    for (const [name, md] of [
+      ['template', templateMd],
+      ['realistic', realisticMd],
+      ['edge', edgeMd],
+    ] as const) {
+      it(name, () => {
+        const doc1 = parseMarkdown(md);
+        const doc2 = parseMarkdown(serializeMarkdown(doc1));
+        expect(fingerprints(doc1)).toEqual(fingerprints(doc2));
+        expect(serializeMarkdown(doc2)).toBe(md);
+      });
+    }
+  });
+
+  describe('庭审模板结构', () => {
+    const doc = parseMarkdown(templateMd);
+
+    it('单个 H1 提升为根（"庭审记录..."）', () => {
+      expect(doc.root.kind).toBe('heading');
+      expect(doc.root.level).toBe(1);
+      expect(doc.root.text).toContain('庭审记录');
+    });
+
+    it('一级节点为十个编号章节', () => {
+      const h2 = doc.root.children.filter((n) => n.level === 2);
+      expect(h2.length).toBe(10);
+      expect(h2[0].text).toBe('一、案件信息');
+      expect(h2[9].text).toBe('十、需补充事项');
+    });
+
+    it('四级标题存在（发问内容/材料名称/补交事项）', () => {
+      const nodes = collectOutlineNodes(doc.root);
+      expect(nodes.some((n) => n.level === 4 && n.text === '发问内容')).toBe(true);
+      expect(nodes.some((n) => n.level === 4 && n.text === '材料名称')).toBe(true);
+    });
+
+    it('列表项挂为最近标题的子节点（案号 → __________）', () => {
+      const caseNo = collectOutlineNodes(doc.root).find((n) => n.text === '案号');
+      expect(caseNo).toBeTruthy();
+      expect(caseNo!.children.length).toBe(1);
+      expect(caseNo!.children[0].kind).toBe('list');
+    });
+  });
+
+  describe('实战脑图结构（脱敏 fixture）', () => {
+    const doc = parseMarkdown(realisticMd);
+
+    it('节点总数与标题分布符合 1×H1 + 12×H2 + 37×H3 + 8×H4', () => {
+      const nodes = collectOutlineNodes(doc.root);
+      const heads = nodes.filter((n) => n.kind === 'heading');
+      const byLevel = [1, 2, 3, 4].map((lvl) => heads.filter((n) => n.level === lvl).length);
+      expect(byLevel).toEqual([1, 12, 37, 8]);
+    });
+
+    it('临时插入的同级章节与编号章节平级（回应 / 保险公司质证）', () => {
+      const h2 = doc.root.children.filter((n) => n.level === 2).map((n) => n.text);
+      expect(h2).toContain('回应');
+      expect(h2).toContain('保险公司质证');
+      // 顺序：三、答辩意见 → 回应 → 四、原告举证 …（庭上实录的真实混乱）
+      expect(h2.indexOf('回应')).toBeGreaterThan(h2.indexOf('三、答辩意见'));
+      expect(h2.indexOf('回应')).toBeLessThan(h2.indexOf('四、原告举证'));
+    });
+
+    it('深度最深达 5 层（H1→H2→H3→H4→list）', () => {
+      const nodes = collectOutlineNodes(doc.root);
+      const maxLevel = Math.max(...nodes.map((n) => n.level));
+      expect(maxLevel).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  describe('完整正文投影', () => {
+    it('四点代理词把每个自然段投影为下级节点，并排除结语与落款', () => {
+      const md = [
+        '代理词',
+        '',
+        '一、合同已经成立并生效',
+        '',
+        '第一点第一段完整正文。',
+        '',
+        '第一点第二段完整正文，包含 **强调内容**。',
+        '',
+        '二、对方已经构成违约',
+        '',
+        '第二点第一段完整正文。',
+        '',
+        '第二点第二段完整正文。',
+        '',
+        '三、损失计算有事实依据',
+        '',
+        '第三点第一段完整正文。',
+        '',
+        '第三点第二段完整正文。',
+        '',
+        '四、请求法院支持诉请',
+        '',
+        '第四点第一段完整正文。',
+        '',
+        '第四点第二段完整正文。',
+        '',
+        '第四点第三段完整正文。',
+        '',
+        '综上，请求法院支持全部诉讼请求。',
+        '',
+        '此致',
+        '',
+        '某某人民法院',
+        '',
+      ].join('\n');
+
+      const doc = parseMarkdown(md, '代理词.md');
+      expect(doc.root.children.map((node) => node.text)).toEqual([
+        '一、合同已经成立并生效',
+        '二、对方已经构成违约',
+        '三、损失计算有事实依据',
+        '四、请求法院支持诉请',
+      ]);
+      expect(doc.root.children.map((node) => node.body)).toEqual([
+        '第一点第一段完整正文。\n\n第一点第二段完整正文，包含 **强调内容**。',
+        '第二点第一段完整正文。\n\n第二点第二段完整正文。',
+        '第三点第一段完整正文。\n\n第三点第二段完整正文。',
+        '第四点第一段完整正文。\n\n第四点第二段完整正文。\n\n第四点第三段完整正文。\n\n综上，请求法院支持全部诉讼请求。\n\n此致\n\n某某人民法院',
+      ]);
+      expect(doc.root.children.map((node) => node.projections.length)).toEqual([2, 2, 2, 3]);
+      expect(doc.root.children[3].projections.map((node) => node.text)).not.toContain(
+        '综上，请求法院支持全部诉讼请求。',
+      );
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+
+    it('连续非空物理行属于同一自然段，只有空行才拆分', () => {
+      const md = [
+        '# 文档',
+        '',
+        '## 论点',
+        '',
+        '第一段第一行，',
+        '第一段第二行。',
+        '',
+        '第二段。',
+        '',
+      ].join('\n');
+      const doc = parseMarkdown(md);
+      const argument = doc.root.children[0];
+
+      expect(argument.projections.map((node) => node.text)).toEqual([
+        '第一段第一行，\n第一段第二行。',
+        '第二段。',
+      ]);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+  });
+
+  describe('边缘用例：非大纲内容不误解析', () => {
+    const doc = parseMarkdown(edgeMd);
+    const nodes = collectOutlineNodes(doc.root);
+    const texts = nodes.map((n) => n.text);
+
+    it('代码块内的 # / - 不产生标题或列表节点', () => {
+      expect(texts).not.toContain('这一行在代码块里，不是标题');
+      expect(texts).not.toContain('这一行在代码块里，不是列表项');
+    });
+
+    it('frontmatter 不产生节点', () => {
+      expect(texts).not.toContain('边缘用例合集');
+    });
+
+    it('表格、引用块不产生节点（逐行原样保留由往返保证）', () => {
+      // 表格行与引用行若被误识别会变成文本异常的节点；往返已证明原样。
+      // 这里只确认它们没成为独立列表/标题节点。
+      expect(nodes.filter((n) => n.text.startsWith('|'))).toHaveLength(0);
+    });
+  });
+
+  describe('领域字段抽取（3.3，字段在所在行节点上，text 原样不变）', () => {
+    const doc = parseMarkdown(edgeMd);
+    const find = (t: string) => collectOutlineNodes(doc.root).find((n) => n.text.includes(t))!;
+
+    it('#证据 #争点 命中类型词表（在标题行）', () => {
+      expect(find('证据节点').types).toContain('证据');
+      expect(find('争点节点').types).toContain('争点');
+    });
+
+    it('词表外 #重点（标题行）与 #待核实（列表项行）归为自由标签', () => {
+      expect(find('证据节点').tags).toContain('重点');
+      expect(find('待核实事项').tags).toContain('待核实');
+    });
+
+    it('[[文件]] 与 [[文件#锚]] 抽为他文件引用（在列表项行）', () => {
+      expect(find('案件材料/借条').refs.some((r) => r.target === '案件材料/借条')).toBe(true);
+      expect(find('跨文件带锚引用').refs.some((r) => r.target === '其他文件' && r.anchor === '锚')).toBe(true);
+    });
+
+    it('[[#本文件锚]] 抽为关联线（不进 refs）', () => {
+      const linkNode = find('关联到本文件内锚点');
+      expect(linkNode.links).toContain('结构与备注');
+      expect(linkNode.refs).toHaveLength(0);
+    });
+
+    it('三性命中词表记录 verdict', () => {
+      expect(find('真实性：认可').evidence?.真实性).toBe('认可');
+      expect(find('合法性：不认可').evidence?.合法性).toBe('不认可');
+      expect(find('关联性：部分认可').evidence?.关联性).toBe('部分认可');
+    });
+  });
+
+  describe('嵌套列表深度', () => {
+    const doc = parseMarkdown(edgeMd);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === '一级项 A');
+    it('二级项挂为一级项子节点（深度 +1）', () => {
+      expect(a?.children.map((c) => c.text)).toEqual(['二级项 A1', '二级项 A2']);
+      expect(a?.children[0].level).toBe(a!.level + 1);
+    });
+  });
+
+  describe('多 H1：首 H1 提升为根，其余作一级分支', () => {
+    it('edge-cases 的首 H1（frontmatter 后）提升为根，第二个 H1 挂到根下', () => {
+      const doc = parseMarkdown(edgeMd);
+      expect(doc.root.kind).toBe('heading');
+      expect(doc.root.text).toBe('边缘用例根节点');
+      const second = doc.root.children.find((n) => n.level === 1 && n.kind === 'heading');
+      expect(second?.text).toBe('第二个 H1 应作为虚拟根下的一级节点');
+    });
+  });
+
+  describe('根节点提升与目录排除（PRD：脑图体验升级 项 A）', () => {
+    const reportMd = [
+      '# 鉴定式案例分析报告',
+      '',
+      '# 目录',
+      '',
+      '- 第一部分',
+      '- 第二部分',
+      '',
+      '# 第一部分 案情概述',
+      '',
+      '正文一。',
+      '',
+      '# 第二部分 争点分析',
+      '',
+      '## 争点一',
+      '',
+      '# 第三部分 结论',
+      '',
+    ].join('\n');
+
+    it('文档大标题（首 H1）成为根节点，各部分成为一级分支', () => {
+      const doc = parseMarkdown(reportMd, '肖永吉案.md');
+      expect(doc.root.kind).toBe('heading');
+      expect(doc.root.text).toBe('鉴定式案例分析报告');
+      expect(doc.root.children.map((n) => n.text)).toEqual([
+        '第一部分 案情概述',
+        '第二部分 争点分析',
+        '第三部分 结论',
+      ]);
+    });
+
+    it('目录章节整节不入图，但序列化往返保留原文', () => {
+      const doc = parseMarkdown(reportMd, '肖永吉案.md');
+      expect(collectOutlineNodes(doc.root).map((n) => n.text)).not.toContain('目录');
+      expect(serializeMarkdown(doc)).toBe(reportMd);
+    });
+
+    it('首 H1 前有实质内容时不提升，保留虚拟根（文件名）', () => {
+      const md = '开篇引言一段。\n\n# 第一部分\n\n# 第二部分\n';
+      const doc = parseMarkdown(md, '报告.md');
+      expect(doc.root.kind).toBe('root');
+      expect(doc.root.text).toBe('报告.md');
+      expect(doc.root.children.map((n) => n.text)).toEqual(['第一部分', '第二部分']);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+
+    it('英文 TOC 标题（大小写不敏感、任意层级）同样排除且往返无损', () => {
+      const md = '# Title\n\n## Table of Contents\n\n- item\n\n## Chapter 1\n\ntext\n';
+      const doc = parseMarkdown(md);
+      expect(collectOutlineNodes(doc.root).map((n) => n.text)).not.toContain('Table of Contents');
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+
+    it('H1 目录后的分隔线结束目录，后续 H2 正文不会随目录一起删除', () => {
+      const md = [
+        '# 鉴定式案例分析报告',
+        '',
+        '# 目录',
+        '',
+        '## （一）大纲',
+        '- 请求权基础预选结果',
+        '',
+        '## （二）正文',
+        '- 请求权R1',
+        '',
+        '---',
+        '',
+        '## （一）大纲',
+        '',
+        '### 1. 请求权基础预选结果',
+        '',
+        '## （二）正文',
+        '',
+        '### 1. 请求权R1',
+        '',
+        '## 结论',
+        '',
+      ].join('\n');
+      const doc = parseMarkdown(md, '鉴定式分析报告.md');
+      expect(doc.root.text).toBe('鉴定式案例分析报告');
+      expect(doc.root.children.map((node) => node.text)).toEqual(['（一）大纲', '（二）正文', '结论']);
+      expect(doc.root.children[0].children.map((node) => node.text)).toEqual(['1. 请求权基础预选结果']);
+      expect(doc.root.children[1].children.map((node) => node.text)).toEqual(['1. 请求权R1']);
+      expect(collectOutlineNodes(doc.root).map((node) => node.text)).not.toContain('目录');
+      expect(doc.root.body).not.toContain('目录');
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+  });
+
+  describe('空文档与无大纲文档', () => {
+    it('空字符串往返', () => {
+      expect(serializeMarkdown(parseMarkdown(''))).toBe('');
+    });
+    it('仅 frontmatter 往返', () => {
+      const md = '---\ntitle: x\n---\n';
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    });
+    it('无标题的纯段落往返', () => {
+      const md = '第一段。\n\n第二段。\n';
+      const doc = parseMarkdown(md, '分析报告.md');
+      expect(doc.root.text).toBe('分析报告.md');
+      expect(doc.root.children.map((node) => node.text)).toEqual(['第一段。', '第二段。']);
+      expect(doc.root.children.every((node) => node.inferred)).toBe(true);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('已有多级大纲时，首标题前的开场正文显示在文件名根节点', () => {
+      const md = '审判长、审判员：\n\n## 第一项\n\n正文一。\n\n## 第二项\n\n正文二。\n';
+      const doc = parseMarkdown(md, '代理词.md');
+      expect(doc.root.kind).toBe('root');
+      expect(doc.root.body).toBe('审判长、审判员：');
+      expect(doc.root.children.map((node) => node.body)).toEqual(['正文一。', '正文二。']);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('只有一个 H1 的报告会把普通段落识别为子节点', () => {
+      const md = '# 分析报告\n\n第一项分析结论。\n\n第二项风险提示。\n';
+      const doc = parseMarkdown(md, '分析报告.md');
+      expect(doc.root.text).toBe('分析报告');
+      expect(doc.root.children.map((node) => node.text)).toEqual([
+        '第一项分析结论。',
+        '第二项风险提示。',
+      ]);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('稀疏报告能识别编号章节、加粗小标题和层级', () => {
+      const md = [
+        '案件分析报告',
+        '',
+        '一、基本事实',
+        '这是事实正文。',
+        '',
+        '（一）合同签订',
+        '双方于某日签订合同。',
+        '',
+        '**二、争议焦点**',
+        '争点正文。',
+        '',
+      ].join('\n');
+      const doc = parseMarkdown(md, '案件分析报告.md');
+      expect(doc.root.children.map((node) => node.text)).toEqual(['一、基本事实', '二、争议焦点']);
+      expect(doc.root.children[0].children.map((node) => node.text)).toEqual(['（一）合同签订']);
+      expect(serializeMarkdown(doc)).toBe(md);
+    });
+    it('id 基于内容路径生成', () => {
+      const doc = parseMarkdown(templateMd);
+      const caseNo = collectOutlineNodes(doc.root).find((n) => n.text === '案号');
+      expect(caseNo?.id).toContain('庭审记录');
+      expect(caseNo?.id).toContain('案号');
+    });
+  });
+});
+
+describe('Codex 审查回归（M-B 开工前修复）', () => {
+  it('P0-1: 段落打断列表后，新项挂回标题而非旧列表项', () => {
+    const doc = parseMarkdown('# H\n- a\nnote\n- b\n');
+    expect(doc.root.text).toBe('H');
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    expect(doc.root.children[0].children).toHaveLength(0);
+  });
+
+  it('P0-2: 缩进回退到 base 以下，新项挂回标题', () => {
+    const doc = parseMarkdown('# H\n  - a\n- b\n');
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+  });
+
+  it('P1-3: thematic break（* * *）不识别为列表项', () => {
+    const md = '# H\n* * *\n- item\n';
+    const doc = parseMarkdown(md);
+    const texts = collectOutlineNodes(doc.root).map((n) => n.text);
+    expect(texts).not.toContain('* * *');
+    expect(texts).toContain('item');
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P1-4: 4 反引号围栏不被内部 3 反引号提前关闭', () => {
+    const md = ['````', '```', '````', '- after'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    const texts = collectOutlineNodes(doc.root).map((n) => n.text);
+    expect(texts).not.toContain('```');
+    expect(texts).toContain('after');
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P2-5: 三性行值不在词表时不留空 evidence 对象', () => {
+    const doc = parseMarkdown('- 真实性：待核实\n');
+    const node = collectOutlineNodes(doc.root)[0];
+    expect(node.evidence).toBeUndefined();
+    expect(node.text).toBe('真实性：待核实');
+  });
+
+  it('P0-3: 列表项内缩进段落是 lazy 续接，后续子列表仍挂该项下（Codex 第二轮反例）', () => {
+    const md = '# H\n- parent\n  note\n  - child\n';
+    const doc = parseMarkdown(md);
+    const parent = doc.root.children.find((n) => n.text === 'parent');
+    expect(parent?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0-4: 列表项续接段落后再来同级项，仍为兄弟', () => {
+    const md = '# H\n- a\n  note\n- b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+  });
+
+  it('P1-6: 带 info string 的围栏行（```text）不闭合当前围栏', () => {
+    const md = ['```', '```text', '```', '- after'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    const texts = collectOutlineNodes(doc.root).map((n) => n.text);
+    expect(texts).toContain('after');
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0 回归：庭审实战 fixture 仍往返保真（修复未破坏既有）', () => {
+    expect(serializeMarkdown(parseMarkdown(realisticMd))).toBe(realisticMd);
+  });
+
+  it('P0-7: 未缩进 lazy 续行后的缩进子项仍挂父项下（Codex 第三轮反例，pandoc 交叉验证）', () => {
+    // `note` 是 parent 的 lazy 续行（无空行分隔）→ 列表不打断 → `  - child` 嵌到 parent 下
+    const md = '# H\n- parent\nnote\n  - child\n- sibling\n';
+    const doc = parseMarkdown(md);
+    const parent = doc.root.children.find((n) => n.text === 'parent');
+    expect(parent?.children.map((c) => c.text)).toEqual(['child']);
+    expect(parent?.children[0].level).toBe(parent!.level + 1);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['parent', 'sibling']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0-8: 空行后的未缩进段落才打断列表（与 lazy 续行区分）', () => {
+    // 空行关闭 lazy 续行窗口 → note 跳出列表 → b 作为新列表段挂到 H（不嵌到 a 下）
+    const md = '# H\n- a\n\nnote\n  - b\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('P0-9: 多项 lazy 续行后回兄弟项仍平级（Codex Case C）', () => {
+    const md = '# H\n- a\n- b\nmore\n  - bchild\n- c\n';
+    const doc = parseMarkdown(md);
+    const b = doc.root.children.find((n) => n.text === 'b');
+    expect(b?.children.map((c) => c.text)).toEqual(['bchild']);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b', 'c']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+});
+
+describe('Codex 第四轮复核回归', () => {
+  it('R4-P0-1: 段落打断列表后弹出列表栈，更深标题挂回原标题而非旧列表项', () => {
+    const md = '# H\n- a\n\nnote\n### sub\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'sub']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-2: 列表项内缩进围栏不打断列表，其后子项仍挂原项下', () => {
+    const md = ['# H', '- a', '  ```', '  code', '  ```', '  - child'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-2b: 顶格围栏仍打断列表（对照组）', () => {
+    const md = ['# H', '- a', '```', 'code', '```', '- b'].join('\n') + '\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-3: tab 缩进的子项挂父项下（tab 按 4 列展开）', () => {
+    const md = '# H\n- a\n\t- child\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4-P0-4: 内容列按最近一项计算（多位序号），不足缩进的段落跳出列表', () => {
+    const md = '# H\n1. a\n10. b\n\n   para\n   - c\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b', 'c']);
+    const b = doc.root.children.find((n) => n.text === 'b');
+    expect(b?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R4 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});
+
+describe('Codex 第五轮复核回归', () => {
+  it('R5-P0-1: lazy 续行后的顶格标题跳出列表，挂回上级标题（pandoc 交叉验证）', () => {
+    const md = '# H\n- a\nnote\n### sub\n- b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'sub']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    const sub = doc.root.children.find((n) => n.text === 'sub');
+    // 标题后的列表按 markmap 约定挂标题下
+    expect(sub?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5-P0-2: 缩进只够父层的松散续接不打断父列表，后续同缩进子项仍挂父项下', () => {
+    const md = '# H\n- a\n  - b\n\n  para\n  - c\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b', 'c']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5-P0-3: 缩进到内容列的主题分隔线是列表项内容，不打断列表（pandoc 交叉验证）', () => {
+    const md = '# H\n- a\n  * * *\n  - child\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5 交叉：顶格主题分隔线仍打断列表', () => {
+    const md = '# H\n- a\n\n---\n\n- b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'b']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5 交叉：深层子项后的父层松散段落再接更深子项，层级仍正确', () => {
+    const md = '# H\n- a\n  - b\n    - c\n\n  para\n  - d\n';
+    const doc = parseMarkdown(md);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b', 'd']);
+    const b = a?.children.find((n) => n.text === 'b');
+    expect(b?.children.map((c) => c.text)).toEqual(['c']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R5 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});
+
+describe('Codex 第六轮复核回归', () => {
+  it('R6-P0-1: 缩进不足以嵌到父项内容列时，独立成同级项而非嵌套子项（pandoc 交叉验证）', () => {
+    // `1. a` 的内容列是 3；`  - child` 缩进 2 < 3 → 不能嵌到 a 下 → 与 a 同级（H 下）
+    const md = '# H\n1. a\n  - child\n2. b\n';
+    const doc = parseMarkdown(md);
+    expect(doc.root.children.map((c) => c.text)).toEqual(['a', 'child', 'b']);
+    const a = doc.root.children.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    const child = doc.root.children.find((n) => n.text === 'child');
+    expect(child?.level).toBe(a!.level); // child 与 a 同级（depth 相等）
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R6-P0-2: 空行后缩进代码块不重开 lazy 窗口，顶格段落仍打断列表（pandoc 交叉验证）', () => {
+    // `      code` 缩进 6，嵌到 a (内容列 2) 后的 4 列余量刚好是缩进代码块边界；
+    // 它不是段落续接，不应重开 lazy。`top` 缩进 0 仍要打断列表。
+    const md = '- a\n\n      code\ntop\n  - child\n- b\n';
+    const doc = parseMarkdown(md);
+    // 期望结构：a (root) → top (root 下但 top 实际属 root 段落)；child/b 是顶层列表
+    // 实际 list 节点：a, child, b 都应是 root 的直接子列表项
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'child', 'b']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R6 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});
+
+describe('Codex 第七轮复核回归', () => {
+  it('R7-P2: marker 后 ≥ 4 列 padding 时，内容列仍按 CommonMark 规范为 marker 列后 1 列（pandoc 交叉验证）', () => {
+    // `-     a` 中 marker 后 5 列空白前 4 列属 padding，第 5 列起是缩进代码块内容；
+    // 但**列表项本身**的内容列仍是 marker 后 1 列（列 2），不应被 pad 列数拉宽。
+    // `  - child` 缩进 2 达到父项内容列 2 → 仍应挂为该列表项的子项。
+    const md = '-     a\n  - child\n';
+    const doc = parseMarkdown(md);
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'child']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R7-P2b: 有序列表 marker 后多 padding 同样按 CommonMark 规范化（pandoc 交叉验证）', () => {
+    // `1.     a` marker 长度 2，pad 5 列；列表项内容列 = 0+2+1 = 3（不是 0+2+5=7）。
+    // `   - b` 缩进 3 达到内容列 3 → 仍是 `a` 的子项。
+    const md = '1.     a\n   - b\n';
+    const doc = parseMarkdown(md);
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'b']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R7-P2 对照：常规 marker padding（1 列）下行为不变（不退化）', () => {
+    // 同样缩进到内容列的子项在常规 padding 下也是子项；确认规范化没破坏既有行为。
+    const md = '- a\n  - child\n';
+    const doc = parseMarkdown(md);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['child']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R7 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});
+
+describe('Codex 第八轮复核回归', () => {
+  it('R8-P1: marker 后 2 列 padding 时，内容列按实际 padding 算（不下沉到 marker+1）', () => {
+    // `-  a` 内容列 = 0+1+2 = 3；`   - b` 缩进 3 达到内容列 3 → b 是 a 的子项。
+    // 若统一用 marker+1（2）会误判为同级。
+    const md = '-  a\n   - b\n';
+    const doc = parseMarkdown(md);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R8-P1b: marker 后 3 列 padding 时内容列 = 4，后续缩进 2 的子项应平级而非嵌套', () => {
+    // Codex R8 反例：`-   a` 内容列 = 0+1+3 = 4；`  - b` 缩进 2 < 4 → b 与 a 平级。
+    const md = '-   a\n  - b\n';
+    const doc = parseMarkdown(md);
+    const lists = collectOutlineNodes(doc.root).filter((n) => n.kind === 'list');
+    expect(lists.map((n) => n.text)).toEqual(['a', 'b']);
+    const a = lists.find((n) => n.text === 'a');
+    expect(a?.children).toHaveLength(0);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R8-P1c: marker 后 4 列 padding 时内容列 = 5，仍按实际 padding 算', () => {
+    // `-    a` 内容列 = 0+1+4 = 5；`     - b` 缩进 5 达到 5 → b 是 a 的子项。
+    const md = '-    a\n     - b\n';
+    const doc = parseMarkdown(md);
+    const a = collectOutlineNodes(doc.root).find((n) => n.text === 'a');
+    expect(a?.children.map((c) => c.text)).toEqual(['b']);
+    expect(serializeMarkdown(doc)).toBe(md);
+  });
+
+  it('R8-P1d: 5 列 padding 与 4 列 padding 边界对比（5 列走 marker+1=2，4 列走实际=5）', () => {
+    // 5 列 padding：内容列 = markerCol+1 = 2，缩进 2 的子项能嵌。
+    // 4 列 padding：内容列 = 5，缩进 2 的子项不能嵌（与父项平级）。
+    const md5 = '-     a\n  - b\n';
+    const doc5 = parseMarkdown(md5);
+    const a5 = collectOutlineNodes(doc5.root).find((n) => n.text === 'a');
+    expect(a5?.children.map((c) => c.text)).toEqual(['b']);
+
+    const md4 = '-    a\n  - b\n';
+    const doc4 = parseMarkdown(md4);
+    const a4 = collectOutlineNodes(doc4.root).find((n) => n.text === 'a');
+    expect(a4?.children).toHaveLength(0);
+  });
+
+  it('R8 回归：全部 fixture 仍往返保真', () => {
+    for (const md of [templateMd, realisticMd, edgeMd]) {
+      expect(serializeMarkdown(parseMarkdown(md))).toBe(md);
+    }
+  });
+});

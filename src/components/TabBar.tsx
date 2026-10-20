@@ -15,7 +15,6 @@ export interface TabBarProps {
   windowLabel: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
-  onNew: () => void;
   onContextMenu?: (id: string, x: number, y: number) => void;
   /**
    * DEC-111：drag 到空白处时调用，撕出当前 tab 到新独立窗口。
@@ -38,7 +37,6 @@ export function TabBar({
   windowLabel,
   onSelect,
   onClose,
-  onNew,
   onContextMenu,
   onTearOffViaDrag,
   onMergeBackDrop,
@@ -148,7 +146,6 @@ export function TabBar({
           );
         })}
       </div>
-      <button type="button" data-no-window-drag="true" className="tabbar-new" aria-label={t('tabNewFileLabel')} title={t('tabNewFileLabel')} onClick={onNew}>+</button>
     </div>
   );
 }

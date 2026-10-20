@@ -1,0 +1,38 @@
+delivery_handoff:
+  outcome: "Folia 可从单一 Markdown 离线生成、编辑、保存并净化导出多页签 .foliaviz 可视化工作簿。"
+  artifacts:
+    - "/Users/Apple/Folia-source/docs/plans/PRD-one-click-visual-workbook.md"
+    - "/Users/Apple/Folia-source/docs/plans/2026-07-12-one-click-visual-workbook-plan.md"
+    - "/Users/Apple/Folia-source/CONTEXT.md"
+    - "/Users/Apple/Folia-source/docs/adr/0002-hybrid-visualization-renderers.md"
+    - "/Users/Apple/Folia-source/docs/adr/0003-declarative-visualization-templates.md"
+  acceptance:
+    - "相同 Markdown 与规则版本产生相同且可解释的推荐，低匹配时先展示候选。"
+    - "正式视图元素均可追溯原文；普通编辑不改 Markdown，原文修正必须先确认差异。"
+    - ".foliaviz 支持单一来源、多页签、首次保存后自动保存、重开与来源重新绑定。"
+    - "外部源变化通过增量审阅同步并保留人工布局与展示覆盖。"
+    - "六个视图家族可编辑，且按能力导出 PNG、SVG、PDF、独立 HTML。"
+    - "成品导出不包含源绝对路径、指纹、内部 ID、撤销历史或未显示原文。"
+  out_of_scope:
+    - "网络或本地大模型、运行时 Agent/Skill 调用"
+    - "多源 Markdown 合并与跨文档实体消歧"
+    - "可执行模板、Word/PPTX/视频导出"
+    - "无原文依据关系的自动法律推断"
+  repository: "/Users/Apple/Folia-source"
+  target_branch: "gaocheng/v0.4-integration"
+  checks:
+    - "npm run typecheck"
+    - "npm run lint"
+    - "npm test"
+    - "npm run build"
+    - "npm run test:e2e"
+  authority:
+    local_build: true
+    package: false
+    install: false
+    push: false
+    pull_request: false
+    publish: false
+    deploy: false
+  routing_overrides: {}
+  budget_overrides: {}

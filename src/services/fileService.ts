@@ -117,6 +117,8 @@ export async function openFile(encoding: DefaultEncoding = 'UTF-8'): Promise<Ope
       { name: 'Markdown', extensions: ['md', 'markdown'] },
       { name: 'HTML', extensions: ['html', 'htm'] },
       { name: 'Word 文档', extensions: ['docx'] },
+      { name: 'Folia 可视化', extensions: ['foliaviz'] },
+      { name: 'SVG 成品图', extensions: ['svg'] },
       { name: 'All', extensions: ['*'] },
     ],
   });
@@ -151,6 +153,18 @@ async function readPath(path: string, encoding: DefaultEncoding): Promise<Opened
       const { convertDocxToHtml } = await import('./docxPreviewService');
       const docxHtml = await convertDocxToHtml(toArrayBuffer(data));
       return { path, name, content: '', dirty: false, lastSavedContent: '', fileType: 'docx', docxHtml };
+    }
+
+    if (ext === 'foliaviz') {
+      const content = await readTextWithEncoding(path, 'UTF-8');
+      const { parseVisualWorkbook } = await import('./visualization/schema');
+      parseVisualWorkbook(content);
+      return { path, name, content, dirty: false, lastSavedContent: content, fileType: 'visualization' };
+    }
+
+    if (ext === 'svg') {
+      const content = await readTextWithEncoding(path, 'UTF-8');
+      return { path, name, content, dirty: false, lastSavedContent: content, fileType: 'svg' };
     }
 
     const content = await readTextWithEncoding(path, encoding);
@@ -206,6 +220,10 @@ async function saveExistingFile(file: OpenedFile): Promise<OpenedFile> {
   if (!file.path) return saveFileAsImpl(file);
 
   try {
+    if (file.fileType === 'visualization') {
+      const { parseVisualWorkbook } = await import('./visualization/schema');
+      parseVisualWorkbook(file.content);
+    }
     if (isTauriRuntime()) {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('write_opened_document', { path: file.path, content: file.content });
@@ -226,16 +244,23 @@ export async function saveFileAs(file: OpenedFile): Promise<OpenedFile> {
 }
 
 async function saveFileAsImpl(file: OpenedFile): Promise<OpenedFile> {
+  const isVisualization = file.fileType === 'visualization';
   const path = await save({
-    defaultPath: file.name || 'untitled.md',
-    filters: [
-      { name: 'Markdown', extensions: ['md'] },
-      { name: 'HTML', extensions: ['html', 'htm'] },
-    ],
+    defaultPath: file.name || (isVisualization ? 'untitled.foliaviz' : 'untitled.md'),
+    filters: isVisualization
+      ? [{ name: 'Folia 可视化', extensions: ['foliaviz'] }]
+      : [
+          { name: 'Markdown', extensions: ['md'] },
+          { name: 'HTML', extensions: ['html', 'htm'] },
+        ],
   });
 
   if (!path) return file;
 
+  if (isVisualization) {
+    const { parseVisualWorkbook } = await import('./visualization/schema');
+    parseVisualWorkbook(file.content);
+  }
   // ISS-201：写入走受控 Rust 命令（md/html 白名单 + denied-root 黑名单），
   // 与 saveFile 的 Tauri 分支同语义；非 Tauri（浏览器）保留 fs 插件兜底。
   if (isTauriRuntime()) {
@@ -247,4 +272,14 @@ async function saveFileAsImpl(file: OpenedFile): Promise<OpenedFile> {
   const name = fileNameFromPath(path);
 
   return { ...file, path, name, dirty: false, lastSavedContent: file.content };
+}
+
+export async function saveSvgCopy(content: string, fileName: string): Promise<string | null> {
+  const path = await save({
+    defaultPath: fileName || 'Folia-成品图.svg',
+    filters: [{ name: 'SVG 成品图', extensions: ['svg'] }],
+  });
+  if (!path) return null;
+  await writeTextFile(path, content);
+  return path;
 }

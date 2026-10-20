@@ -51,6 +51,7 @@ import { Toolbar } from '../components/Toolbar';
 import { StatusBar } from '../components/StatusBar';
 import { FloatingToc } from '../components/FloatingToc';
 import { TabBar } from '../components/TabBar';
+import { SkillVisualDialog } from '../components/SkillVisualDialog';
 import type { TabDragPayload } from '../components/tabDragPayload';
 import { RecentFilesPage } from '../components/RecentFilesPage';
 import { ContextMenu } from '../components/ContextMenu';
@@ -59,6 +60,16 @@ import { SettingsPage } from '../components/SettingsPage';
 import type { SourceHeadingScrollRequest } from '../components/EditorPane';
 import { useSession } from '../hooks/useSession';
 import { detectCurrentWindowLabel } from '../services/tabWindowService';
+import { reconcilePersistedDirtyFile } from '../services/sessionStore';
+import {
+  createSkillVisualJobId,
+  getDocumentSkillVisualStyle,
+  recommendSkillVisualType,
+  rememberDocumentSkillVisualStyle,
+  type SkillVisualStage,
+  type SkillVisualStyle,
+  type SkillVisualType,
+} from '../services/skillVisualService';
 
 const MAIN_PANE_MIN_WIDTH = 480;
 const RIGHT_PANEL_MIN_WIDTH = 360;
@@ -124,6 +135,18 @@ const HtmlPresentationPane = lazy(() =>
   import('../components/HtmlPresentationPane').then((module) => ({ default: module.HtmlPresentationPane })),
 );
 
+const MindMapPane = lazy(() =>
+  import('../components/mindmap/MindMapPane').then((module) => ({ default: module.MindMapPane })),
+);
+
+const VisualWorkbookPane = lazy(() =>
+  import('../components/visualization/VisualWorkbookPane').then((module) => ({ default: module.VisualWorkbookPane })),
+);
+
+const DiagramEditorPane = lazy(() =>
+  import('../components/DiagramEditorPane').then((module) => ({ default: module.DiagramEditorPane })),
+);
+
 const HtmlTableViewerOverlay = lazy(() =>
   import('../components/HtmlTableViewerOverlay').then((module) => ({ default: module.HtmlTableViewerOverlay })),
 );
@@ -179,6 +202,19 @@ function findEditorScroller(root: HTMLElement): HTMLElement | null {
   return null;
 }
 
+function visualSourceInfo(content: string): { name: string; path?: string } | null {
+  try {
+    const value = JSON.parse(content) as { source?: { relativePath?: unknown; absolutePath?: unknown } };
+    if (typeof value.source?.relativePath !== 'string') return null;
+    return {
+      name: value.source.relativePath,
+      path: typeof value.source.absolutePath === 'string' ? value.source.absolutePath : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ISS-72 / ISS-84：把 Rust 端原始错误分类映射到本地化文案。fallback 仍展示原文便于排查。
 // 归类逻辑与检查更新路径共用 updateService.categorizeUpdateError（#84 要求三条路径共用一套）。
 function toUpdateErrorMessage(
@@ -232,6 +268,8 @@ export function AppLayout() {
   // ISS-72：当前下载的取消句柄（虽然 Tauri JS SDK 不支持 abort，仅用于防御性
   // 重入 + 在 finally 中清理 ref，避免 stale controller 残留）。
   const downloadAbortRef = useRef<AbortController | null>(null);
+  // 重启恢复核对 dirty 竞态的已处理集合（个人定制）。
+    const reconciledDirtyTabsRef = useRef(new Set<string>());
   const mainContentRef = useRef<HTMLDivElement>(null);
   // 防抖挂起的 TOC 刷新定时器；卸载时清掉，避免 stale setToc（ISS-159）。
   const tocRefreshTimerRef = useRef<number | null>(null);
@@ -251,17 +289,31 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
     }
   }, []);
-  const session = useSession();
+  // 单标签模式：openInNewTab 替换当前 tab 前的未保存确认（文案区别于 closeTab 的关闭确认）。
+  const confirmReplaceDirty = useCallback(
+    () => window.confirm('当前文档有未保存改动，打开新文档将丢弃这些改动，是否继续？'),
+    [],
+  );
+  const session = useSession({ confirmDirty: confirmReplaceDirty });
   const {
     activeFile: file,
     activeTab,
     tabs,
     openInNewTab,
+    openInSplit,
     closeTab,
     activeTabId,
     updateFile,
     replaceFileIfUnchanged,
+    updateActiveFile,
+    updateTabFile,
     updateActiveTabMeta,
+    splitFile,
+    splitView,
+    toggleSplit,
+    setSplitTab,
+    closeSplit,
+    updateSplitTabFile,
     tearOffViaDrag,
   } = session;
   // ISS-188 MAJOR-2：跟踪最新 activeTabId，让异步 reload（await openPath）后
@@ -284,6 +336,61 @@ export function AppLayout() {
       setPendingClose({ fileName, resolve });
     });
   }, []);
+  // 切到单标签模式：关闭分屏并只保留当前标签（其余关闭）。多标签模式无副作用；
+  // reducer 已保证 single 模式下后续 openInNewTab 恒为替换，tabs 不会再次膨胀。
+  useEffect(() => {
+    if (settings.tabMode !== 'single') return;
+    if (session.splitView) session.closeSplit();
+    if (session.tabs.length > 1) session.closeOthers(session.activeTabId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.tabMode]);
+
+  // 重启恢复时核对“磁盘已写入、会话仍残留 dirty=true”的保存竞态。
+  // 只在内容逐字一致时清除 dirty；真正未保存的草稿绝不覆盖、绝不静默丢弃。
+  useEffect(() => {
+    if (!isTauriRuntime) return;
+    for (const tab of session.tabs) {
+      if (!tab.file.dirty || !tab.file.path || tab.file.fileType === 'docx' || reconciledDirtyTabsRef.current.has(tab.id)) continue;
+      reconciledDirtyTabsRef.current.add(tab.id);
+      void import('../services/fileService')
+        .then(({ openPath }) => openPath(tab.file.path!, settings.defaultEncoding))
+        .then((diskFile) => updateTabFile(tab.id, (current) => reconcilePersistedDirtyFile(current, diskFile.content)))
+        .catch(() => undefined);
+    }
+  }, [isTauriRuntime, session.tabs, settings.defaultEncoding, updateTabFile]);
+  // 新建空白草稿标签：工具栏「新建 Markdown」按钮与 Cmd+N 共用此 handler
+  const handleNew = useCallback(() => {
+    openInNewTab(createEmptyFile());
+  }, [openInNewTab]);
+  // 当前 active 标签是未命名草稿（无 path）时显示“放弃新建”按钮
+  const newDraftActive = !!(activeTab && !activeTab.file.path && activeTab.file.fileType === 'markdown');
+  // 放弃新建草稿 = 关闭当前标签，active 自动回到前一个标签
+  const handleDiscardNewDraft = useCallback(() => {
+    if (activeTabId) closeTab(activeTabId);
+  }, [activeTabId, closeTab]);
+  // Anything HTML：把当前内容发到本地 localhost:3000 窗口
+  const handleOpenHtmlAnything = useCallback(() => {
+    if (file.fileType === 'visualization' || file.fileType === 'svg') return;
+    void import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('open_html_anything', {
+        content: file.content,
+        fileName: file.name,
+      }).catch((error) => console.warn('open_html_anything failed:', error));
+    });
+  }, [file.content, file.fileType, file.name]);
+  // 分屏开关：开启时优先选择已有标签；没有候选时进入“等待拖入”的分屏状态。
+  const handleToggleSplit = useCallback(() => {
+    // 单标签模式禁用分屏（分屏依赖 ≥2 标签，与单标签互斥）。
+    if (settings.tabMode === 'single') return;
+    if (splitView) {
+      closeSplit();
+      return;
+    }
+    const candidate = session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder && t.file.fileType === 'svg')
+      ?? session.tabs.find((t) => t.id !== activeTabId && !t.isPlaceholder);
+    if (candidate) setSplitTab(candidate.id);
+    else toggleSplit();
+  }, [settings.tabMode, splitView, closeSplit, session.tabs, activeTabId, setSplitTab, toggleSplit]);
   const windowLabel = useMemo(() => detectCurrentWindowLabel(), []);
   const isTearOffSupported = useMemo(
     () => '__TAURI_INTERNALS__' in window,
@@ -318,7 +425,9 @@ export function AppLayout() {
   // openPath 才能填上）。render-time 同步重置逻辑见下方 if 分支（ISS-163）。
   const [toc, setToc] = useState<TocItem[]>(() => {
     const initial = activeTab;
-    return initial?.file.fileType === 'docx' ? [] : extractMarkdownToc(initial?.file.content ?? '');
+    return initial?.file.fileType === 'docx' || initial?.file.fileType === 'visualization' || initial?.file.fileType === 'svg'
+      ? []
+      : extractToc(initial?.file.content ?? '');
   });
   // 跟踪最近一次已为其生成 TOC 的 activeTabId；切换 tab 时与当前 activeTabId 不一致
   // 就在 render 阶段同步重置 toc 与挂起的防抖刷新（ISS-163）。详见下方 if 分支。
@@ -327,6 +436,16 @@ export function AppLayout() {
   const [activeTocIndex, setActiveTocIndex] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  const [skillVisualPhase, setSkillVisualPhase] = useState<'configure' | 'running' | null>(null);
+  const [skillVisualDialogVisible, setSkillVisualDialogVisible] = useState(false);
+  const [skillVisualStage, setSkillVisualStage] = useState<SkillVisualStage>('preparing');
+  const [skillVisualModel, setSkillVisualModel] = useState<string>();
+  const [skillVisualElapsed, setSkillVisualElapsed] = useState(0);
+  const [skillVisualError, setSkillVisualError] = useState<string>();
+  const [skillVisualRecommendation, setSkillVisualRecommendation] = useState<SkillVisualType>('mindmap');
+  const [skillVisualInitialStyle, setSkillVisualInitialStyle] = useState<SkillVisualStyle>('light-formal');
+  const [skillVisualJobId, setSkillVisualJobId] = useState<string>();
+  const [skillVisualSourceName, setSkillVisualSourceName] = useState('');
   const editorMode = session.editorMode;
   const [sourceHeadingScrollRequest, setSourceHeadingScrollRequest] = useState<SourceHeadingScrollRequest>();
   const rightPanelMode = session.rightPanelMode;
@@ -369,6 +488,7 @@ export function AppLayout() {
   const [resizingPanel, setResizingPanel] = useState<'toc' | 'right' | null>(null);
   const [htmlPresentationVisible, setHtmlPresentationVisible] = useState(false);
   const [htmlTableViewer, setHtmlTableViewer] = useState<{ block: HtmlTableBlock } | null>(null);
+  const [detachedVisualSource, setDetachedVisualSource] = useState<{ path: string; content: string } | null>(null);
   const [systemOpenChecked, setSystemOpenChecked] = useState(!isTauriRuntime);
   const [updateState, setUpdateState] = useState<UpdateInstallState>({ phase: 'idle' });
   // ISS-228（Issue #186）：当前活动编辑器（WYSIWYG / 源码）上报的撤销/重做
@@ -383,7 +503,9 @@ export function AppLayout() {
   // 不会造成级联渲染。
   if (lastTocTabId !== activeTabId) {
     setLastTocTabId(activeTabId);
-    setToc(activeTab?.file.fileType === 'docx' ? [] : extractMarkdownToc(activeTab?.file.content ?? ''));
+    setToc(activeTab?.file.fileType === 'docx' || activeTab?.file.fileType === 'visualization' || activeTab?.file.fileType === 'svg'
+      ? []
+      : extractToc(activeTab?.file.content ?? ''));
   }
 
   // ISS-191：解析当前主题预设（内置 + 启用的自定义）。fallback builtin:light 由
@@ -541,7 +663,7 @@ export function AppLayout() {
     if (opened) {
       openInNewTab(opened);
       cancelPendingTocRefresh();
-      setToc(extractMarkdownToc(opened.content));
+      setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' || opened.fileType === 'svg' ? [] : extractToc(opened.content));
       if (opened.path) setLastOpenedPath(opened.path);
       setHtmlPresentationVisible(false);
     }
@@ -595,10 +717,24 @@ export function AppLayout() {
     }
     openInNewTab(opened);
     cancelPendingTocRefresh();
-    setToc(opened.fileType === 'docx' ? [] : extractMarkdownToc(opened.content));
+    setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' || opened.fileType === 'svg' ? [] : extractToc(opened.content));
     setLastOpenedPath(path);
     setHtmlPresentationVisible(false);
   }, [settings.defaultEncoding, cancelPendingTocRefresh, openInNewTab, notifyIoError]);
+
+  const handleDropPath = useCallback(async (path: string) => {
+    const { openPath } = await import('../services/fileService');
+    const opened = await openPath(path, settings.defaultEncoding);
+    if (splitView && activeTabId) {
+      openInSplit(opened, activeTabId);
+    } else {
+      openInNewTab(opened);
+      setToc(opened.fileType === 'docx' || opened.fileType === 'visualization' || opened.fileType === 'svg' ? [] : extractToc(opened.content));
+    }
+    cancelPendingTocRefresh();
+    setLastOpenedPath(path);
+    setHtmlPresentationVisible(false);
+  }, [settings.defaultEncoding, splitView, activeTabId, cancelPendingTocRefresh, openInSplit, openInNewTab]);
 
   const handleSave = useCallback(async () => {
     if (file.fileType === 'docx') return;
@@ -623,14 +759,19 @@ export function AppLayout() {
       const updated = await saveFile(fileToSave);
       replaceFileIfUnchanged(activeTabId, file, updated);
       if (updated.path) setLastOpenedPath(updated.path);
+      // 分屏右侧文档有未保存改动时一并落盘（个人定制：split pane 保存联动）。
+      if (splitFile?.dirty && splitFile.path && splitFile.fileType !== 'docx') {
+        const updatedSplit = await saveFile(splitFile);
+        updateSplitTabFile(() => updatedSplit);
+      }
     } catch (error) {
       // ISS-200:保存失败(磁盘满/权限/文件被移走)兜底提示,不再静默。
       await notifyIoError('save', error);
     }
-  }, [file, activeTabId, replaceFileIfUnchanged, imageAssetStore, notifyIoError]);
+  }, [file, splitFile, activeTabId, replaceFileIfUnchanged, imageAssetStore, notifyIoError, updateSplitTabFile]);
 
   const handleSaveAs = useCallback(async () => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'svg') return;
     try {
       const { saveFileAs } = await import('../services/fileService');
       const updated = await saveFileAs(file);
@@ -692,8 +833,32 @@ export function AppLayout() {
     }
   }, [tabs, imageAssetStore]);
 
+  const handleSaveSvgCopy = useCallback(async (content?: string) => {
+    if (file.fileType !== 'svg') return;
+    const { saveSvgCopy } = await import('../services/fileService');
+    await saveSvgCopy(content ?? file.content, file.name);
+  }, [file.content, file.fileType, file.name]);
+
+  const handleUpgradeLegacySvg = useCallback(async (upgradedSvg: string) => {
+    if (file.fileType !== 'svg' || !file.path) throw new Error('请先把旧 SVG 保存到本地');
+    const { invoke } = await import('@tauri-apps/api/core');
+    const outputPath = await invoke<string>('save_editable_svg_copy', { sourcePath: file.path, content: upgradedSvg });
+    const { openPath } = await import('../services/fileService');
+    openInNewTab(await openPath(outputPath, 'UTF-8'));
+  }, [file.fileType, file.path, openInNewTab]);
+
+  const handleUpgradeSplitLegacySvg = useCallback(async (upgradedSvg: string) => {
+    if (!splitFile || splitFile.fileType !== 'svg' || !splitFile.path) throw new Error('请先把旧 SVG 保存到本地');
+    const { invoke } = await import('@tauri-apps/api/core');
+    const outputPath = await invoke<string>('save_editable_svg_copy', { sourcePath: splitFile.path, content: upgradedSvg });
+    const { openPath } = await import('../services/fileService');
+    const opened = await openPath(outputPath, 'UTF-8');
+    if (activeTabId) openInSplit(opened, activeTabId);
+    else openInNewTab(opened);
+  }, [activeTabId, openInNewTab, openInSplit, splitFile]);
+
   const handleExportWord = useCallback(async () => {
-    if (!file.path || file.fileType === 'docx') return;
+    if (!file.path || file.fileType !== 'markdown') return;
     try {
       const { exportToWord } = await import('../services/wordExportService');
       await exportToWord(file.content, file.name, getExportPresetConfig(), file.path);
@@ -715,6 +880,10 @@ export function AppLayout() {
       content: value,
       dirty: value !== prev.lastSavedContent,
     }));
+    if (file.fileType === 'visualization' || file.fileType === 'svg') {
+      setToc([]);
+      return;
+    }
     // extractMarkdownToc 会扫描全文，超长文档每键都跑会卡顿；防抖到输入停顿后刷新（ISS-159）。
     if (tocRefreshTimerRef.current !== null) {
       window.clearTimeout(tocRefreshTimerRef.current);
@@ -723,22 +892,190 @@ export function AppLayout() {
       tocRefreshTimerRef.current = null;
       setToc(extractMarkdownToc(value));
     }, TOC_REFRESH_DEBOUNCE_MS);
-  }, [activeTabId, updateFile]);
+  }, [file.fileType, activeTabId, updateFile]);
 
   const handleToggleEditorMode = useCallback(() => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization' || file.fileType === 'svg') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ editorMode: editorMode === 'source' ? 'wysiwyg' : 'source' });
   }, [file.fileType, editorMode, updateActiveTabMeta]);
 
+  const handleToggleMindMapMode = useCallback(async () => {
+    if (file.fileType !== 'markdown') return;
+    setHtmlPresentationVisible(false);
+    updateActiveTabMeta({ editorMode: editorMode === 'mindmap' ? 'wysiwyg' : 'mindmap' });
+  }, [editorMode, file.fileType, updateActiveTabMeta]);
+
+  const handleCreateVisualization = useCallback(async () => {
+    if (file.fileType !== 'markdown') return;
+    setHtmlPresentationVisible(false);
+    const [{ createVisualWorkbookDraft, visualizationDraftName }, { serializeVisualWorkbook }] = await Promise.all([
+      import('../services/visualization/draft'),
+      import('../services/visualization/schema'),
+    ]);
+    const workbook = createVisualWorkbookDraft({ markdown: file.content, sourceName: file.name, sourcePath: file.path });
+    openInNewTab({
+      path: '',
+      name: visualizationDraftName(file.name),
+      content: serializeVisualWorkbook(workbook),
+      dirty: true,
+      lastSavedContent: '',
+      fileType: 'visualization',
+    });
+  }, [file.content, file.fileType, file.name, file.path, openInNewTab]);
+
+  const handleRequestSkillVisual = useCallback(() => {
+    if (skillVisualPhase === 'running') {
+      setSkillVisualDialogVisible(true);
+      return;
+    }
+    if (file.fileType !== 'markdown') return;
+    if (!file.path) {
+      window.alert('请先保存当前 Markdown。成品图会以新版本保存在原文件旁。');
+      return;
+    }
+    setSkillVisualRecommendation(recommendSkillVisualType(file.content));
+    setSkillVisualInitialStyle(getDocumentSkillVisualStyle(file.path));
+    setSkillVisualSourceName(file.name);
+    setSkillVisualError(undefined);
+    setSkillVisualPhase('configure');
+    setSkillVisualDialogVisible(true);
+  }, [file.content, file.fileType, file.name, file.path, skillVisualPhase]);
+
+  const handleGenerateSkillVisual = useCallback(async (visualType: SkillVisualType, style: SkillVisualStyle, openComparison: boolean) => {
+    if (file.fileType !== 'markdown' || !file.path) return;
+    const jobId = createSkillVisualJobId();
+    const sourcePath = file.path;
+    const sourceContent = file.content;
+    rememberDocumentSkillVisualStyle(sourcePath, style);
+    setSkillVisualInitialStyle(style);
+    setSkillVisualSourceName(file.name);
+    setSkillVisualJobId(jobId);
+    setSkillVisualStage('preparing');
+    setSkillVisualModel(undefined);
+    setSkillVisualElapsed(0);
+    setSkillVisualError(undefined);
+    setSkillVisualPhase('running');
+    setSkillVisualDialogVisible(true);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{
+        outputPath: string | null;
+        structureJson: string | null;
+        durationMs: number;
+        kind: string;
+        message: string;
+      }>('generate_skill_visual', {
+        jobId,
+        sourcePath,
+        sourceContent,
+        visualType,
+        style,
+      });
+      if (result.kind !== 'ok' || !result.structureJson) {
+        if (result.kind === 'cancelled') {
+          setSkillVisualPhase(null);
+          setSkillVisualDialogVisible(false);
+          return;
+        }
+        setSkillVisualError(result.message || '生成没有完成，请稍后重试。');
+        setSkillVisualPhase('configure');
+        setSkillVisualDialogVisible(true);
+        return;
+      }
+      setSkillVisualStage('validating');
+      const [{ validateVisualStructure, structureToScene }, { projectDiagramSvg }, { inspectDiagramQuality }, { repairDiagramLocally }] = await Promise.all([
+        import('../services/diagram/structure'),
+        import('../services/diagram/svgProjection'),
+        import('../services/diagram/collision'),
+        import('../services/diagram/localRepair'),
+      ]);
+      const structure = validateVisualStructure(JSON.parse(result.structureJson));
+      let scene = await structureToScene(structure, {
+        visualType,
+        style,
+        source: { path: sourcePath, start: 0, end: sourceContent.length },
+      });
+      if (inspectDiagramQuality(scene).some((issue) => issue.kind === 'node-overlap')) {
+        scene = repairDiagramLocally(scene);
+      }
+      const blockingIssues = inspectDiagramQuality(scene).filter((issue) =>
+        issue.kind === 'text-overflow' || issue.kind === 'node-overlap' || issue.kind === 'out-of-canvas' || issue.kind === 'small-font');
+      if (blockingIssues.length > 0) {
+        throw new Error(`本地排版验收未通过：${blockingIssues[0].message}`);
+      }
+      const svg = projectDiagramSvg(scene);
+      setSkillVisualStage('saving');
+      const outputPath = await invoke<string>('save_skill_visual_svg', {
+        sourcePath,
+        visualType,
+        content: svg,
+      });
+      const { openPath } = await import('../services/fileService');
+      const opened = await openPath(outputPath, 'UTF-8');
+      if (openComparison && activeTabId) openInSplit(opened, activeTabId);
+      else openInNewTab(opened);
+      setSkillVisualPhase(null);
+      setSkillVisualDialogVisible(false);
+    } catch (error) {
+      console.warn('skill visual generation failed:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      setSkillVisualError(detail);
+      setSkillVisualPhase('configure');
+      setSkillVisualDialogVisible(true);
+    } finally {
+      setSkillVisualJobId((current) => current === jobId ? undefined : current);
+    }
+  }, [activeTabId, file.content, file.fileType, file.name, file.path, openInNewTab, openInSplit]);
+
+  const handleCancelSkillVisual = useCallback(() => {
+    if (!skillVisualJobId) {
+      setSkillVisualPhase(null);
+      return;
+    }
+    void import('@tauri-apps/api/core').then(({ invoke }) =>
+      invoke('cancel_skill_visual', { jobId: skillVisualJobId }),
+    ).catch((error) => console.warn('cancel skill visual failed:', error));
+  }, [skillVisualJobId]);
+
+  useEffect(() => {
+    if (skillVisualPhase !== 'running') return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setSkillVisualElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [skillVisualPhase]);
+
+  useEffect(() => {
+    if (!skillVisualJobId || !isTauriRuntime) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void import('@tauri-apps/api/event').then(({ listen }) =>
+      listen<{ jobId: string; stage: SkillVisualStage; model?: string }>('skill-visual:progress', (event) => {
+        if (!disposed && event.payload.jobId === skillVisualJobId) {
+          setSkillVisualStage(event.payload.stage);
+          if (event.payload.model) setSkillVisualModel(event.payload.model);
+        }
+      }),
+    ).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isTauriRuntime, skillVisualJobId]);
+
   const handleToggleWordPreview = useCallback(() => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization' || file.fileType === 'svg') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'word' ? 'none' : 'word' });
   }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
 
   const handleToggleWechatPreview = useCallback(() => {
-    if (file.fileType === 'docx') return;
+    if (file.fileType === 'docx' || file.fileType === 'visualization' || file.fileType === 'svg') return;
     setHtmlPresentationVisible(false);
     updateActiveTabMeta({ rightPanelMode: rightPanelMode === 'wechat' ? 'none' : 'wechat' });
   }, [file.fileType, rightPanelMode, updateActiveTabMeta]);
@@ -916,10 +1253,14 @@ export function AppLayout() {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       if (e.key === 'o' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleOpen(); return; }
+      if (e.key === 'n' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleNew(); return; }
       if (e.key === 's' && e.shiftKey && !e.altKey) { e.preventDefault(); handleSaveAs(); return; }
       if (e.key === 's' && !e.shiftKey && !e.altKey) { e.preventDefault(); handleSave(); return; }
       if (e.key === 'e' && e.shiftKey && !e.altKey) { e.preventDefault(); handleExportWord(); return; }
       if (e.key === 's' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleEditorMode(); return; }
+      if (e.key === 'b' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleMindMapMode(); return; }
+      if (e.key === 'g' && e.altKey && !e.shiftKey) { e.preventDefault(); handleCreateVisualization(); return; }
+      if (e.key === 'g' && e.altKey && e.shiftKey) { e.preventDefault(); handleRequestSkillVisual(); return; }
       if (e.key === 'p' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWordPreview(); return; }
       if (e.key === 'm' && e.altKey && !e.shiftKey) { e.preventDefault(); handleToggleWechatPreview(); return; }
       if (e.key === 'w' && !e.shiftKey && !e.altKey) {
@@ -937,7 +1278,7 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty, saveDirtyTabById]);
+  }, [handleNew, handleOpen, handleSave, handleSaveAs, handleExportWord, handleToggleEditorMode, handleToggleMindMapMode, handleCreateVisualization, handleRequestSkillVisual, handleToggleWordPreview, handleToggleWechatPreview, closeTab, activeTabId, confirmCloseDirty, saveDirtyTabById]);
 
   useEffect(() => {
     const handler = async (e: DragEvent) => {
@@ -947,7 +1288,7 @@ export function AppLayout() {
       if (!items || items.length === 0) return;
       const f = items[0];
       const path = (f as unknown as { path?: string }).path;
-      if (path && isOpenableDocumentPath(path)) await handleOpenPath(path);
+      if (path && isOpenableDocumentPath(path)) await handleDropPath(path);
     };
     const prevent = (e: DragEvent) => { e.preventDefault(); e.stopPropagation(); };
     window.addEventListener('dragover', prevent);
@@ -956,7 +1297,7 @@ export function AppLayout() {
       window.removeEventListener('dragover', prevent);
       window.removeEventListener('drop', handler);
     };
-  }, [handleOpenPath]);
+  }, [handleDropPath]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -968,7 +1309,7 @@ export function AppLayout() {
       .onDragDropEvent((event) => {
         if (event.payload.type !== 'drop') return;
         const path = firstOpenableDocumentPath(event.payload.paths);
-        if (path) void handleOpenPath(path);
+        if (path) void handleDropPath(path);
       })
       .then((fn) => {
         if (cancelled) {
@@ -983,7 +1324,7 @@ export function AppLayout() {
       cancelled = true;
       unlisten?.();
     };
-  }, [handleOpenPath, isTauriRuntime]);
+  }, [handleDropPath, isTauriRuntime]);
 
   useEffect(() => {
     if (!isTauriRuntime) return;
@@ -1314,6 +1655,18 @@ export function AppLayout() {
     setExternalChangeBlocked(false);
   }, []);
 
+  // 分屏区文件自动保存（与主区同款逻辑，独立监听 splitFile）。
+  useEffect(() => {
+    if (!splitFile || !settings.autoSave || !splitFile.path || !splitFile.dirty || splitFile.fileType === 'docx') return;
+    const timeout = window.setTimeout(() => {
+      void import('../services/fileService')
+        .then(({ saveFile }) => saveFile(splitFile))
+        .then((updated) => updateSplitTabFile(() => updated))
+        .catch((e) => console.error('Split auto-save failed:', e));
+    }, 800);
+    return () => window.clearTimeout(timeout);
+  }, [splitFile, settings.autoSave, updateSplitTabFile]);
+
   // 大文件降级 tab（draftPersisted=false 且 content 被清空）：激活时从磁盘重读内容，
   // 修复降级重启后空白编辑器。失败（文件被删/移）标记 pathInvalid 并提示另存为（ISS-42）。
   // docx 降级 tab（ISS-198：docxHtml 不再持久化）走同一路径重转 docx→HTML。
@@ -1382,6 +1735,30 @@ export function AppLayout() {
   }, [file.dirty, file.name, isTauriRuntime]);
 
   const isDocx = file.fileType === 'docx';
+  const isVisualization = file.fileType === 'visualization';
+  const isSvg = file.fileType === 'svg';
+  const visualSource = isVisualization ? visualSourceInfo(file.content) : null;
+  const boundSourceTab = isVisualization
+    ? session.tabs.find((tab) => tab.file.fileType === 'markdown'
+      && ((visualSource?.path && tab.file.path === visualSource.path) || tab.file.name === visualSource?.name))
+    : undefined;
+  useEffect(() => {
+    let cancelled = false;
+    if (!isVisualization || boundSourceTab || !visualSource?.path) {
+      return () => { cancelled = true; };
+    }
+    void import('../services/fileService').then(({ openPath }) => openPath(visualSource.path!, settings.defaultEncoding))
+      .then((opened) => {
+        if (!cancelled && opened.fileType === 'markdown') setDetachedVisualSource({ path: visualSource.path!, content: opened.content });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [boundSourceTab, isVisualization, settings.defaultEncoding, visualSource?.path]);
+  const splitVisualSource = splitFile?.fileType === 'visualization' ? visualSourceInfo(splitFile.content) : null;
+  const splitBoundSourceTab = splitFile?.fileType === 'visualization'
+    ? session.tabs.find((tab) => tab.file.fileType === 'markdown'
+      && ((splitVisualSource?.path && tab.file.path === splitVisualSource.path) || tab.file.name === splitVisualSource?.name))
+    : undefined;
   // ISS-72：Toolbar 在 downloading / error 阶段也展示，让用户不开 settings 也能看到进度和错误。
   const updateToolbarStatus = (() => {
     switch (updateState.phase) {
@@ -1428,13 +1805,17 @@ export function AppLayout() {
     startBackgroundUpdateDownload(updateState.source, updateState.update);
   }, [updateState, startBackgroundUpdateDownload]);
   const shouldShowHtmlPresentation = htmlPresentationVisible && file.fileType === 'html' && !isDocx;
+  const tocPinned = tocSessionPinned || settings.tocAlwaysPinned;
+  // 分屏时右侧面板（Word/微信预览）不参与布局，避免与分屏区挤压。
+  const rightPanelEffective = splitView ? 'none' : rightPanelMode;
   const mainContentClassName = [
     'main-content',
-    isDocx ? 'docx-layout' : 'writing-layout',
+    isDocx ? 'docx-layout' : isVisualization ? 'visualization-layout' : isSvg ? 'svg-layout' : 'writing-layout',
     tocLayoutPinned && !isDocx ? 'toc-pinned' : '',
-    rightPanelMode !== 'none' && !isDocx ? 'right-panel-open' : '',
-    rightPanelMode === 'word' && !isDocx ? 'word-preview-open' : '',
-    rightPanelMode === 'wechat' && !isDocx ? 'wechat-preview-open' : '',
+    rightPanelEffective !== 'none' && !isDocx && !isSvg ? 'right-panel-open' : '',
+    rightPanelEffective === 'word' && !isDocx && !isSvg ? 'word-preview-open' : '',
+    rightPanelEffective === 'wechat' && !isDocx && !isSvg ? 'wechat-preview-open' : '',
+    splitView && !isDocx && !isSvg ? 'split-view' : '',
     shouldShowHtmlPresentation ? 'html-presentation-layout' : '',
     resizingPanel ? 'is-resizing' : '',
   ].filter(Boolean).join(' ');
@@ -1540,6 +1921,31 @@ export function AppLayout() {
     <div className="editor-pane readonly-pane">
       <span>Word 文件为只读</span>
     </div>
+  ) : isSvg ? (
+    <Suspense fallback={<div className="svg-preview-pane lazy-pane"><span>SVG 成品图加载中</span></div>}>
+      <DiagramEditorPane
+        key={file.path || file.name}
+        source={file.content}
+        fileName={file.name}
+        onChange={handleContentChange}
+        onSaveCopy={(content) => void handleSaveSvgCopy(content)}
+        onUpgradeLegacy={handleUpgradeLegacySvg}
+        sourceMarkdown={undefined}
+      />
+    </Suspense>
+  ) : isVisualization ? (
+    <Suspense fallback={<div className="visual-workbook lazy-pane"><span>可视化工作簿加载中</span></div>}>
+      <VisualWorkbookPane
+        content={file.content}
+        onChange={handleContentChange}
+        sourceMarkdown={boundSourceTab?.file.content ?? (detachedVisualSource && detachedVisualSource.path === visualSource?.path ? detachedVisualSource.content : undefined)}
+        onApplySourceChange={boundSourceTab ? (content) => updateTabFile(boundSourceTab.id, (opened) => ({
+          ...opened,
+          content,
+          dirty: content !== opened.lastSavedContent,
+        })) : undefined}
+      />
+    </Suspense>
   ) : editorMode === 'source' ? (
     <Suspense fallback={<div className="editor-pane lazy-pane"><span>源码编辑器加载中</span></div>}>
       <EditorPane
@@ -1549,6 +1955,15 @@ export function AppLayout() {
         onChange={handleContentChange}
         headingScrollRequest={sourceHeadingScrollRequest}
         onHistoryApiChange={setHistoryApi}
+      />
+    </Suspense>
+  ) : editorMode === 'mindmap' ? (
+    <Suspense fallback={<div className="mindmap-pane lazy-pane"><span>脑图加载中</span></div>}>
+      <MindMapPane
+        markdown={file.content}
+        fileName={file.name}
+        filePath={file.path}
+        onChange={handleContentChange}
       />
     </Suspense>
   ) : shouldShowHtmlPresentation ? (
@@ -1565,7 +1980,48 @@ export function AppLayout() {
     </Suspense>
   );
 
-  const rightPanel = rightPanelMode === 'word' && !isDocx ? (
+  // 分屏区编辑器（右侧）：MVP 只支持所见即所得模式；docx 显示只读提示。
+  const splitEditorPane = splitFile ? (
+    splitFile.fileType === 'docx' ? (
+      <div className="editor-pane readonly-pane"><span>Word 文件为只读</span></div>
+    ) : splitFile.fileType === 'svg' ? (
+      <Suspense fallback={<div className="svg-preview-pane lazy-pane"><span>SVG 成品图加载中</span></div>}>
+        <DiagramEditorPane
+          key={splitFile.path || splitFile.name}
+          source={splitFile.content}
+          fileName={splitFile.name}
+          onChange={(value) => updateSplitTabFile((opened) => ({ ...opened, content: value, dirty: value !== opened.lastSavedContent }))}
+          onSaveCopy={(content) => void import('../services/fileService').then(({ saveSvgCopy }) => saveSvgCopy(content ?? splitFile.content, splitFile.name))}
+          onUpgradeLegacy={handleUpgradeSplitLegacySvg}
+          sourceMarkdown={file.fileType === 'markdown' ? file.content : undefined}
+          onRegenerate={file.fileType === 'markdown' ? handleRequestSkillVisual : undefined}
+        />
+      </Suspense>
+    ) : splitFile.fileType === 'visualization' ? (
+      <Suspense fallback={<div className="visual-workbook lazy-pane"><span>可视化工作簿加载中</span></div>}>
+        <VisualWorkbookPane
+          content={splitFile.content}
+          onChange={(value) => updateSplitTabFile((f) => ({ ...f, content: value, dirty: value !== f.lastSavedContent }))}
+          sourceMarkdown={splitBoundSourceTab?.file.content}
+          onApplySourceChange={splitBoundSourceTab ? (content) => updateTabFile(splitBoundSourceTab.id, (opened) => ({
+            ...opened,
+            content,
+            dirty: content !== opened.lastSavedContent,
+          })) : undefined}
+        />
+      </Suspense>
+    ) : (
+      <Suspense fallback={<div className="wysiwyg-editor-pane lazy-pane"><span>分屏编辑器加载中</span></div>}>
+        <WysiwygEditorPane
+          source={splitFile.content}
+          onChange={(value) => updateSplitTabFile((f) => ({ ...f, content: value, dirty: value !== f.lastSavedContent }))}
+          filePath={splitFile.path}
+        />
+      </Suspense>
+    )
+  ) : null;
+
+  const rightPanel = rightPanelMode === 'word' && !isDocx && !isSvg ? (
     <Suspense fallback={<aside className="word-preview-panel" aria-label={t('wordPreviewAria')} />}>
       <WordPaperPreviewPane
         source={file.content}
@@ -1576,7 +2032,7 @@ export function AppLayout() {
         filePath={file.path}
       />
     </Suspense>
-  ) : rightPanelMode === 'wechat' && !isDocx ? (
+  ) : rightPanelMode === 'wechat' && !isDocx && !isSvg ? (
     <Suspense fallback={<aside className="wechat-preview-panel" aria-label={t('wechatPreviewAria')} />}>
       <WechatPreviewPane
         source={file.content}
@@ -1616,6 +2072,7 @@ export function AppLayout() {
         dirty={file.dirty}
         fileName={file.name}
         tabBar={
+          settings.tabMode === 'single' ? null : (
           <TabBar
             tabs={session.tabs}
             activeTabId={session.activeTabId}
@@ -1627,12 +2084,27 @@ export function AppLayout() {
             onTearOffViaDrag={isTearOffSupported ? tearOffViaDrag : undefined}
             onMergeBackDrop={isTearOffSupported ? handleMergeBackDrop : undefined}
           />
+          )
         }
         editorMode={editorMode}
         wordPreviewVisible={rightPanelMode === 'word'}
         wechatPreviewVisible={rightPanelMode === 'wechat'}
-        editingDisabled={isDocx}
+        editingDisabled={isDocx || isSvg}
+        viewActionsDisabled={isDocx || isVisualization || isSvg}
+        visualizationActive={isVisualization}
+        visualizationDisabled={file.fileType !== 'markdown'}
+        skillVisualRunning={skillVisualPhase === 'running'}
+        skillVisualDisabled={skillVisualPhase !== 'running' && file.fileType !== 'markdown'}
+        newDraftActive={newDraftActive}
+        splitViewActive={splitView}
+        onNew={handleNew}
+        onDiscardNewDraft={handleDiscardNewDraft}
+        onOpenHtmlAnything={handleOpenHtmlAnything}
+        onToggleSplit={handleToggleSplit}
         onToggleEditorMode={handleToggleEditorMode}
+        onToggleMindMapMode={handleToggleMindMapMode}
+        onCreateVisualization={handleCreateVisualization}
+        onRequestSkillVisual={handleRequestSkillVisual}
         onToggleWordPreview={handleToggleWordPreview}
         onToggleWechatPreview={handleToggleWechatPreview}
         onOpen={handleOpen}
@@ -1697,10 +2169,30 @@ export function AppLayout() {
                 onDoubleClick={() => setTocWidth(260)}
               />
             )}
-            {editorPane}
+            {splitView && splitEditorPane ? (
+              <div className="editor-pane-group split-active">
+                <div className="editor-pane-wrapper editor-pane-main">{editorPane}</div>
+                <div className="split-divider" data-no-window-drag="true" />
+                <div className="editor-pane-wrapper editor-pane-split">
+                  <div className="editor-pane-label editor-pane-split-label">
+                    <span className="editor-pane-split-name">{splitFile?.name}</span>
+                    <button
+                      className="editor-pane-split-close"
+                      data-no-window-drag="true"
+                      onClick={() => closeSplit()}
+                      aria-label="关闭分屏"
+                      title="关闭分屏"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {splitEditorPane}
+                </div>
+              </div>
+            ) : editorPane}
           </>
         )}
-        {rightPanelMode !== 'none' && !isDocx && (
+        {rightPanelEffective !== 'none' && !isDocx && !isSvg && (
           <div
             className={`word-preview-resizer ${resizingPanel === 'right' ? 'dragging' : ''}`}
             role="separator"
@@ -1714,7 +2206,7 @@ export function AppLayout() {
             onDoubleClick={() => setRightPanelWidth(460)}
           />
         )}
-        {rightPanel}
+        {rightPanelEffective !== 'none' && rightPanel}
       </div>
       <StatusBar
         key={activeTabId}
@@ -1743,6 +2235,25 @@ export function AppLayout() {
           onRevealInFileManager={() => {
             const path = contextMenuTab?.file.path;
             if (path) void revealPathInFileExplorer(path);
+          }}
+        />
+      )}
+      {skillVisualPhase && skillVisualDialogVisible && (
+        <SkillVisualDialog
+          sourceName={skillVisualSourceName || file.name}
+          recommendedType={skillVisualRecommendation}
+          initialStyle={skillVisualInitialStyle}
+          phase={skillVisualPhase}
+          stage={skillVisualStage}
+          model={skillVisualModel}
+          elapsedSeconds={skillVisualElapsed}
+          error={skillVisualError}
+          onGenerate={(visualType, style, openComparison) => void handleGenerateSkillVisual(visualType, style, openComparison)}
+          onCancel={handleCancelSkillVisual}
+          onMinimize={() => setSkillVisualDialogVisible(false)}
+          onClose={() => {
+            setSkillVisualPhase(null);
+            setSkillVisualDialogVisible(false);
           }}
         />
       )}

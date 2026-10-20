@@ -2,14 +2,21 @@ import { type ReactNode } from 'react';
 import {
   BookOpenText,
   Braces,
+  Columns2,
+  FilePlus,
   FolderOpen,
+  Globe,
+  GitFork,
   Newspaper,
   RefreshCw,
   Redo2,
   Save,
   SaveAll,
+  Share2,
   SlidersHorizontal,
+  Sparkles,
   Undo2,
+  X,
 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSettings } from '../hooks/useSettings';
@@ -36,7 +43,28 @@ type ToolbarProps = {
   wordPreviewVisible: boolean;
   wechatPreviewVisible: boolean;
   editingDisabled: boolean;
+  /** 当前文件不能进入源码/预览等文档视图时为 true；不影响保存。 */
+  viewActionsDisabled: boolean;
+  /** 当前标签本身是可视化工作簿。 */
+  visualizationActive: boolean;
+  /** 当前文件不能作为一键可视化的 Markdown 来源。 */
+  visualizationDisabled: boolean;
+  /** 当前 active 标签是未命名草稿时为 true，用于显示“放弃新建”按钮。 */
+  newDraftActive: boolean;
+  /** 是否处于分屏视图（高亮分屏按钮）。 */
+  splitViewActive: boolean;
+  /** Skill 成品图正在生成（按钮显示旋转图标，点击可重新展开进度）。 */
+  skillVisualRunning: boolean;
+  /** 成品图按钮的禁用态：非 Markdown 且没有后台任务时为 true；未保存时点击后给出明确说明。 */
+  skillVisualDisabled: boolean;
+  onNew: () => void;
+  onDiscardNewDraft: () => void;
+  onOpenHtmlAnything: () => void;
+  onToggleSplit: () => void;
   onToggleEditorMode: () => void;
+  onToggleMindMapMode: () => void;
+  onCreateVisualization: () => void;
+  onRequestSkillVisual: () => void;
   onToggleWordPreview: () => void;
   onToggleWechatPreview: () => void;
   onOpen: () => void;
@@ -57,7 +85,7 @@ type ToolbarProps = {
 
 export function Toolbar({
   dirty, fileName, tabBar,
-  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, onToggleEditorMode, onToggleWordPreview, onToggleWechatPreview,
+  editorMode, wordPreviewVisible, wechatPreviewVisible, editingDisabled, viewActionsDisabled, visualizationActive, visualizationDisabled, skillVisualRunning, skillVisualDisabled, newDraftActive, splitViewActive, onNew, onDiscardNewDraft, onOpenHtmlAnything, onToggleSplit, onToggleEditorMode, onToggleMindMapMode, onCreateVisualization, onRequestSkillVisual, onToggleWordPreview, onToggleWechatPreview,
   onOpen, onSave, onSaveAs, onOpenSettings, onPreloadSettings, updateStatus, onRestartUpdate, onRetryUpdate,
   historyAvailable, onUndo, onRedo,
 }: ToolbarProps) {
@@ -85,6 +113,20 @@ export function Toolbar({
     >
       <div className="toolbar-left">
         <div className="toolbar-group toolbar-file-actions" aria-label={t('toolbarFileGroup')}>
+          <button data-no-window-drag="true" onClick={onNew} title={t('toolbarNewTitle')} aria-label={t('toolbarNewLabel')}>
+            <FilePlus size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          {newDraftActive && (
+            <button
+              data-no-window-drag="true"
+              className="discard-draft-button"
+              onClick={onDiscardNewDraft}
+              title={t('toolbarDiscardNewDraftTitle')}
+              aria-label={t('toolbarDiscardNewDraftLabel')}
+            >
+              <X size={iconSize} strokeWidth={strokeWidth} />
+            </button>
+          )}
           <button data-no-window-drag="true" onClick={onOpen} title={t('toolbarOpenTitle')} aria-label={t('toolbarOpenLabel')}>
             <FolderOpen size={iconSize} strokeWidth={strokeWidth} />
           </button>
@@ -192,7 +234,7 @@ export function Toolbar({
           <button
             className={editorMode === 'source' ? 'active' : ''}
             onClick={onToggleEditorMode}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarSourceTitle')}
             aria-label={t('toolbarSourceLabel')}
@@ -200,9 +242,43 @@ export function Toolbar({
             <Braces size={iconSize} strokeWidth={strokeWidth} />
           </button>
           <button
+            className={editorMode === 'mindmap' ? 'active' : ''}
+            onClick={onToggleMindMapMode}
+            disabled={viewActionsDisabled}
+            data-no-window-drag="true"
+            title={t('toolbarMindMapTitle')}
+            aria-label={t('toolbarMindMapLabel')}
+          >
+            <GitFork size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={visualizationActive ? 'active' : ''}
+            onClick={onCreateVisualization}
+            disabled={visualizationDisabled}
+            data-no-window-drag="true"
+            title={t('toolbarVisualizationTitle')}
+            aria-label={t('toolbarVisualizationLabel')}
+          >
+            <Share2 size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={skillVisualRunning ? 'skill-visual-trigger skill-visual-trigger--running' : 'skill-visual-trigger'}
+            onClick={onRequestSkillVisual}
+            disabled={skillVisualDisabled}
+            data-no-window-drag="true"
+            title={skillVisualRunning
+              ? t('skillVisualRunning')
+              : t('toolbarSkillVisualTitle')}
+            aria-label={skillVisualRunning
+              ? t('skillVisualRunning')
+              : t('toolbarSkillVisualLabel')}
+          >
+            <Sparkles size={iconSize} strokeWidth={strokeWidth} className={skillVisualRunning ? 'spinning' : ''} />
+          </button>
+          <button
             className={wordPreviewVisible ? 'active' : ''}
             onClick={onToggleWordPreview}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarWordPreviewTitle')}
             aria-label={t('toolbarWordPreviewLabel')}
@@ -212,12 +288,24 @@ export function Toolbar({
           <button
             className={wechatPreviewVisible ? 'active' : ''}
             onClick={onToggleWechatPreview}
-            disabled={editingDisabled}
+            disabled={viewActionsDisabled}
             data-no-window-drag="true"
             title={t('toolbarWechatPreviewTitle')}
             aria-label={t('toolbarWechatPreviewLabel')}
           >
             <Newspaper size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button data-no-window-drag="true" onClick={onOpenHtmlAnything} disabled={viewActionsDisabled} title="Anything HTML" aria-label="Anything HTML">
+            <Globe size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+          <button
+            className={splitViewActive ? 'active' : ''}
+            data-no-window-drag="true"
+            onClick={onToggleSplit}
+            title="分屏对照"
+            aria-label="分屏对照"
+          >
+            <Columns2 size={iconSize} strokeWidth={strokeWidth} />
           </button>
         </div>
         <div className="toolbar-group toolbar-navigation-actions" aria-label={t('toolbarNavGroup')}>

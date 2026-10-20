@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1080" preserveAspectRatio="xMidYMid meet">
+  <!-- 简洁商务 · 流程图 · 来源：hearing-template.md -->
+  <defs>
+    <style>
+      .bg { fill: #FFFFFF; }
+      .title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 22px; font-weight: 600; fill: #111827; }
+      .subtitle { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 12px; fill: #6B7280; }
+      .pill-start { fill: #1F2937; stroke: none; }
+      .pill-end { fill: #2563EB; stroke: none; }
+      .pill-text-start { font-family: 'PingFang SC', sans-serif; font-size: 14px; font-weight: 600; fill: #FFFFFF; text-anchor: middle; }
+      .pill-text-end { font-family: 'PingFang SC', sans-serif; font-size: 14px; font-weight: 600; fill: #FFFFFF; text-anchor: middle; }
+      .step-box { fill: #FFFFFF; stroke: #1F2937; stroke-width: 1.4; }
+      .step-title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 15px; font-weight: 600; fill: #111827; text-anchor: middle; }
+      .step-num { font-family: 'PingFang SC', sans-serif; font-size: 11px; font-weight: 600; fill: #2563EB; text-anchor: start; }
+      .step-desc { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 11px; fill: #4B5563; text-anchor: middle; }
+      .arrow { stroke: #1F2937; stroke-width: 1.4; fill: none; }
+      .arrow-head { fill: #1F2937; }
+      .footer { font-family: 'PingFang SC', sans-serif; font-size: 11px; fill: #9CA3AF; }
+      .group-title { font-family: 'PingFang SC', 'Noto Sans CJK SC', sans-serif; font-size: 12px; font-weight: 600; fill: #6B7280; letter-spacing: 0.05em; }
+      .group-box { fill: none; stroke: #E5E7EB; stroke-width: 1; stroke-dasharray: 4 3; }
+    </style>
+    <marker id="arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <polygon points="0 0, 10 4, 0 8" class="arrow-head"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1000" height="1080"/>
+
+  <!-- 标题 -->
+  <text class="title" x="60" y="56">庭审程序流程图</text>
+  <text class="subtitle" x="60" y="80">依据 hearing-template.md 十节结构整理的庭审推进顺序</text>
+
+  <!-- 起：庭前准备 -->
+  <g>
+    <rect class="pill-start" x="400" y="140" width="200" height="44" rx="22"/>
+    <text class="pill-text-start" x="500" y="168">庭前准备</text>
+    <text class="step-desc" x="500" y="206">审判员、书记员入庭</text>
+  </g>
+
+  <!-- Step 1 -->
+  <g>
+    <line class="arrow" x1="500" y1="216" x2="500" y2="248" marker-end="url(#arr)"/>
+    <rect class="step-box" x="350" y="250" width="300" height="60" rx="4"/>
+    <text class="step-num" x="362" y="272">01</text>
+    <text class="step-title" x="500" y="278">案件信息核对</text>
+    <text class="step-desc" x="500" y="296">案号 / 案由 / 当事人 / 代理人 / 审判员</text>
+  </g>
+
+  <!-- Step 2 -->
+  <g>
+    <line class="arrow" x1="500" y1="310" x2="500" y2="338" marker-end="url(#arr)"/>
+    <rect class="step-box" x="350" y="340" width="300" height="60" rx="4"/>
+    <text class="step-num" x="362" y="362">02</text>
+    <text class="step-title" x="500" y="368">诉讼请求</text>
+    <text class="step-desc" x="500" y="386">原告陈述请求事项与依据</text>
+  </g>
+
+  <!-- Step 3 -->
+  <g>
+    <line class="arrow" x1="500" y1="400" x2="500" y2="428" marker-end="url(#arr)"/>
+    <rect class="step-box" x="350" y="430" width="300" height="60" rx="4"/>
+    <text class="step-num" x="362" y="452">03</text>
+    <text class="step-title" x="500" y="458">答辩意见</text>
+    <text class="step-desc" x="500" y="476">被告陈述答辩要点</text>
+  </g>
+
+  <!-- Step 4 · 举证质证（合并大框） -->
+  <g>
+    <line class="arrow" x1="500" y1="490" x2="500" y2="518" marker-end="url(#arr)"/>
+    <rect class="group-box" x="200" y="520" width="600" height="170" rx="6"/>
+    <text class="group-title" x="220" y="540">举证质证（双方交替）</text>
+
+    <rect class="step-box" x="240" y="555" width="250" height="50" rx="4"/>
+    <text class="step-num" x="252" y="575">04a</text>
+    <text class="step-title" x="365" y="582">原告举证</text>
+
+    <rect class="step-box" x="510" y="555" width="250" height="50" rx="4"/>
+    <text class="step-num" x="522" y="575">04b</text>
+    <text class="step-title" x="635" y="582">被告质证</text>
+
+    <rect class="step-box" x="240" y="620" width="250" height="50" rx="4"/>
+    <text class="step-num" x="252" y="640">04c</text>
+    <text class="step-title" x="365" y="647">被告举证</text>
+
+    <rect class="step-box" x="510" y="620" width="250" height="50" rx="4"/>
+    <text class="step-num" x="522" y="640">04d</text>
+    <text class="step-title" x="635" y="647">原告质证</text>
+  </g>
+
+  <!-- Step 5 · 法庭调查 -->
+  <g>
+    <line class="arrow" x1="500" y1="690" x2="500" y2="718" marker-end="url(#arr)"/>
+    <rect class="step-box" x="350" y="720" width="300" height="60" rx="4"/>
+    <text class="step-num" x="362" y="742">05</text>
+    <text class="step-title" x="500" y="748">法庭调查</text>
+    <text class="step-desc" x="500" y="766">原告发问 / 被告发问 / 法庭发问</text>
+  </g>
+
+  <!-- Step 6 · 辩论 -->
+  <g>
+    <line class="arrow" x1="500" y1="780" x2="500" y2="808" marker-end="url(#arr)"/>
+    <rect class="step-box" x="350" y="810" width="300" height="60" rx="4"/>
+    <text class="step-num" x="362" y="832">06</text>
+    <text class="step-title" x="500" y="838">辩论意见</text>
+    <text class="step-desc" x="500" y="856">原告辩论 → 被告辩论</text>
+  </g>
+
+  <!-- Step 7 · 最后陈述 -->
+  <g>
+    <line class="arrow" x1="500" y1="870" x2="500" y2="898" marker-end="url(#arr)"/>
+    <rect class="step-box" x="350" y="900" width="300" height="60" rx="4"/>
+    <text class="step-num" x="362" y="922">07</text>
+    <text class="step-title" x="500" y="928">最后陈述</text>
+    <text class="step-desc" x="500" y="946">双方各自最后陈述</text>
+  </g>
+
+  <!-- 末：休庭 / 宣判 -->
+  <g>
+    <line class="arrow" x1="500" y1="960" x2="500" y2="988" marker-end="url(#arr)"/>
+    <rect class="pill-end" x="400" y="990" width="200" height="44" rx="22"/>
+    <text class="pill-text-end" x="500" y="1018">休庭 / 宣判</text>
+  </g>
+
+  <!-- 页脚 -->
+  <line x1="60" y1="1040" x2="940" y2="1040" stroke="#E5E7EB" stroke-width="1"/>
+  <text class="footer" x="60" y="1062">来源：src/services/mindmap/__fixtures__/hearing-template.md</text>
+  <text class="footer" x="940" y="1062" text-anchor="end">简洁商务 · 风格 02 · 流程图</text>
+</svg>

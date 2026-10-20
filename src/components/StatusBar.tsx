@@ -3,7 +3,6 @@ import { Copy } from 'lucide-react';
 import { writeText } from '../services/clipboardService';
 import { useSettings } from '../hooks/useSettings';
 import { translate } from '../services/i18n';
-import { formatDisplayPath } from './statusPathFormat';
 
 type StatusBarProps = {
   filePath: string;
@@ -49,6 +48,13 @@ export function StatusBar({
   const hasPath = filePath.length > 0;
   // ISS-91：路径失效时复制无意义，与右键菜单 canRevealFile 的 `!pathInvalid` 约定保持一致。
   const canCopy = hasPath && !pathInvalid;
+  const displayedPath = !hasPath || settings.statusBarPathStyle === 'full'
+    ? filePath
+    : settings.statusBarPathStyle === 'basename'
+      ? filePath.split(/[\\/]/u).at(-1) ?? filePath
+      : filePath.length > 64
+        ? `${filePath.slice(0, 28)}…${filePath.slice(-32)}`
+        : filePath;
   const [copyMarker, setCopyMarker] = useState<CopyMarker>(null);
   const resetTimerRef = useRef<number | null>(null);
 
@@ -119,7 +125,7 @@ export function StatusBar({
           hasPath ? { cursor: canCopy ? 'text' : 'default', userSelect: canCopy ? 'text' : 'none' } : undefined
         }
       >
-        {hasPath ? formatDisplayPath(filePath) : t('statusBarNoFile')}
+        {hasPath ? displayedPath : t('statusBarNoFile')}
       </span>
       {canCopy && (
         <button

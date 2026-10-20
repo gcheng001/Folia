@@ -14,7 +14,7 @@ describe('createWordPreviewStyle', () => {
     expect(style['--word-margin-bottom']).toBe('2.54cm');
     expect(style['--word-margin-left']).toBe('3.18cm');
     expect(style['--word-font-family']).toBe('"仿宋_GB2312", "Times New Roman", serif');
-    expect(style['--word-font-size']).toBe('12pt');
+    expect(style['--word-font-size']).toBe('14pt');
     expect(style['--word-line-height']).toBe('1.5');
     expect(style['--word-paragraph-align']).toBe('justify');
     expect(style['--word-paragraph-indent']).toBe('2em');
@@ -25,13 +25,15 @@ describe('createWordPreviewStyle', () => {
     expect(style['--word-table-header-bg']).toBe('transparent');
     expect(style['--word-table-row-odd-bg']).toBe('transparent');
     expect(style['--word-table-row-even-bg']).toBe('transparent');
-    expect(style['--word-heading-1-size']).toBe('15pt');
+    expect(style['--word-heading-1-size']).toBe('22pt');
     expect(style['--word-heading-1-align']).toBe('center');
     expect(style['--word-list-indent']).toBe('24pt');
     expect(style['--word-code-font-family']).toBe('"仿宋_GB2312", "Consolas", monospace');
     expect(style['--word-code-indent']).toBe('24pt');
     expect(style['--word-inline-code-color']).toBe('#C7254E');
-    expect(style['--word-quote-bg']).toBe('#EAEAEA');
+    // 法律预设的法条引用无底纹（预览与导出一致），缺省背景映射为 transparent
+    expect(style['--word-quote-bg']).toBe('transparent');
+    expect(style['--word-quote-font-size']).toBe('12pt');
     expect(style['--word-quote-indent']).toBe('24pt');
     expect(style['--word-hr-content']).toMatch(/^"/);
   });

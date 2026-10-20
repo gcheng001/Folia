@@ -22,23 +22,11 @@ function render(props: TabBarProps): string {
 }
 
 const noop = () => {};
-const baseProps = { onSelect: noop, onClose: noop, onNew: noop, windowLabel: 'main' };
+const baseProps = { onSelect: noop, onClose: noop, windowLabel: 'main' };
 
 describe('TabBar', () => {
   beforeEach(() => {
     localStorage.clear();
-  });
-
-  it('en-US locale 下新建按钮 aria-label 为 New file', () => {
-    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'en-US' }));
-    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
-    expect(html).toContain('New file');
-  });
-
-  it('ja-JP locale 下新建按钮 aria-label 为 新規ファイル', () => {
-    localStorage.setItem('folia-settings', JSON.stringify({ locale: 'ja-JP' }));
-    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
-    expect(html).toContain('新規ファイル');
   });
 
   it('en-US locale 下关闭按钮 aria-label 含 Close', () => {
@@ -66,11 +54,6 @@ describe('TabBar', () => {
   it('干净标签无 data-dirty 标记', () => {
     const html = render({ ...baseProps, tabs: [tab('a', 'a.md', false)], activeTabId: 'a' });
     expect(html).not.toContain('data-dirty');
-  });
-
-  it('含新建按钮（aria-label 新建文件）', () => {
-    const html = render({ ...baseProps, tabs: [tab('a', 'a.md')], activeTabId: 'a' });
-    expect(html).toContain('新建文件');
   });
 
   it('每个标签含关闭按钮（aria-label 关闭）', () => {

@@ -71,7 +71,76 @@ function allXmlAttrs(xml: string, tag: string, attr: string): string[] {
   return [...xml.matchAll(new RegExp(`<${tag}\\b[^>]*${attr}="([^"]+)"`, 'g'))].map((match) => match[1]);
 }
 
+/** 按 </w:p> 切分后找第一个文本包含 text 的段落（部分匹配，与 xmlParagraphContaining 的整段 <w:t> 精确匹配互补）。 */
+function xmlParagraphWithText(xml: string, text: string): string {
+  const paragraph = xml
+    .split('</w:p>')
+    .find((chunk) => chunk.replace(/<[^>]+>/g, '').includes(text));
+  if (paragraph === undefined) {
+    throw new Error(`Paragraph with text "${text}" not found`);
+  }
+  const start = paragraph.lastIndexOf('<w:p ') >= 0 ? paragraph.lastIndexOf('<w:p ') : paragraph.lastIndexOf('<w:p>');
+  return `${paragraph.slice(Math.max(start, 0))}</w:p>`;
+}
+
+function xmlParagraphContaining(xml: string, text: string): string {
+  const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = xml.match(new RegExp(`<w:p\\b[\\s\\S]*?<w:t[^>]*>${escapedText}</w:t>[\\s\\S]*?</w:p>`));
+  if (!match) {
+    throw new Error(`Paragraph containing "${text}" not found`);
+  }
+  return match[0];
+}
+
 describe('markdownToDocx XML output', () => {
+  it('applies the legal preset heading and paragraph typography to DOCX XML', async () => {
+    const documentXml = await readDocumentXml([
+      '# 民事起诉状',
+      '',
+      '## 事实与理由',
+      '',
+      '原告围绕合同履行情况陈述如下。',
+    ].join('\n'), getPreset('legal'));
+
+    const titleParagraph = xmlParagraphContaining(documentXml, '民事起诉状');
+    const subheadingParagraph = xmlParagraphContaining(documentXml, '事实与理由');
+    const bodyParagraph = xmlParagraphContaining(documentXml, '原告围绕合同履行情况陈述如下。');
+
+    expect(titleParagraph).toMatch(/<w:jc\b[^>]*w:val="center"/);
+    expect(titleParagraph).toMatch(/<w:sz\b[^>]*w:val="44"/);
+    expect(titleParagraph).toMatch(/<w:b\b/);
+    expect(titleParagraph).toMatch(/<w:spacing\b[^>]*w:line="360"/);
+
+    expect(subheadingParagraph).toMatch(/<w:sz\b[^>]*w:val="32"/);
+    expect(subheadingParagraph).toMatch(/<w:b\b/);
+    expect(subheadingParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+    expect(subheadingParagraph).toMatch(/<w:spacing\b[^>]*w:line="360"/);
+
+    expect(bodyParagraph).toMatch(/<w:sz\b[^>]*w:val="28"/);
+    expect(bodyParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+    expect(bodyParagraph).toMatch(/<w:spacing\b[^>]*w:line="360"/);
+  });
+
+  it('strips Markdown-only markers from the generated DOCX text', async () => {
+    const documentXml = await readDocumentXml([
+      '# 民事起诉状',
+      '',
+      '---',
+      '',
+      '- 第一项事实',
+      '* 第二项事实',
+    ].join('\n'), getPreset('legal'));
+
+    expect(documentXml).toContain('民事起诉状');
+    expect(documentXml).toContain('第一项事实');
+    expect(documentXml).toContain('第二项事实');
+    expect(documentXml).not.toContain('•');
+    expect(documentXml).not.toContain('—');
+    expect(documentXml).not.toContain('<w:t>#</w:t>');
+    expect(documentXml).not.toContain('<w:t>-</w:t>');
+    expect(documentXml).not.toContain('<w:t>*</w:t>');
+  });
+
   it('preserves key merge and header nodes for legal HTML tables', async () => {
     const markdown = readFileSync(
       join(process.cwd(), 'fixtures', 'legal-html-tables', 'evidence-directory.md'),
@@ -211,14 +280,6 @@ describe('markdownToDocx XML output', () => {
           left_indent: 18,
           line_spacing: 1.1,
         },
-        mappedList: {
-          font: '宋体',
-          ascii: 'Arial',
-          size: 10,
-          color: '336699',
-          left_indent: 30,
-          line_spacing: 1.1,
-        },
         mappedRule: {
           font: 'Arial',
           ascii: 'Arial',
@@ -234,8 +295,6 @@ describe('markdownToDocx XML output', () => {
         table: 'mappedTable',
         image_caption: 'mappedCaption',
         code_block: 'mappedCode',
-        list: 'mappedList',
-        horizontal_rule: 'mappedRule',
       },
       html_mapping: {
         selectors: {
@@ -261,22 +320,17 @@ describe('markdownToDocx XML output', () => {
       '',
       '- 映射列表',
       '',
-      '---',
-      '',
       '![证据图](https://example.com/evidence.png)',
     ].join('\n'), preset);
 
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="微软雅黑")(?=[^>]*w:ascii="Arial")/);
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="楷体")(?=[^>]*w:ascii="Georgia")/);
     expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="Courier New")(?=[^>]*w:ascii="Courier New")/);
-    expect(documentXml).toMatch(/<w:rFonts\b(?=[^>]*w:eastAsia="宋体")(?=[^>]*w:ascii="Arial")/);
     expect(allXmlAttrs(documentXml, 'w:color', 'w:val')).toEqual(expect.arrayContaining([
       '445566',
       '112233',
       '777777',
       '990000',
-      '336699',
-      '222222',
     ]));
     expect(allXmlAttrs(documentXml, 'w:shd', 'w:fill')).toEqual(expect.arrayContaining([
       'ABCDEF',
@@ -347,5 +401,147 @@ describe('markdownToDocx XML output', () => {
       const blackCount = runColors.filter((c) => c === '000000').length;
       expect(blackCount, `preset ${presetId} 至少 7 个黑色 run`).toBeGreaterThanOrEqual(7);
     }
+  });
+});
+
+// 用户法律文书常用格式（范本：延长调解期限申请书）：
+// 此致正常缩进、法院名顶格、落款右对齐留签字空间、书信式抬头顶格。
+describe('legal document layout (此致/顶格/落款)', () => {
+  const 申请书 = [
+    '# 延长调解期限申请书',
+    '',
+    '申请人：张某某',
+    '',
+    '申请事项：',
+    '',
+    '请求法院延长调解期限，延长期限为一个月。',
+    '',
+    '此致',
+    '',
+    '某某县人民法院',
+    '',
+    '申请人：',
+    '',
+    '二〇二六年七月十日',
+  ].join('\n');
+
+  it('uses 仿宋_GB2312 (not bare 仿宋) as eastAsia font everywhere in the legal preset', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+    const eastAsiaFonts = allXmlAttrs(documentXml, 'w:rFonts', 'w:eastAsia');
+    expect(eastAsiaFonts.length).toBeGreaterThan(0);
+    expect([...new Set(eastAsiaFonts)]).toEqual(['仿宋_GB2312']);
+  });
+
+  it('keeps 此致 as a normal indented paragraph but removes first-line indent from the court name after it', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+
+    const cizhiParagraph = xmlParagraphWithText(documentXml, '此致');
+    expect(cizhiParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+
+    const courtParagraph = xmlParagraphWithText(documentXml, '某某县人民法院');
+    expect(courtParagraph).not.toMatch(/<w:ind\b[^>]*w:firstLine=/);
+  });
+
+  it('right-aligns the closing signer line with signature space and the Chinese date line', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+
+    // 落款"申请人："（此致之后的那个）右对齐，且冒号后保留全角空格作手写签字空间
+    const closingChunk = documentXml.slice(documentXml.indexOf('此致'));
+    const signerParagraph = xmlParagraphWithText(closingChunk, '申请人：');
+    expect(signerParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
+    expect(signerParagraph).toMatch(/申请人：　/);
+
+    const dateParagraph = xmlParagraphWithText(documentXml, '二〇二六年七月十日');
+    expect(dateParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
+    expect(dateParagraph).not.toMatch(/<w:ind\b[^>]*w:firstLine=/);
+  });
+
+  it('does not right-align 申请人 lines in the document head (before 此致)', async () => {
+    const documentXml = await readDocumentXml(申请书, getPreset('legal'));
+    const headSigner = xmlParagraphWithText(documentXml, '申请人：张某某');
+    expect(headSigner).not.toMatch(/<w:jc\b[^>]*w:val="right"/);
+    expect(headSigner).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+  });
+
+  it('letter-style head 致某某单位 is flush left while following body keeps first-line indent', async () => {
+    const documentXml = await readDocumentXml([
+      '致某某市中级人民法院：',
+      '',
+      '现就贵院受理的合同纠纷一案陈述意见如下。',
+    ].join('\n'), getPreset('legal'));
+
+    const headParagraph = xmlParagraphWithText(documentXml, '致某某市中级人民法院：');
+    expect(headParagraph).not.toMatch(/<w:ind\b[^>]*w:firstLine=/);
+
+    const bodyParagraph = xmlParagraphWithText(documentXml, '现就贵院受理的合同纠纷一案陈述意见如下。');
+    expect(bodyParagraph).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+  });
+
+  it('Arabic-digit date in closing is also right-aligned', async () => {
+    const documentXml = await readDocumentXml([
+      '此致',
+      '',
+      '某某人民法院',
+      '',
+      '2026年7月10日',
+    ].join('\n'), getPreset('legal'));
+
+    const dateParagraph = xmlParagraphWithText(documentXml, '2026年7月10日');
+    expect(dateParagraph).toMatch(/<w:jc\b[^>]*w:val="right"/);
+  });
+});
+
+// 肖永吉案导出取证发现的三个缺陷（PRD: docs/plans/PRD-mindmap-ux-and-word-export.md 项 D）
+describe('legal export defects (H5/H6 井号、段前空格、法条引用样式)', () => {
+  it('renders H5/H6 headings as headings instead of literal # paragraphs', async () => {
+    const documentXml = await readDocumentXml([
+      '##### ① 核心争点',
+      '',
+      '###### A. 协议条款的文义',
+    ].join('\n'), getPreset('legal'));
+
+    const texts = documentXml.replace(/<[^>]+>/g, '');
+    expect(texts).not.toContain('#');
+    expect(texts).toContain('① 核心争点');
+    expect(texts).toContain('A. 协议条款的文义');
+    expect(documentXml).toMatch(/w:val="Heading5"/);
+    expect(documentXml).toMatch(/w:val="Heading6"/);
+  });
+
+  it('strips leading full-width/half-width spaces from paragraphs (indent comes from template only)', async () => {
+    const documentXml = await readDocumentXml([
+      '　全角空格开头的正文段落。',
+      '',
+      '  半角空格开头的正文段落。',
+    ].join('\n'), getPreset('legal'));
+
+    const fullWidth = xmlParagraphWithText(documentXml, '全角空格开头的正文段落。');
+    expect(fullWidth.replace(/<[^>]+>/g, '')).not.toMatch(/^[\s　]/);
+    // 首行缩进仍由模板控制（四号 14pt × 2 字符 = 560 twips）
+    expect(fullWidth).toMatch(/<w:ind\b[^>]*w:firstLine="560"/);
+
+    const halfWidth = xmlParagraphWithText(documentXml, '半角空格开头的正文段落。');
+    expect(halfWidth.replace(/<[^>]+>/g, '')).not.toMatch(/^\s/);
+  });
+
+  it('renders legal blockquotes (法条引用) without shading, in FangSong at readable size', async () => {
+    const documentXml = await readDocumentXml(
+      '> 《中华人民共和国民法典》第1191条第1款：用人单位的工作人员因执行工作任务造成他人损害的，由用人单位承担侵权责任。',
+      getPreset('legal'),
+    );
+
+    const quoteParagraph = xmlParagraphWithText(documentXml, '第1191条');
+    expect(quoteParagraph).not.toMatch(/<w:shd\b/);
+    expect(quoteParagraph).toMatch(/w:eastAsia="仿宋_GB2312"/);
+    // font_size 12pt = 24 half-points，不再是 9pt 小字
+    expect(quoteParagraph).toMatch(/<w:sz w:val="24"/);
+    // 左缩进保留以示引用（24pt = 480 twips）
+    expect(quoteParagraph).toMatch(/<w:ind\b[^>]*w:left="480"/);
+  });
+
+  it('keeps blockquote shading in non-legal presets untouched', async () => {
+    const documentXml = await readDocumentXml('> 引用一段说明文字。', getPreset('academic'));
+    const quoteParagraph = xmlParagraphWithText(documentXml, '引用一段说明文字。');
+    expect(quoteParagraph).toMatch(/<w:shd\b[^>]*w:fill="F5F5F5"/);
   });
 });

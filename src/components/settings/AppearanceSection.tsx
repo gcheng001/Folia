@@ -539,6 +539,23 @@ export function AppearanceSection({ onOpenLicense }: AppearanceSectionProps) {
 
       <div className="settings-row">
         <div>
+          <div className="settings-label">状态栏路径</div>
+          <div className="settings-desc">选择底部文件路径的显示方式。</div>
+        </div>
+        <select
+          className="settings-select"
+          aria-label="状态栏路径"
+          value={settings.statusBarPathStyle}
+          onChange={(e) => handleChange({ statusBarPathStyle: e.target.value as AppSettings['statusBarPathStyle'] })}
+        >
+          <option value="basename">仅文件名</option>
+          <option value="middle">中间省略</option>
+          <option value="full">完整路径</option>
+        </select>
+      </div>
+
+      <div className="settings-row">
+        <div>
           <div className="settings-label">{t('zoomLabel')}</div>
         </div>
         <select

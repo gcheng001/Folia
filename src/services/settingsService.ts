@@ -184,6 +184,8 @@ export interface AppSettings {
   /** ISS-188：磁盘文件外部修改时是否自动重新加载编辑器。默认开启；
    *  当前 tab 处于 dirty 时（用户有未保存改动）自动降级为提示，绝不静默覆盖。 */
   autoReloadExternalChanges: boolean;
+  /** 标签模式：multi 多标签（浏览器式）/ single 单标签（一次只留一个文档）。 */
+  tabMode: 'multi' | 'single';
   locale: AppLocale;
   // 导出
   exportPresetId: PresetId;
@@ -227,6 +229,7 @@ export interface AppSettings {
   /** ISS-191：已停用的自定义主题 id（内置主题不允许停用）。 */
   disabledThemePresetIds: string[];
   zoomLevel: number;
+  statusBarPathStyle: 'basename' | 'middle' | 'full';
 }
 
 const defaults: AppSettings = {
@@ -235,6 +238,7 @@ const defaults: AppSettings = {
   defaultEncoding: 'UTF-8',
   reopenLastFile: true,
   autoReloadExternalChanges: true,
+  tabMode: 'multi',
   locale: 'zh-CN',
   exportPresetId: 'legal',
   customExportPresets: {} as CustomPresetRegistry,
@@ -267,7 +271,16 @@ const defaults: AppSettings = {
   customThemePresets: [],
   disabledThemePresetIds: [],
   zoomLevel: 100,
+  statusBarPathStyle: 'middle',
 };
+
+function normalizeStatusBarPathStyle(value: unknown): AppSettings['statusBarPathStyle'] {
+  return value === 'basename' || value === 'full' ? value : 'middle';
+}
+
+function normalizeTabMode(value: unknown): AppSettings['tabMode'] {
+  return value === 'single' ? 'single' : 'multi';
+}
 
 function readStoredSettings(): Partial<AppSettings> {
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -777,6 +790,8 @@ export function getSettings(): AppSettings {
       previewLatinCustomFont: normalizeCustomFontName(stored.previewLatinCustomFont),
       previewHeadingCustomFont: normalizeCustomFontName(stored.previewHeadingCustomFont),
       tocAlwaysPinned: stored.tocAlwaysPinned === true,
+      statusBarPathStyle: normalizeStatusBarPathStyle(stored.statusBarPathStyle),
+      tabMode: normalizeTabMode(stored.tabMode),
     };
   } catch {
     return { ...defaults };
@@ -812,6 +827,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     ...current,
     ...patch,
     locale: normalizeLocale(patch.locale ?? current.locale),
+    statusBarPathStyle: normalizeStatusBarPathStyle(patch.statusBarPathStyle ?? current.statusBarPathStyle),
     fontDefaultsVersion: FONT_DEFAULTS_VERSION,
     previewFontFamily: normalizePreviewFontFamily(patch.previewFontFamily ?? current.previewFontFamily),
     previewChineseFontFamily: normalizePreviewChineseFontFamily(
@@ -848,6 +864,7 @@ export function updateSettings(patch: Partial<AppSettings>): AppSettings {
     themeId: normalizeThemeId(requestedThemeId, customThemePresets, disabledThemePresetIds),
     license,
     tocAlwaysPinned: (patch.tocAlwaysPinned ?? current.tocAlwaysPinned) === true,
+    tabMode: normalizeTabMode(patch.tabMode ?? current.tabMode),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
   emitSettingsChanged(merged);

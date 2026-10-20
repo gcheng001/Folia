@@ -30,6 +30,7 @@ function renderWithProvider(node: React.ReactElement): React.ReactElement {
 type VditorInstanceOptions = Record<string, unknown> & {
   after?: () => void;
   input?: (value: string) => void;
+  blur?: () => void;
 };
 
 type VditorConstructorCall = {
@@ -440,6 +441,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       // 模拟 input(value) 回调触发 sanitize
       await act(async () => {
         call.options.input?.('<svg viewBox="0 0 5 5"><rect width="5" height="5"/></svg>');
+        call.options.blur?.();
         await flushFrames();
       });
 
@@ -478,6 +480,7 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       await act(async () => {
         call.options.after?.();
         await flushMicrotasks();
+        await flushFrames();
       });
 
       const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre');
@@ -525,6 +528,12 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
             }),
           ),
         );
+    it('普通输入不清洗活 DOM，失焦后再清理危险属性', async () => {
+      let root: Root | null = null;
+
+      await act(async () => {
+        root = createRoot(host);
+        root.render(renderWithProvider(React.createElement(WysiwygEditorPane, { source: '', onChange: () => undefined })));
         await flushMicrotasks();
       });
 
@@ -687,6 +696,24 @@ describe('WysiwygEditorPane 内联 SVG 显示 + sanitize (ISS-168 编辑器部�
       expect(after!.rangeCount).toBeGreaterThan(0);
       const afterRange = after!.getRangeAt(0);
       expect(ir!.contains(afterRange.startContainer)).toBe(true);
+      const ir = call.host.querySelector<HTMLElement>('.vditor-ir pre')!;
+      ir.innerHTML = '<p data-block="0">正在编辑<img src="x" onerror="alert(1)"></p>';
+      const editingParagraph = ir.firstElementChild;
+      ir.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+
+      await act(async () => {
+        call.options.input?.('正在编辑');
+        await flushMicrotasks();
+      });
+      expect(ir.firstElementChild).toBe(editingParagraph);
+      expect(ir.querySelector('img')?.hasAttribute('onerror')).toBe(true);
+
+      expect(call.options.blur).toBeTypeOf('function');
+      await act(async () => {
+        call.options.blur?.();
+        await flushMicrotasks();
+      });
+      expect(ir.querySelector('img')?.hasAttribute('onerror')).toBe(false);
 
       await act(async () => {
         root?.unmount();
@@ -2320,6 +2347,49 @@ describe('WysiwygEditorPane 撤销/重做桥接 (ISS-228, Issue #186 Part A)', (
 
     await act(async () => {
       root.unmount();
+    it('鼠标点击（mouseup）后停顿也折叠展开的 IR marker（ISS-151 补充：井号/星号跳出）', async () => {
+      vi.useFakeTimers();
+      let root: Root | null = null;
+
+      try {
+        await act(async () => {
+          root = createRoot(host);
+          root.render(
+            renderWithProvider(
+              React.createElement(WysiwygEditorPane, {
+                source: '# 标题\n\n**加粗**\n',
+                onChange: () => undefined,
+              }),
+            ),
+          );
+          await vi.runAllTimersAsync();
+        });
+
+        expect(vditorCalls).toHaveLength(1);
+        const ir = vditorCalls[0].host.querySelector<HTMLElement>('.vditor-ir pre');
+        expect(ir).not.toBeNull();
+
+        // 模拟 Vditor IR：光标点进加粗节点后 marker 展开（--expand 挂上）
+        ir!.innerHTML = [
+          '<p data-block="0">',
+          '<span data-type="strong" class="vditor-ir__node vditor-ir__node--expand">',
+          '<span class="vditor-ir__marker">**</span>加粗<span class="vditor-ir__marker">**</span>',
+          '</span></p>',
+        ].join('');
+
+        // 只有 mouseup（无 keydown/input）——修复前没有任何折叠路径
+        await act(async () => {
+          ir!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          await vi.advanceTimersByTimeAsync(300); // > IR_MARKER_COLLAPSE_DELAY_MS(220)
+        });
+
+        expect(ir!.querySelector('.vditor-ir__node--expand')).toBeNull();
+      } finally {
+        await act(async () => {
+          root?.unmount();
+        });
+        vi.useRealTimers();
+      }
     });
   });
 });

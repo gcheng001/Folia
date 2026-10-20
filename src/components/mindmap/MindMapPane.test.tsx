@@ -1,0 +1,445 @@
+/**
+ * M-B 只读画布挂载测试：真实解析 hearing-realistic.md → 布局 → React Flow 渲染。
+ * ResizeObserver/DOMMatrix stub 理由同 MindMapSpike.test.tsx——jsdom 缺口，非
+ * 组件本身兼容性问题。
+ */
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { MindMapPane } from './MindMapPane';
+import realisticMd from '../../services/mindmap/__fixtures__/hearing-realistic.md?raw';
+
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+
+beforeAll(() => {
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (!g.ResizeObserver) g.ResizeObserver = ResizeObserverStub;
+  if (!g.DOMMatrix) {
+    g.DOMMatrix = class DOMMatrixStub {
+      constructor(..._args: unknown[]) {}
+      multiply(): this {
+        return this;
+      }
+    };
+  }
+});
+
+describe('MindMapPane (M-B 只读画布)', () => {
+  it('渲染庭审记录实战脑图，展示一级节点文本，不抛错', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    let thrown: unknown = null;
+    try {
+      act(() => {
+        root.render(createElement(MindMapPane, { markdown: realisticMd }));
+      });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).toBeNull();
+    expect(host.querySelector('.react-flow')).toBeTruthy();
+    expect(host.textContent).toContain('案件信息');
+    expect(host.textContent).toContain('诉讼请求');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('四点代理词在紧凑脑图中点击节点后显示该点完整正文', () => {
+    const host = document.createElement('div');
+    host.style.width = '1200px';
+    host.style.height = '900px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const markdown = [
+      '# 代理词',
+      '',
+      '## 第一节点',
+      '',
+      '第一段全部正文。',
+      '',
+      '## 第二节点',
+      '',
+      '第二段全部正文。',
+      '',
+      '## 第三节点',
+      '',
+      '第三段全部正文。',
+      '',
+      '## 第四节点',
+      '',
+      '第四段全部正文。',
+      '',
+    ].join('\n');
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown, fileName: '代理词.md' }));
+    });
+
+    expect(host.querySelector('[data-mindmap-node-body="true"]')).toBeNull();
+    expect(host.querySelector('[data-testid="mindmap-node-reader"]')?.textContent).toContain('第一段全部正文。');
+
+    const second = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '第二节点');
+    act(() => {
+      second?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    expect(host.querySelector('[data-testid="mindmap-node-reader"]')?.textContent).toContain('第二段全部正文。');
+    expect(host.querySelector('[data-testid="mindmap-node-reader"]')?.textContent).not.toContain('第一段全部正文。');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('节点不可拖拽/不可连接/不可选中（只读约束）', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown: '# 根\n\n## 子节点\n' }));
+    });
+
+    // React Flow 只读节点不带 draggable 类名
+    const node = host.querySelector('.react-flow__node');
+    expect(node).toBeTruthy();
+    expect(node?.className).not.toContain('draggable');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('双击节点文字后可直接增删文字，并将结果回写 Markdown', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 原文字\n',
+        onChange,
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '原文字');
+    expect(label).toBeTruthy();
+
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="编辑节点文字"]');
+    expect(input).toBeTruthy();
+    expect(input?.classList.contains('nodrag')).toBe(true);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, '修改后增加文字');
+      input?.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith('# 根\n\n## 修改后增加文字\n');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('双击正文段落节点可多行编辑，并只回写该自然段', () => {
+    const host = document.createElement('div');
+    host.style.width = '1000px';
+    host.style.height = '700px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+    const markdown = '# 根\n\n## 论点\n\n第一段。\n\n第二段。\n';
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown, onChange }));
+    });
+
+    const paragraph = Array.from(host.querySelectorAll('[data-mindmap-node-paragraph="true"]'))
+      .find((element) => element.textContent === '第一段。');
+    expect(paragraph).toBeTruthy();
+    act(() => {
+      paragraph?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+
+    const textarea = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="编辑正文段落"]');
+    expect(textarea).toBeTruthy();
+    expect(textarea?.classList.contains('nodrag')).toBe(true);
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+      valueSetter?.call(textarea, '第一段修改。\n补充一行。');
+      textarea?.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      textarea?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith('# 根\n\n## 论点\n\n第一段修改。\n补充一行。\n\n第二段。\n');
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('双击文件名虚拟根也能编辑，并在 Markdown 顶部落成真实 H1', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onChange = vi.fn();
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '开篇正文。\n\n## 第一部分\n',
+        fileName: '案件报告.md',
+        onChange,
+      }));
+    });
+
+    const rootLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '案件报告.md');
+    expect(rootLabel).toBeTruthy();
+
+    act(() => {
+      rootLabel?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    });
+
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="编辑节点文字"]');
+    expect(input).toBeTruthy();
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, '案件分析报告');
+      input?.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith('# 案件分析报告\n\n开篇正文。\n\n## 第一部分\n');
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('WKWebView 仅送达第二次 click(detail=2) 时也进入编辑', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        onChange: vi.fn(),
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    expect(label).toBeTruthy();
+
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+    });
+
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+    expect(document.activeElement).toBe(host.querySelector('input[aria-label="编辑节点文字"]'));
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('单击选中节点后按空格立即进入编辑，即使画布容器没有焦点', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        onChange: vi.fn(),
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+    });
+
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+    expect(document.activeElement).toBe(host.querySelector('input[aria-label="编辑节点文字"]'));
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('连续两次普通 click 同一节点时第二下直接进入编辑', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        onChange: vi.fn(),
+      }));
+    });
+
+    const label = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      label?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+    expect(document.activeElement).toBe(host.querySelector('input[aria-label="编辑节点文字"]'));
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('根节点按 Enter 新建子节点，普通节点按 Tab 新建下级并进入编辑', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    let markdown = '# 根\n\n## 已有节点\n';
+
+    const render = (): void => {
+      root.render(createElement(MindMapPane, {
+        markdown,
+        onChange: (next: string) => {
+          markdown = next;
+          render();
+        },
+      }));
+    };
+    act(render);
+
+    const rootLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '根');
+    act(() => {
+      rootLabel?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    expect(markdown).toMatch(/^## $/m);
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+
+    act(() => {
+      host.querySelector<HTMLInputElement>('input[aria-label="编辑节点文字"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    });
+
+    const existingLabel = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '已有节点');
+    act(() => {
+      existingLabel?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    });
+    expect(markdown).toContain('### ');
+    expect(host.querySelector('input[aria-label="编辑节点文字"]')).toBeTruthy();
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('默认经典树使用黑色根节点与浅灰圆角子节点', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, { markdown: '# 根\n\n## 子节点\n' }));
+    });
+
+    const rootText = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '根');
+    const childText = Array.from(host.querySelectorAll('.react-flow__node span'))
+      .find((element) => element.textContent === '子节点');
+    expect(rootText?.parentElement?.style.borderRadius).toBe('16px');
+    expect(rootText?.parentElement?.style.backgroundColor).toContain('var(--text');
+    expect(rootText?.parentElement?.style.color).toContain('var(--surface');
+    expect(childText?.parentElement?.style.borderRadius).toBe('12px');
+    expect(childText?.parentElement?.style.backgroundColor).toContain('color-mix');
+    expect(childText?.parentElement?.style.borderStyle).toBe('none');
+
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  it('可编辑脑图节点允许鼠标自由拖动', () => {
+    const host = document.createElement('div');
+    host.style.width = '800px';
+    host.style.height = '600px';
+    document.body.appendChild(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(createElement(MindMapPane, {
+        markdown: '# 根\n\n## 子节点\n',
+        filePath: '/tmp/drag-test.md',
+        onChange: vi.fn(),
+      }));
+    });
+    const node = host.querySelector('.react-flow__node');
+    expect(node?.className).toContain('draggable');
+    const visibleBox = Array.from(node?.querySelectorAll('span') ?? [])
+      .find((element) => element.textContent === '根')?.parentElement;
+    expect(visibleBox?.classList.contains('nodrag')).toBe(false);
+
+    act(() => root.unmount());
+    host.remove();
+  });
+});

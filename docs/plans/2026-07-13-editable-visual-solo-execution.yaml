@@ -1,0 +1,58 @@
+solo_execution:
+  owner: "Codex 当前任务"
+  delegation: false
+  multi_model_delivery: false
+  objective: "由同一个执行者连续完成 Folia 可编辑可视化升级，从实现、调试、回归到构建、安装和真机验收不做跨模型拆分。"
+  repository: "/Users/Apple/Folia-source"
+  branch: "gaocheng/v0.4-integration"
+  source_of_truth:
+    - "/Users/Apple/Folia-source/docs/plans/2026-07-13-complete-editable-visual-upgrade-plan.md"
+    - "/Users/Apple/Folia-source/docs/plans/2026-07-13-editable-visual-overnight-goal.yaml"
+    - "/Users/Apple/Folia-source/CONTEXT.md"
+    - "/Users/Apple/Folia-source/docs/adr/0007-folia-owns-final-skill-svg-layout.md"
+    - "/Users/Apple/Folia-source/docs/adr/0008-scene-model-is-editing-source-of-truth.md"
+    - "/Users/Apple/Folia-source/docs/adr/0009-legacy-svg-upgrade-preserves-appearance.md"
+    - "/Users/Apple/Folia-source/docs/adr/0010-editable-skill-svg-is-a-practical-diagram-editor.md"
+    - "/Users/Apple/Folia-source/docs/adr/0011-editable-svg-working-copy-and-history.md"
+    - "/Users/Apple/Folia-source/docs/adr/0012-diagram-edits-do-not-automatically-change-markdown.md"
+    - "/Users/Apple/Folia-source/docs/adr/0013-manual-edits-are-protected-from-ai.md"
+    - "/Users/Apple/Folia-source/docs/adr/0014-editable-visuals-must-pass-quality-check-before-export.md"
+    - "/Users/Apple/Folia-source/docs/adr/0015-editable-visuals-include-bounded-fact-checking.md"
+    - "/Users/Apple/Folia-source/docs/adr/0016-editable-save-and-sanitized-publishing-are-separate.md"
+    - "/Users/Apple/Folia-source/docs/adr/0017-editing-repair-and-export-are-local.md"
+    - "/Users/Apple/Folia-source/docs/adr/0018-editable-visuals-use-an-elastic-canvas.md"
+    - "/Users/Apple/Folia-source/docs/adr/0019-markdown-and-published-mindmaps-share-an-editing-core.md"
+    - "/Users/Apple/Folia-source/docs/adr/0020-visual-workbook-reuses-the-diagram-editing-core.md"
+    - "/Users/Apple/Folia-source/docs/adr/0021-comparison-mode-keeps-independent-save-streams.md"
+  required_outcomes:
+    - "重叠根因修复、旧 SVG 无损升级和完整实用编辑器交付。"
+    - "Markdown 脑图、一键可视化工作簿和成品图共用升级交付。"
+    - "左 Markdown 右图表的对照、快速更新、选区生成和后台队列交付。"
+    - "质量与事实检查、净化 SVG/PNG/PDF 导出交付。"
+    - "两份真实 SVG、全量测试、压力测试、生产构建和安装后真机验收通过。"
+  execution_rules:
+    - "不调用 cross-model-delivery，不把工作单元交给其他模型或子代理。"
+    - "同一执行者维护完整上下文、实现顺序、缺陷记录和回归结果。"
+    - "不中途向用户请求阶段审批；仅真正外部硬阻塞可以停止。"
+    - "每个阶段通过调试闭环和门禁后才继续；失败功能隐藏且目标不得虚报完成。"
+    - "不得推送、创建 PR、发布或部署。"
+  checks:
+    - "npm test"
+    - "npm run typecheck"
+    - "npm run lint"
+    - "npm run test:e2e"
+    - "cd src-tauri && cargo test --offline --lib"
+    - "npm run build"
+    - "npm run tauri:build:local"
+    - "生产候选 E2E 连续 3 次"
+    - "保存/历史各至少 100 轮，生成队列至少 50 组"
+    - "安装后的真实 Tauri 应用不少于 30 分钟稳定性点验"
+  authority:
+    local_dependency_install: true
+    local_build: true
+    package: true
+    install: true
+    push: false
+    pull_request: false
+    publish: false
+    deploy: false

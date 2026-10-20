@@ -2,7 +2,7 @@ import type { BuiltInPresetId, CustomPresetId, CustomPresetRegistry, PresetConfi
 
 const legal = {
   name: '法律文书',
-  description: '仿宋正文、1.5倍行距，标准法律文书格式',
+  description: '仿宋四号正文、二号标题，1.5倍行距，法律文书格式',
   page: {
     width: 21,
     height: 29.7,
@@ -12,19 +12,19 @@ const legal = {
     margin_right: 3.18,
   },
   fonts: {
-    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 12, color: '000000' },
+    default: { name: '仿宋_GB2312', ascii: 'Times New Roman', size: 14, color: '000000' },
   },
   titles: {
     // ISS-78：内置模板显式声明 headings 颜色为 000000，避免 docx 默认 Heading
     // 样式（2E74B5 / 1F4D78）透过未指定 <w:color> 的 run 渗透到正文/标题。
-    level1: { size: 15, bold: true, align: 'center', space_before: 0, space_after: 12, color: '000000' },
-    level2: { size: 12, bold: true, align: 'left', space_before: 12, space_after: 6, color: '000000' },
-    level3: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 6, color: '000000' },
-    level4: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3, color: '000000' },
-    // ISS-181 第二期：H5/H6。legal 正文字号 12pt，层级已到底，H5/H6 沿用 level4
-    // 的字号与加粗，仅收紧 spacing 区分层级。
-    level5: { size: 12, bold: true, align: 'left', space_before: 6, space_after: 3, color: '000000' },
-    level6: { size: 12, bold: true, align: 'left', space_before: 3, space_after: 3, color: '000000' },
+    // 字号/行距为个人定制（法律 Word 导出对齐文档排版：正文 14pt、1.5 倍行距）。
+    level1: { size: 22, bold: true, align: 'center', space_before: 0, space_after: 12, line_spacing: 1.5, color: '000000' },
+    level2: { size: 16, bold: true, align: 'left', indent: 2, space_before: 12, space_after: 6, line_spacing: 1.5, color: '000000' },
+    level3: { size: 14, bold: true, align: 'left', space_before: 6, space_after: 6, line_spacing: 1.5, color: '000000' },
+    level4: { size: 14, bold: true, align: 'left', space_before: 6, space_after: 3, line_spacing: 1.5, color: '000000' },
+    // ISS-181 第二期：H5/H6。沿用 level4 的字号与加粗，仅收紧 spacing 区分层级。
+    level5: { size: 14, bold: true, align: 'left', space_before: 6, space_after: 3, line_spacing: 1.5, color: '000000' },
+    level6: { size: 14, bold: true, align: 'left', space_before: 3, space_after: 3, line_spacing: 1.5, color: '000000' },
   },
   paragraph: { line_spacing: 1.5, first_line_indent: 2, align: 'justify' },
   page_number: {
@@ -56,7 +56,8 @@ const legal = {
     line_spacing: 1.2,
   },
   inline_code: { font: 'Consolas', size: 10, color: 'C7254E' },
-  quote: { background_color: 'EAEAEA', left_indent: 24, font_size: 9, line_spacing: 1.2 },
+  // 法条引用：无底纹、小四仿宋、行距与正文一致（律师用户实测反馈：灰底 9pt 小字像代码块）
+  quote: { left_indent: 24, font_size: 12, line_spacing: 1.5 },
   math: { font: 'Times New Roman', size: 12, italic: true, color: '0000FF' },
   image: { display_ratio: 0.92, max_width_cm: 14.2, target_dpi: 260, show_caption: false },
   horizontal_rule: { character: '—', repeat_count: 30, font: '仿宋_GB2312', size: 10, color: 'CCCCCC', alignment: 'center' },

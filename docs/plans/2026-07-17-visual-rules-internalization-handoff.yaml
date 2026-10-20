@@ -1,0 +1,55 @@
+delivery_handoff:
+  outcome: "把 legal-visualization Skill 第二阶段的可内化知识——编排规则、视觉常量、决策表、编排手册——从上游 references/ 提炼固化为 Folia 随版本发布的资源，并把『颜色含义、缺失事实显式标注、线型状态绑定、3S 精简、一图一观点』等编排约束注入 build_skill_visual_prompt v4，使 Folia 在保持零工具沙箱和已有四种图类型的前提下，让生成与渲染在视觉语义层面对齐上游 drawio 默认风格，而不必真去生成 .drawio。"
+  follows_up: "docs/plans/2026-07-17-scene-routing-internalization-handoff.yaml"
+  artifacts:
+    - "/Users/Apple/Folia-source/src-tauri/skills/legal-visualization/scene-routing-v1.md（既有，本次只在头部加一行 cross-link 到第二阶段资源）"
+    - "/Users/Apple/Folia-source/src-tauri/skills/legal-visualization/composition-rules-v1.md（新增）"
+    - "/Users/Apple/Folia-source/src-tauri/skills/legal-visualization/visual-constants-v1.md（新增）"
+    - "/Users/Apple/Folia-source/src-tauri/skills/legal-visualization/chart-decision-tree-v1.md（新增）"
+    - "/Users/Apple/Folia-source/src-tauri/skills/legal-visualization/composition-playbook-v1.md（新增）"
+    - "/Users/Apple/Folia-source/src-tauri/src/lib.rs（build_skill_visual_prompt v4 + 资源文件 include 列表 + 视觉常量注入 lib 端校验）"
+    - "/Users/Apple/Folia-source/src/services/visualization/legalVisuals.ts（新增：把上游调色板/字体/节点尺寸/状态线型翻译为 Folia 端可消费的常量，供布局、渲染、CSS 共用）"
+    - "/Users/Apple/Folia-source/src/services/visualization/layout.ts（按节点数 1-7/8-15/16+ 三档吃上游节点尺寸常量；中文宽度公式 chars*16px；原点偏移 60/80）"
+    - "/Users/Apple/Folia-source/src/services/visualization/layout.test.ts（新增）"
+    - "/Users/Apple/Folia-source/src/components/visualization/VisualRenderers.tsx（边样式按 status 映射：confirmed=实线、disputed=虚线+accent、asserted=虚线+primary、inferred=点线、missing=灰；标题栏/水印按一图一观点约束）"
+    - "/Users/Apple/Folia-source/src/styles/app.css（新增 .visual-legal-* 系列类：节点/边/容器配色直接引用 legalVisuals.ts 暴露的 CSS 变量映射）"
+    - "/Users/Apple/Folia-source/src/components/visualization/VisualWorkbookPane.tsx（场景标签/选型理由副栏追加『图表观点』一行，来源 build_skill_visual_prompt v4 要求模型输出 main_view 字段）"
+    - "/Users/Apple/Folia-source/src/services/diagram/structure.ts + types.ts（relations[].status 字段允许 confirmed/disputed/asserted/inferred/missing 五态，缺省按 confirmed 处理）"
+    - "/Users/Apple/Folia-source/CHANGELOG.md（[Unreleased] → Changed 加本次条目）"
+    - "/Users/Apple/Folia-source/docs/validation/visual-rules/（新增：a) 上游编排规则还原对照表 6 例；b) 3 份真实法律文档人工点验视觉语义记录）"
+  acceptance:
+    - "5 份随版本发布的资源文件（既有 scene-routing-v1.md + 新增 4 份）头部均记录上游来源仓库与版本（v0.6.14，commit 48aedb4a62a15b338f0ed86976401c0a94d0d3a2）、抽取自 references/ 的哪些章节、抽取人/抽取日；运行时只读这些文件，不依赖任何已安装 Skill。"
+    - "build_skill_visual_prompt 升级为 v4：在 v3 路由基础上叠加 5 条编排约束——一图一观点、颜色含义、缺失事实显式标注、线型状态绑定、3S 精简，并要求模型在结构 JSON 里同时输出 main_view（一句话图表观点）。v4 与 v3 同源、向后兼容（v3 旧结构仍可被解析，但 routing 字段为空时按已有失败路径处理）。"
+    - "canonical_visual_structure 校验扩展：relations[].status 必为 5 态之一或缺省（=confirmed）；节点新增 main_view 字段为可选；status 与线型/颜色的语义绑定在 prompt 中明确，校验只查字段合法性，不强制 AI 选哪一态。"
+    - "沙箱契约不变：子进程仍以零工具权限 spawn claude -p，仅从 stdout 收结构化文本；源文档继续以 JSON 编码作为数据注入；新增提示词增量被控制在 600 词以内，避免把沙箱涨到不稳定的体量。"
+    - "视觉常量翻译为 Folia 端 legalVisuals.ts：调色板 12 色 + 字体 5 档 + 节点尺寸 3 档（1-7/8-15/16+）+ 5 态线型 + 中文宽度公式（chars*16px，最小宽×1.3，最大 350px）+ 原点偏移 (60,80)。所有数值与上游 references/legal-visual-constants.md 一一对应，并附对照注释。"
+    - "layout.ts 在节点数变更后读 visual-constants-v1.md 的三档尺寸常量，不再硬编码；新增中文宽度公式；原点偏移改 (60,80)。保留现有 ELK/structureToScene 路径不变，只替换参数输入。"
+    - "VisualRenderers.tsx 渲染时按 relation.status 选 stroke/颜色/标签前缀（disputed→『争议』、asserted→『主张』、inferred→『推定』、missing→『待补充』）；确认关系用实线、深色；视觉常量走 CSS 变量，与上游色板对齐。"
+    - "VisualWorkbookPane 在场景标签下方显示 main_view 字段（截断 40 字），与 selection_reason 共存；用户能看出选了什么场景、为什么选、这张图要表达什么。"
+    - "新增 layout.test.ts 覆盖：节点数边界（6/8/15/16）触发的尺寸档切换；中文宽度公式（短/中/长/超长 → 触发最小宽×1.3 与 350px 上限）；原点偏移；status 五态到 CSS class 的映射（与视觉常量对照）。"
+    - "新增 docs/validation/visual-rules/README.md：从上游 scene-composition-playbook 选 6 例典型编排（借款合同主体不一致 → 三线关系图、票据贴现责任 → 流程图+资金流向、工期延误 → 分层时间轴、股权变动 → 前后对比、隐名股东 → 四层关系、争议路径选择 → 多路径对比）逐条核对 Folia 端 layout.ts+渲染+CSS 是否落实；同时在 3 份真实法律文档上点验视觉语义（颜色含义、缺失标注、状态线型）。"
+    - "CHANGELOG.md 在 [Unreleased] → Changed 顶部补一条本次条目，注明：来源仓库与版本、内化清单、与首次 handoff 的接力关系、本次仍 deferred 的部分。"
+    - "所有既有测试与新增单元测试通过；typecheck/eslint 无错；cargo test 通过。"
+  out_of_scope:
+    - "本阶段仍不开放全权限 Skill 通道、不生成 .drawio 成品（ADR-0022 持续生效）。"
+    - "本阶段仍不蒸馏上游 241 个业务场景库逐条落模板——按视图家族分批进入第三/第四阶段；本阶段只在编排手册与决策表中抽取与四种图类型强相关的 6 例编排套路作为点验样本。"
+    - "本阶段不引入 drawio/Python 依赖，不在运行时依赖 legal-skills 本地安装，不新增视图家族或渲染类型。"
+    - "本阶段不重做 ELK 布局算法或 diagramCore 校验逻辑（既有结构已承载 status 字段扩展；不破坏现有测试）。"
+    - "本阶段不调整抽取规格、视图路由器、沙箱 spawn 参数、模板生成路径——只往现有路径上叠加视觉语义层。"
+  repository: "/Users/Apple/Folia-source"
+  target_branch: "gaocheng/v0.4-integration"
+  checks:
+    - "npm test"
+    - "npm run typecheck"
+    - "npx eslint <touched-files> --config config/eslint.config.js"
+    - "cd src-tauri && cargo test --offline --lib"
+  authority:
+    local_build: true
+    package: false
+    install: false
+    push: false
+    pull_request: false
+    publish: false
+    deploy: false
+  routing_overrides: {}
+  budget_overrides: {}

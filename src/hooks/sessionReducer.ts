@@ -12,14 +12,29 @@ export function makeTabFromFile(file: OpenedFile, isPlaceholder = false): Tab {
   return { id: newTabId(), file, editorMode: 'wysiwyg', rightPanelMode: 'none', draftPersisted: true, isPlaceholder };
 }
 
+function normalizedDocumentPath(path: string | undefined): string | null {
+  const normalized = path?.trim();
+  return normalized ? normalized : null;
+}
+
+function findTabByDocumentPath(tabs: Tab[], file: OpenedFile): Tab | undefined {
+  const path = normalizedDocumentPath(file.path);
+  if (!path) return undefined;
+  return tabs.find((tab) => normalizedDocumentPath(tab.file.path) === path);
+}
+
 /** 启动引导：有持久化 tabs 则恢复（修正失效的 activeTabId），否则给一个空占位标签保证编辑器可用。 */
 export function bootstrapSession(loaded: SessionState): SessionState {
+  // 兼容旧持久化（无 split 字段）：补默认值。
+  const splitTabId = loaded.splitTabId ?? null;
   if (loaded.tabs.length > 0) {
     const activeId = loaded.tabs.some((t) => t.id === loaded.activeTabId) ? loaded.activeTabId : loaded.tabs[0].id;
-    return { ...loaded, activeTabId: activeId };
+    // splitTabId 可能指向已不存在的 tab（上次会话残留 / 旧版数据），normalize 一次防悬空。
+    const validSplitId = splitTabId && loaded.tabs.some((t) => t.id === splitTabId) ? splitTabId : null;
+    return { ...loaded, activeTabId: activeId, splitTabId: validSplitId, splitView: validSplitId ? loaded.splitView ?? false : false };
   }
   const placeholder = makeTabFromFile(createEmptyFile(), true);
-  return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles };
+  return { tabs: [placeholder], activeTabId: placeholder.id, recentFiles: loaded.recentFiles, splitTabId: null, splitView: false };
 }
 
 export function bootstrapSessionForWindow(
@@ -38,17 +53,24 @@ export function bootstrapSessionForWindow(
   const wanted = new Set(initialTabIds);
   const tabs = loaded.tabs.filter((tab) => wanted.has(tab.id));
   if (tabs.length === 0) {
-    return bootstrapSession({ tabs: [], activeTabId: '', recentFiles: loaded.recentFiles });
+    return bootstrapSession({
+      tabs: [],
+      activeTabId: '',
+      recentFiles: loaded.recentFiles,
+      splitTabId: null,
+      splitView: false,
+    });
   }
 
   const activeTabId = tabs.some((tab) => tab.id === loaded.activeTabId) ? loaded.activeTabId : tabs[0].id;
-  return { tabs, activeTabId, recentFiles: loaded.recentFiles };
+  return { tabs, activeTabId, recentFiles: loaded.recentFiles, splitTabId: null, splitView: false };
 }
 
 export type SessionAction =
-  | { type: 'openInNewTab'; file: OpenedFile }
+  | { type: 'openInNewTab'; file: OpenedFile; mode?: 'multi' | 'single' }
   // ISS-88：TabBar「+」专用——新增一个占位标签（欢迎页状态），不携带文件。
   | { type: 'newBlankTab' }
+  | { type: 'openInSplit'; file: OpenedFile; sourceTabId: string }
   | { type: 'switchTab'; id: string }
   | { type: 'closeTab'; id: string; confirmed: boolean }
   | { type: 'closeOthers'; id: string }
@@ -57,6 +79,7 @@ export type SessionAction =
   | { type: 'updateFile'; id: string; updater: (f: OpenedFile) => OpenedFile }
   | { type: 'replaceFileIfUnchanged'; id: string; expected: OpenedFile; file: OpenedFile }
   | { type: 'updateActiveFile'; updater: (f: OpenedFile) => OpenedFile }
+  | { type: 'updateTabFile'; id: string; updater: (f: OpenedFile) => OpenedFile }
   | { type: 'updateActiveTabMeta'; meta: Partial<Pick<Tab, 'editorMode' | 'rightPanelMode'>> }
   | { type: 'recordRecentFile'; file: OpenedFile }
   | { type: 'removeRecentFile'; path: string }
@@ -69,11 +92,51 @@ export type SessionAction =
   // DEC-110：`tearOffTab` action 已删除（仅是占位 no-op，未被任何 UI 调用）。
   | { type: 'removeTabById'; id: string }
   | { type: 'receiveTab'; tab: Tab }
-  | { type: 'windowClosed'; remainingTabIds: string[]; tabsById: Record<string, Tab> };
+  | { type: 'windowClosed'; remainingTabIds: string[]; tabsById: Record<string, Tab> }
+  // 窗口内分屏（split-view）：
+  // - toggleSplit 切换分屏开关；关闭时清 splitTabId。
+  // - setSplitTab 把某 tab 设为右侧分屏 tab（拖拽或按钮触发）。
+  // - closeSplit 关闭分屏（不清 tab，tab 仍在 tabs[]）。
+  // - updateSplitTabFile 更新分屏 tab 内容（右侧编辑器编辑）。
+  | { type: 'toggleSplit' }
+  | { type: 'setSplitTab'; id: string }
+  | { type: 'closeSplit' }
+  | { type: 'updateSplitTabFile'; updater: (f: OpenedFile) => OpenedFile };
 
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
+  const next = reduceInternal(state, action);
+  // 不变式：splitTabId 必须指向现存 tab。删除 tab 的 case 可能留下悬空 splitTabId，
+  // 统一在出口 normalize（关闭分屏），避免右侧渲染一个不存在的 tab。
+  if (next.splitTabId && !next.tabs.some((t) => t.id === next.splitTabId)) {
+    return { ...next, splitTabId: null, splitView: false };
+  }
+  return next;
+}
+
+function reduceInternal(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case 'openInNewTab': {
+      const existing = findTabByDocumentPath(state.tabs, action.file);
+      // 单标签模式：始终只保留一个 tab（替换当前），分屏清空。
+      // dirty 提示由 useSession 在 dispatch 前处理，reducer 只管执行替换。
+      if (action.mode === 'single') {
+        const target = existing ?? makeTabFromFile(action.file);
+        return {
+          ...state,
+          tabs: [target],
+          activeTabId: target.id,
+          splitTabId: null,
+          splitView: false,
+        };
+      }
+      if (existing) {
+        return {
+          ...state,
+          activeTabId: existing.id,
+          splitTabId: state.splitTabId === existing.id ? null : state.splitTabId,
+          splitView: state.splitTabId === existing.id ? false : state.splitView,
+        };
+      }
       const active = state.tabs.find((t) => t.id === state.activeTabId);
       // 当前 active 是干净占位标签时替换它，避免占位标签累积成「未命名」空标签（I-1）。
       const replaceActivePlaceholder = !!active?.isPlaceholder && !active.file.dirty;
@@ -102,6 +165,22 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         tabs = tabs.filter((_, i) => i !== idx);
       }
       return { ...state, tabs, activeTabId: placeholder.id };
+    }
+    case 'openInSplit': {
+      if (!state.tabs.some((tab) => tab.id === action.sourceTabId)) return state;
+      const existing = findTabByDocumentPath(state.tabs, action.file);
+      if (existing) {
+        if (existing.id === action.sourceTabId) return state;
+        return { ...state, activeTabId: action.sourceTabId, splitTabId: existing.id, splitView: true };
+      }
+      const newTab = makeTabFromFile(action.file);
+      let tabs = [...state.tabs, newTab];
+      while (tabs.length > MAX_TABS) {
+        const index = tabs.findIndex((tab) => tab.id !== newTab.id && tab.id !== action.sourceTabId && !tab.file.dirty);
+        if (index === -1) break;
+        tabs = tabs.filter((_, tabIndex) => tabIndex !== index);
+      }
+      return { ...state, tabs, activeTabId: action.sourceTabId, splitTabId: newTab.id, splitView: true };
     }
     case 'switchTab':
       return state.tabs.some((t) => t.id === action.id) ? { ...state, activeTabId: action.id } : state;
@@ -157,6 +236,11 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         ...state,
         tabs: state.tabs.map((t) => (t.id === state.activeTabId ? { ...t, file: action.updater(t.file) } : t)),
       };
+    case 'updateTabFile':
+      return {
+        ...state,
+        tabs: state.tabs.map((tab) => tab.id === action.id ? { ...tab, file: action.updater(tab.file) } : tab),
+      };
     case 'updateActiveTabMeta':
       return {
         ...state,
@@ -206,6 +290,22 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (newTabs.length === 0) return state;
       return { ...state, tabs: [...state.tabs, ...newTabs], activeTabId: newTabs[0].id };
     }
+    // ──────── 窗口内分屏（split-view）────────
+    case 'toggleSplit':
+      // 关闭分屏时清 splitTabId；开启时保留既有 splitTabId（若已设）。
+      return { ...state, splitView: !state.splitView, splitTabId: state.splitView ? null : state.splitTabId };
+    case 'setSplitTab':
+      // 仅允许设为现存 tab；splitTab 不能等于 activeTabId（右侧显示同一个无意义）。
+      if (!state.tabs.some((t) => t.id === action.id) || action.id === state.activeTabId) return state;
+      return { ...state, splitTabId: action.id, splitView: true };
+    case 'closeSplit':
+      return { ...state, splitTabId: null, splitView: false };
+    case 'updateSplitTabFile':
+      if (!state.splitTabId) return state;
+      return {
+        ...state,
+        tabs: state.tabs.map((t) => (t.id === state.splitTabId ? { ...t, file: action.updater(t.file) } : t)),
+      };
     default:
       return state;
   }

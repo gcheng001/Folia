@@ -4,6 +4,7 @@ import {
   loadSession,
   saveSession,
   clearSession,
+  reconcilePersistedDirtyFile,
   SESSION_STORAGE_KEY,
   SESSION_PERSIST_MAX_BYTES,
 } from './sessionStore';
@@ -63,7 +64,7 @@ function makeDocxTab(id: string, docxHtml: string): SessionState['tabs'][number]
 }
 
 function emptySession(): SessionState {
-  return { tabs: [], activeTabId: '', recentFiles: [] };
+  return { tabs: [], activeTabId: '', recentFiles: [], splitTabId: null, splitView: false };
 }
 
 beforeEach(() => { localStorage.clear(); });
@@ -79,6 +80,8 @@ describe('sessionStore.loadSession', () => {
       tabs: [makeTab('a')],
       activeTabId: 'a',
       recentFiles: [{ path: '/tmp/a.md', name: 'a.md', openedAt: 1000 }],
+      splitTabId: null,
+      splitView: false,
     };
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ version: 1, ...session }));
     expect(loadSession()).toEqual(session);
@@ -97,7 +100,7 @@ describe('sessionStore.loadSession', () => {
 
 describe('sessionStore.saveSession', () => {
   it('正常写入并可读回', () => {
-    const session: SessionState = { tabs: [makeTab('a')], activeTabId: 'a', recentFiles: [] };
+    const session: SessionState = { tabs: [makeTab('a')], activeTabId: 'a', recentFiles: [], splitTabId: null, splitView: false };
     saveSession(session);
     const raw = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)!) as PersistedSession;
     expect(raw.version).toBe(1);
@@ -204,5 +207,17 @@ describe('sessionStore.clearSession', () => {
     localStorage.setItem(SESSION_STORAGE_KEY, '{}');
     clearSession();
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('sessionStore.reconcilePersistedDirtyFile', () => {
+  it('磁盘与草稿一致时清除保存即退出留下的假 dirty', () => {
+    const file = { ...createEmptyFile(), path: '/tmp/a.md', content: '已保存', lastSavedContent: '旧内容', dirty: true };
+    expect(reconcilePersistedDirtyFile(file, '已保存')).toMatchObject({ dirty: false, lastSavedContent: '已保存' });
+  });
+
+  it('磁盘与草稿不一致时保留真正未保存的内容', () => {
+    const file = { ...createEmptyFile(), path: '/tmp/a.md', content: '未保存草稿', lastSavedContent: '磁盘内容', dirty: true };
+    expect(reconcilePersistedDirtyFile(file, '磁盘内容')).toBe(file);
   });
 });
