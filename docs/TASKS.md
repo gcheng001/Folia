@@ -200,6 +200,13 @@
 - **方向（待排期）:** 常驻隐藏的每标签编辑器实例或序列化历史栈迁移；须与 DEC-147 的按标签隔离挂载动机、多标签内存占用一起权衡，属架构项，不在 ISS-228 顺带处理。
 - **状态:** 已登记待排期。
 
+#### 🔧 ISS-232 外接 skill 上游同步排查（2026-10-20 全量核对；仅 legal-visualization 有待决策更新）
+
+- **排查结论:** ①`html-anything`（nexu-io/html-anything，localhost:3000 集成）本地落后 16 提交，已于 2026-10-20 rebase 同步（Folia 导入监听定制提交保留为 87de317），并修复 `~/.local/bin/html-anything-update.sh` 的 `--ff-only` 永败问题（改 `--rebase`，备份 `.bak-20261020`）；②`baoyu-diagram`（JimLiu/baoyu-skills）上游仍为 1.117.3，与 Folia 锁定版一致，无需更新；③`md2word`（cat-xierluo/legal-skills）上游仍为 1.3.8，SKILL.md 逐字一致，无需更新；④`legal-visualization` 上游 v0.6.14 → v0.8.2（2026-07-28），有实质变更，见下；⑤doocs/md（微信预览 CSS 基线）活跃但 Folia 只取最小快照，无实质影响。
+- **legal-visualization 0.8.x 变更要点:** 0.8.0 声明式视觉角色 + 形状注册表；0.8.1 形状策略收敛回统一圆角矩形（语义改用线型/配色/描边三维度区分）；0.8.2 视觉角色编译器 + `client_report`/`court_submit`/`lawyer_workpaper` 三主题 + 机器可读注册表；取消「被告默认虚线、原告默认高强调」立场预设；scene-routing-guide 增「模板绑定与回退」、composition-rules 增「主图+附图」拆图原则。
+- **待决策:** 上游 0.8.x 主体是其 draw.io 渲染管线机制，与 Folia 自有 SVG 引擎不直接对应；值得评估内化的是「主图+附图拆图原则」「立场预设取消」「线型/配色/强调三维度语义」三点是否更新进 `src-tauri/skills/legal-visualization/` 的 v1 知识文件（现为 v0.6.14 内化，`THIRD_PARTY_LICENSES` 版本记录随内化版本联动）。
+- **状态:** 已排查完毕，内化决策待用户拍板。
+
 #### ✅ ISS-220 固定大纲宽度可调节 + 「总是固定大纲」双入口（原 #166，maintainer 承接 PR #171，2026-09-19 squash merge 40631c5；review REQUEST_CHANGES 双入口拍板→承接整合，改号 ISS-220/DEC-145、拆出版本号切版提交；CI 三绿 + maintainer 本地 vitest 失败集合与 main 逐条一致 + TOC e2e 子集 7/7；WKWebView 真机拖拽手感 NOT_VERIFIED 移交，详见 DEC-145）
 
 - **需求:** 用户反馈①固定态大纲左栏固定 260px 不可调；②希望「总是固定大纲」有设置页入口。maintainer 拍板：面板内开关保留，与设置页开关双入口并存（撤回原 PR 的「面板内开关移除」，理由见 DEC-145）。
