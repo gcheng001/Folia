@@ -35,12 +35,12 @@ export interface CloseOptions {
  * 多标签会话 hook。状态转换走纯函数 sessionReducer（已单测覆盖），
  * 本 hook 负责：初始化（启动恢复）、debounce 持久化草稿、派生 activeFile/editorMode 等。
  */
-export function useSession(options?: { confirmDirty?: () => boolean }) {
+export function useSession(options?: { confirmDirty?: () => boolean; reopenLastFile?: boolean }) {
   const settings = useSettings();
   const [state, reactDispatch] = useReducer(sessionReducer, undefined, () => {
     const windowLabel = detectCurrentWindowLabel();
     const initialTabIds = detectCurrentWindowTabIds();
-    return bootstrapSessionForWindow(loadSession(), windowLabel, initialTabIds);
+    return bootstrapSessionForWindow(loadSession(), windowLabel, initialTabIds, options?.reopenLastFile ?? true);
   });
 
   // 始终持有最新 state，供卸载/关窗时的同步 flush 读取（避免闭包时效问题）。

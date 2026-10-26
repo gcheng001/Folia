@@ -26,6 +26,8 @@ import {
 } from '../services/mediaInsertionService';
 import { applyWithSuppression } from '../services/dirtySuppression';
 import type { EditorHistoryApi } from '../types/editor';
+import { installCjkStrongIrCompatibility, renderCjkStrongInIr } from '../services/cjkStrongCompatibility';
+import { installHeadingInputBoundary } from '../services/headingInputBoundary';
 
 type WysiwygEditorPaneProps = {
   source: string;
@@ -160,6 +162,20 @@ function collapseExpandedMarkers(editor: import('vditor').default | null): void 
   });
 }
 
+const INLINE_MARKER_SELECTOR = [
+  '[data-type="strong"]',
+  '[data-type="em"]',
+  '[data-type="s"]',
+  '[data-type="code"]',
+].map((selector) => `${selector}.vditor-ir__node--expand`).join(', ');
+
+function collapseInlineMarkers(editor: import('vditor').default | null): void {
+  if (!editor) return;
+  getIrElement(editor)?.querySelectorAll(INLINE_MARKER_SELECTOR).forEach((node) => {
+    node.classList.remove('vditor-ir__node--expand');
+  });
+}
+
 /**
  * ISS-76：标题节点的 marker（`# `）位于文本之前；Vditor 在用户输入/方向键
  * 时给标题节点加 `vditor-ir__node--expand`，CSS 把 marker 从 0 宽渐变到
@@ -216,54 +232,52 @@ function scheduleImmediateHeadingCollapse(
 }
 
 /**
- * ISS-106：标题节点方向键光标漂移的根治守卫。
- *
- * 背景：scheduleImmediateHeadingCollapse 用 RAF 在 keydown/input 后的下一帧
- * 移除标题节点的 vditor-ir__node--expand。但方向键移动光标时，Vditor 是在
- * keydown 之后的「异步 selectionchange」里才给新光标所在标题节点加 --expand
- * （不同于 input 路径：input 时 Vditor 同步移除/加回 --expand，RAF 能稳定捕捉）。
- * RAF 注册于 keydown 同步路径，往往跑在异步 selectionchange 之前——此时标题
- * 节点尚未被加 --expand，RAF 的 querySelectorAll 查不到，移除了个寂寞；随后
- * selectionchange 才给标题加 --expand，marker `# ` 经 CSS 150ms transition
- * （vditor index.css:1528）从 0 宽渐变到可见宽，整段标题文本向右偏移，光标视觉
- * 向后漂移一格再复位（ISS-106 用户报告的瞬时跳动）。
- *
- * 修法：用 MutationObserver 监听 IR DOM 的 class 变化，一旦标题节点（h1-h6）
- * 被加上 vditor-ir__node--expand，立即移除。Observer 回调在 microtask 里执行，
- * 在「加 --expand 的那个 task」结束后、浏览器下一次渲染前跑——无论 Vditor 是在
- * 同步路径还是异步 selectionchange 里加 --expand，都能在用户看到这一帧之前把
- * --expand 撤掉。加/移发生在同一渲染帧内、中间无 paint，CSS transition 根本不
- * 触发，marker 压根没展开过。时序无关，不再依赖「RAF 必须晚于 selectionchange」
- * 的脆弱假设。
- *
- * 与现有折叠机制并存：collapseTimerRef（220ms，collapseExpandedMarkers 折叠所有
- * --expand 节点）继续负责粗体/斜体等 marker 的展开→折叠 UX（marker 在文本两侧，
- * 展开不造成光标位移）；scheduleImmediateHeadingCollapse（RAF，querySelectorAll 仅
- * h1-h6）现作为本守卫的次级兜底保留——observer 在 microtask 移除必先于 RAF 的下一帧，
- * 多数情况 RAF 的 query 已查不到 --expand。本守卫只针对标题节点（标题 marker `# `
- * 在文本之前，展开只会造成漂移，无 UX 价值）。移除 --expand 会触发新的 class mutation，
- * 但回调里 classList.contains 检查保证不会无限循环（同一节点移除后不再命中）。
- *
- * 返回 disconnect 函数：init effect cleanup 调用，避免 editor.destroy 后操作
- * 已分离的 DOM。
+ * 标题标记折叠守卫：Vditor 可给已有标题添加展开 class，也可由 Lute Spin
+ * 整块替换为已带该 class 的新标题。分别监听 attributes 与 childList，
+ * 在 mutation microtask 中清理标题展开状态，不依赖后续 input/RAF 回调。
+ * 不据此宣称所有输入位置问题已修；隐藏 marker 的编辑边界另行处理。
+ * 原行内 220ms 折叠回调与 RAF 兜底保持，代码/HTML/公式块不受此扩展影响。
+ * disconnect 由组件卸载调用，避免继续处理已分离的 DOM。
  */
-function setupHeadingExpandGuard(ir: HTMLElement): () => void {
+function setupHeadingExpandGuard(ir: HTMLElement, onExpandAdded?: () => void): () => void {
   const HEADING_EXPAND_SELECTOR =
     'h1.vditor-ir__node--expand, h2.vditor-ir__node--expand, h3.vditor-ir__node--expand, '
     + 'h4.vditor-ir__node--expand, h5.vditor-ir__node--expand, h6.vditor-ir__node--expand';
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      // #211: Spin can replace a heading with a new, already-expanded node.
+      // That is a childList mutation, not a later class attribute change.
+      if (mutation.type === 'childList') {
+        for (const node of mutation.addedNodes) {
+          // Adopted nodes may come from another document/realm.
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          const added = node as Element;
+          if (added.matches(HEADING_EXPAND_SELECTOR)) {
+            added.classList.remove('vditor-ir__node--expand');
+          }
+          added.querySelectorAll(HEADING_EXPAND_SELECTOR).forEach((heading) => {
+            heading.classList.remove('vditor-ir__node--expand');
+          });
+        }
+        continue;
+      }
       if (mutation.type !== 'attributes' || mutation.attributeName !== 'class') continue;
       const el = mutation.target;
       if (!(el instanceof Element)) continue;
+      if (!el.classList.contains('vditor-ir__node--expand')) continue;
+      const isHeading = /^H[1-6]$/.test(el.tagName);
+      // Only inline decorations auto-collapse after a click. Block markers
+      // expose editable code/HTML/math source and must remain expanded.
+      if (onExpandAdded && el.matches(INLINE_MARKER_SELECTOR)) {
+        onExpandAdded();
+      }
       // 仅处理标题节点：tagName H1-H6 且当前带 --expand
-      if (!/^H[1-6]$/.test(el.tagName)) continue;
-      if (el.classList.contains('vditor-ir__node--expand')) {
+      if (isHeading) {
         el.classList.remove('vditor-ir__node--expand');
       }
     }
   });
-  observer.observe(ir, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  observer.observe(ir, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   // 挂载时同步清理一次已有 --expand（防御性，覆盖编辑器重建时残留的展开态）
   ir.querySelectorAll(HEADING_EXPAND_SELECTOR).forEach((node) => {
     node.classList.remove('vditor-ir__node--expand');
@@ -1163,6 +1177,19 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
         after() {
           if (cancelled) return;
 
+          // #202: install on this instance only; never enable Protyle globally.
+          // Rebuild the initial undo baseline only if its ordinary text needs
+          // compatibility rendering. No source edit or dirty notification.
+          const lute = editor.vditor.lute;
+          if (lute && installCjkStrongIrCompatibility(lute)) {
+            const ir = getIrElement(editor);
+            if (ir && renderCjkStrongInIr(ir.innerHTML) !== ir.innerHTML) {
+              // Native setValue uses enableInput:false. Do not open a dirty
+              // suppression window here: it could swallow the user's first key.
+              editor.setValue(latestSource.current, true);
+            }
+          }
+
           const initial = classifyHtmlTableBlocks(latestSource.current);
           lastComplexBlocksRef.current = initial.complex;
           /* setValue already triggers after() once internally, but the first
@@ -1411,10 +1438,25 @@ export function WysiwygEditorPane({ source, onChange, onViewComplexTable, filePa
       editorRef.current = editor;
       // ISS-228：编辑器就绪，向外壳上报撤销/重做 API。
       onHistoryApiChangeRef.current?.(createVditorHistoryApi(editor));
-      // ISS-106：标题方向键光标漂移根治——MutationObserver 守卫，覆盖 RAF
-      // 无法稳定捕捉的异步 selectionchange 路径（见 setupHeadingExpandGuard）。
+      // 监听已有标题的 class 变化及整块重建的新标题；编辑边界单独处理。
       const irEl = getIrElement(editor);
-      disconnectHeadingGuardRef.current = irEl ? setupHeadingExpandGuard(irEl) : null;
+      if (irEl) {
+        const disconnectExpand = setupHeadingExpandGuard(irEl, () => {
+          // A stale inline timer must never close an editable block.
+          if (collapseTimerRef.current !== null) {
+            window.clearTimeout(collapseTimerRef.current);
+          }
+          collapseTimerRef.current = window.setTimeout(() => {
+            collapseTimerRef.current = null;
+            collapseInlineMarkers(editorRef.current);
+          }, IR_MARKER_COLLAPSE_DELAY_MS);
+        });
+        const disconnectInput = installHeadingInputBoundary(irEl);
+        disconnectHeadingGuardRef.current = () => {
+          disconnectInput();
+          disconnectExpand();
+        };
+      }
     }).catch((error) => {
       diagnosticLog.record('editor-error', { tabId: documentId, mode: 'wysiwyg' });
       console.error('[Folia] Vditor 初始化失败:', error);
