@@ -371,8 +371,10 @@ transition: background 0.15s;
 - 左侧导航固定 204px，右侧内容滚动；切换二级菜单时弹窗外框不随内容高度跳动
 - Select 使用自定义平面样式，禁止 macOS 原生渐变光泽；交互反馈仅使用 border / outline / accent
 - Word 导出预设不做复杂编辑器；用户新增样式通过空槽位导入 JSON 文件，JSON 示例页只展示可选中复制的示例文本；启用/停用、删除自定义预设、选择当前预设、槽位状态和单页纸预览保留。预览纸张可点击放大查看，放大层尺寸不超过设置弹窗尺度。槽位展示只表达本地容量状态。
-- 导航 8 个 Tab（通用 / 编辑器 / 预览 / 外观 / Word 导出 / HTML 导出 / 授权 / 关于），不设独立的"快捷键"Tab：快捷键应在用户实际操作工具时随时看到，hover Toolbar 按钮的 `title` 后缀已经承载（详见下方"快捷键展示规范"）。
-- 模态按 Tab 懒加载子 section：`SettingsPage` 模块本身只 import 导航框架和 preload helper；每个 section 通过 `React.lazy` 单独 chunk。`preloadSettingsPage` 在挂载时并行预热默认的 `GeneralSection` chunk；切换到其他 Tab 才下载对应 section。`ExportSection` / `WechatSection` 因为依赖 `word/config` / `wechatPreviewService` / `htmlExportPresets` 等较重模块，分包收益最明显。骨架屏行数与导航数一致（当前 8 行）。
+- 导航 9 个 Tab（通用 / 编辑器 / 预览 / 外观 / Word 导出 / HTML 导出 / 授权 / 问题与反馈 / 关于），不设独立的"快捷键"Tab：快捷键应在用户实际操作工具时随时看到，hover Toolbar 按钮的 `title` 后缀已经承载（详见下方"快捷键展示规范"）。
+- 模态按 Tab 懒加载子 section：`SettingsPage` 模块本身只 import 导航框架和 preload helper；每个 section 通过 `React.lazy` 单独 chunk。`preloadSettingsPage` 在挂载时并行预热默认的 `GeneralSection` chunk；切换到其他 Tab 才下载对应 section。`ExportSection` / `WechatSection` 因为依赖 `word/config` / `wechatPreviewService` / `htmlExportPresets` 等较重模块，分包收益最明显。反馈页按需懒加载，草稿由设置页持有，在设置栏目间切换时保留。
+
+- 问题与反馈独立于关于，提供可选诊断日志的一键填入、只读预览、重新生成和移除。仅采集用户点击时本窗口保留的事件快照；反馈 Markdown 保存全部已选择日志，GitHub 预填放不下时整段省略日志并明确提示附上完整文件，不能以剪贴板成功代替完整传递。
 
 ### 快捷键展示规范
 
@@ -939,6 +941,7 @@ Folia 是 Tauri 桌面应用，响应窗口大小变化。
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| 2.3.0 | 2026-10-30 | 新增 §13.6 动态 SVG（SMIL）契约：主 IR 与公众号导出链路保留并播放动画节点，危险动画目标整节点剥除；Word / DOCX 侧沿用既有静态边界 |
 | 2.2.0 | 2026-07-13 | 新增 Skill 成品图生成弹层与 SVG 只读预览规范：四类图、四风格、真实进度、取消、联网说明和事实核对提醒 |
 | 2.2.0 | 2026-07-16 | 新增 §13 富媒体资源状态：mermaid / SVG / 图片在加载中、缺失、损坏、被阻止、超时场景下的占位与降级视觉约定（DEC-119 / DEC-120 / DEC-121） |
 | 2.1.0 | 2026-05-28 | 新增官方网站设计补充：定义 Astro 官网的品牌延展、首屏要求和移动端约束 |
@@ -996,3 +999,12 @@ mermaid / SVG / 图片三类富媒体在主 IR、HTML 预览、Word 预览、DOC
 - HTML 预览 / Word 预览 / DOCX 导出三条链路在面对同一 fixture 时必须呈现相同的资源状态：要么都 ready，要么都 timeout，绝不允许主 IR 含 mermaid SVG 而 HTML 预览无 SVG（这正是 2026-07-12 生产探针的根因）
 - RenderCoordinator 通过 `mutation.ts` 中的 diagnostics 与 `aborted` / `generation-superseded` 协调三 surface 的 generation 同步
 - `data-render="1"` 不再视为完成信号；completion 必须以 `.language-mermaid` 子树含 `<svg>` 为准（RenderCoordinator.detectPendingRenderers）
+
+### 13.6 动态 SVG（SMIL）契约
+
+内联 SVG 可以用 SMIL 动画元素表达分步示意（如教学稿里的「规则页逐层展开」「命令在本地与远程之间流动」）。这类图的可见内容常由初始 `opacity="0"` 的图层承担，若动画元素被剥除，图会永远停在「只剩背景与标题」的空白首帧。
+
+- 主 IR 与 HTML 预览、复制及导出保留安全的 `animate` / `animateTransform` / `animateMotion` / `set`；透明度、绘图位置、路径、变换、颜色和受限本地绘图引用按 SMIL 时间轴播放。目标属性以 `sanitizeService` 的白名单为准，不承诺任意属性动画。
+- `begin` / `dur` / `values` / `keyTimes` / `calcMode` / `keySplines` / `keyPoints` / `repeatCount` / `from` / `to` / `by` 随动画保留；离散切换和路径时序在各 HTML 产物中一致。
+- 事件、样式、导航、未知目标或外部资源值在属性清洗前拒绝整个动画。`href` / `xlink:href` 只允许本地 `#id`；颜色与绘图引用的每个动画值也须受检查，不能只检查静态属性。
+- Word 纸张预览沿用共享 HTML 渲染，不增加 DOCX 动画或定格处理。公众号平台粘贴后的二次清洗与原生 WebView 播放需分别验证，Folia HTML 产物通过不代表这些平台已通过。

@@ -1,4 +1,9 @@
 import { expect, type Page, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+const bundledAppVersion = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version as string;
 
 async function openWysiwygEditor(page: Page): Promise<void> {
   await expect(page.locator('.recent-page, .cm-editor, .wysiwyg-editor-pane').first()).toBeVisible();
@@ -777,8 +782,8 @@ test('settings about section exposes update controls', async ({ page }) => {
   await expect(page.getByText(/法律、财税/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: '自动检查更新' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByText('尚未检查更新。')).toBeVisible();
-  await expect(page.getByText('Folia 0.3.7')).toHaveCount(0);
-  await expect(page.getByText('0.3.7')).toBeVisible();
+  await expect(page.getByText(`Folia ${bundledAppVersion}`)).toHaveCount(0);
+  await expect(page.getByText(bundledAppVersion, { exact: true })).toBeVisible();
   await expect(page.getByText(/启动后延迟检查/)).toHaveCount(0);
   await expect(page.getByText('杨卫薪律师')).toBeVisible();
   await expect(page.getByRole('link', { name: 'github.com/cat-xierluo', exact: true })).toBeVisible();
@@ -790,12 +795,12 @@ test('settings about section exposes update controls', async ({ page }) => {
   await expect(page.getByText('更新源')).toHaveCount(0);
 });
 
-test('settings nav exposes 8 sections and hides the legacy shortcuts tab (ISS-153)', async ({ page }) => {
+test('settings nav exposes 9 sections and hides the legacy shortcuts tab (ISS-153)', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '设置' }).click();
 
   const navButtons = page.locator('.settings-nav .settings-nav-item');
-  await expect(navButtons).toHaveCount(8);
+  await expect(navButtons).toHaveCount(9);
   await expect(navButtons).toHaveText([
     '通用',
     '编辑器',
@@ -804,6 +809,7 @@ test('settings nav exposes 8 sections and hides the legacy shortcuts tab (ISS-15
     'Word 导出',
     'HTML 导出',
     '授权',
+    '问题与反馈',
     '关于',
   ]);
   await expect(page.getByRole('button', { name: '快捷键', exact: true })).toHaveCount(0);
@@ -1412,12 +1418,12 @@ test('settings modal first frame is non-blank on cold start (no preload window)'
   // 首帧的 overlay / modal 都不带 skeleton / loading 类。
   expect(snapshot.overlayClass).not.toMatch(/settings-overlay--loading/);
   expect(snapshot.modalClass).not.toMatch(/settings-modal-skeleton/);
-  // 首帧的真实内容必须齐备：标题、通用 section 标题、4 行默认控件、8 个 nav。
+  // 首帧的真实内容必须齐备：标题、通用 section 标题、4 行默认控件、9 个 nav。
   expect(snapshot.title).toBe('设置');
   expect(snapshot.sectionTitle).toBe('通用');
   expect(snapshot.rowCount).toBe(4);
   expect(snapshot.navButtons).toEqual([
-    '通用', '编辑器', '预览', '外观', 'Word 导出', 'HTML 导出', '授权', '关于',
+    '通用', '编辑器', '预览', '外观', 'Word 导出', 'HTML 导出', '授权', '问题与反馈', '关于',
   ]);
 
   // 关闭 modal 准备下一个测试。
@@ -1785,7 +1791,7 @@ test('HTML presentation view keeps at least 480px width on a narrow 800x600 view
 /** 构造含 N 条长路径最近文件 + 空占位标签的 session，使首页（RecentFilesPage）渲染。 */
 function makeRecentFilesSession(count: number): string {
   const recentFiles = Array.from({ length: count }, (_, i) => ({
-    path: `/Users/maoking/Library/Application Support/maoscripts/folia/案件卷宗/非常长的目录名用于测试省略/${i}-合同纠纷证据材料汇编附件.pdf`,
+    path: `/Users/example/Library/Application Support/maoscripts/folia/案件卷宗/非常长的目录名用于测试省略/${i}-合同纠纷证据材料汇编附件.pdf`,
     name: `${i}-合同纠纷证据材料汇编附件.pdf`,
     openedAt: Date.now() - i * 1000,
   }));

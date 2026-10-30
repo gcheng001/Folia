@@ -30,18 +30,102 @@
 
 ## 待处理
 
+### 主编辑器 mpath 外链边界（P3，PR #226 独审后续）
+
+- **已确认：** 主 IR / Word 预览沿用的 DOMPurify SVG profile 已允许 `mpath`；公众号 HTML 白名单不保留它。此行为早于 PR #226，当前未扩大支持。
+- **后续范围：** 单独评估主编辑器 `mpath` 的外部路径引用，按最小范围收紧，并保留本地路径动画；不把本项纳入已授权的 SMIL 公众号适配返修。
+- **验收：** 比较本地与外部引用，实际观察主 IR 的资源请求及源码往返，复核与公众号产物的边界。当前未实施；不作为 PR #226 的通过证据。
+
+### v0.8.8 发布恢复候选（2026-10-29）
+
+- **来源与范围：** 用户已授权发布 v0.8.7。该 tag 的 release run `40893161094` 在 Windows 的版本守卫处失败：step 未指定 shell，runner 用 PowerShell 执行 Bash 的 `set -euo pipefail`，因此退出 1。macOS 两项校验通过但构建被主动取消；Draft Release 未创建，没有任何安装包公开。公开 tag 不移动，按新 patch 恢复发行。
+- [x] 保留失败日志、取消无法成功的剩余构建并核对无 Release 产物。
+- [x] 将版本清单统一为 `0.8.8`，为跨平台 shell 显式声明 Bash，补充 CHANGELOG 恢复说明。
+- [x] 运行 v0.8.8 构建、前端/Rust 测试、生产反馈回归和发布守卫检查。
+- [x] 独立审查恢复差异。
+- [ ] 创建 PR 并通过最终 CI。
+- [ ] 取得 v0.8.8 明确发行授权后合并并打新 tag。
+- [ ] 三平台资产、标准验签和 Draft 验收后公开；实际安装升级单独记录。
+- **本地验收：** 六处版本均为 `0.8.8`；`npm run build`（含 typecheck）与严格 lint 通过，Vitest 85 文件 / 986 项、`cargo test --locked` 90 项通过。生产 preview 的反馈 5 项与关于页 1 项共 6/6 通过，导出与预填版本为 `0.8.8`。最新发布脚本 YAML/bash 检查及 7 项本地正反例通过；构建与上传步骤均显式 `shell: bash`，直接消除 v0.8.7 的 PowerShell 失败路径。既有三个分包提示与 Rust 一项未使用常量警告保留。v0.8.8 发布说明草稿为 `/tmp/folia-v0.8.8-release-notes.md`，未虚构下载资产。
+- **独立审查：** 只读复审 APPROVE，未发现 P1/P2；确认显式 Bash 消除 pwsh 执行 Bash 语法失败，失败路径仍 fail-closed，六处版本一致、锁文件无依赖扩散、文档未夸大。保留 P3 后续加固：工作流自动版本守卫目前只比对 `package.json`，其他清单仍依赖发布时人工核对。
+- **边界：** v0.8.7 tag 已公开且不可移动，但没有公开 Release；v0.8.8 将包含同一批反馈改进和版本修复。Actions 额度仍为 UNKNOWN；Windows 实机、新安装包和应用内升级未验证。
+
+### v0.8.7 发布候选与验收（2026-10-29）
+
+- **来源与范围：** 用户要求 Review 验收并判断是否发版。PM 负责本候选，复用独立 `feedback-entry` worktree，从 PR #223 合并后的 `8e22622e9450940fe40d06f261ae98346c4f3088` 建立 `release/repo/v0.8.7`；本轮准备候选，不创建 tag 或 Release，不修改本机主目录。
+- [x] 核对 PR #223 最终候选、独立审查与三项 CI，完成合并后内容校验。
+- [x] 确认最新正式版及累计变化，统一五份清单/锁文件版本、CHANGELOG，准备中文发布说明。
+- [x] 验证 v0.8.7 候选的版本显示、反馈导出、构建、前端与 Rust 测试。
+- [x] 独立审查发布流程差异。
+- [x] 完成候选提交所需验收与本地证据；候选 OID 以本分支提交回执为准。
+- [x] 用户明确授权发布 v0.8.7；额度保持 UNKNOWN 并如实披露。
+- [ ] 三平台构建、真实资产与标准验签完成后公开 Release；实际安装升级证据单独记录。
+- **发行判断：** 最新正式版仍为 v0.8.6，发布时间为 2026-10-28 11:20:49（北京时间），已超过 24 小时。累计用户可见变化为独立反馈入口、一键填入诊断快照及完整 Markdown 导出（#220），以及浏览器/版本 API 失败时的版本信息修复（#223）；适合一起交付为 patch v0.8.7。
+- **流程风险与处置：** 原 release workflow 上传清单后直接公开，早于维护者下载产物验签；候选改为仅向 Draft 上传，构建前核 tag commit 与清单版本，上传前重复核 tag commit 与 Draft 状态；ref/sha/repo 经环境变量传入，资产验收后按授权单独公开。该修改不代表三平台构建或真实升级已验证，也不授权重跑公开 tag。
+- **本地验收：** v0.8.7 版本一致性检查通过；`npm run build`（含 typecheck）、严格 lint 通过，Vitest 85 文件 / 986 项、`cargo test --locked` 90 项通过。生产 preview 下反馈页 5 项及关于页 1 项共 6/6 通过，实际导出与预填版本均为 `0.8.7`。既有三个分包提示与 Rust 一项未使用常量警告保留。工作流 YAML 和 shell 语法通过；以本地命令替身执行抽取的构建守卫/上传脚本，共 7 项正反例通过：构建正常、OID 漂移及 tag/版本错配；上传 Draft、公开状态、OID 漂移及 API 失败。仅 Draft 正例上传一次，所有反例均退出 1 且不上传，不冒充真实 GitHub Actions 执行。首轮 YAML 检查遇到本机旧 PyYAML 与 Python 3.14 的 `collections.Hashable` 不兼容，仅在检查进程增加兼容别名后通过，未安装或修改全局依赖。中文发布说明草稿位于 `/tmp/folia-v0.8.7-release-notes.md`，下载表仅列预期文件名，未生成虚构资产链接；本次 PR 均为维护者提交，无新增外部贡献者。
+- **独立审查：** 首轮 APPROVE，并提出构建资产上传早于最终 OID 守卫（P2 非阻断）、未自动比较 tag 与清单版本（P3 非阻断）。已在构建首步前置 OID/版本守卫，并将动态上下文改经环境变量传递；同一 reviewer 定向复审 APPROVE，PM 核最新工作流 SHA-256 `3a6d9d30a589ce6e4f78e99c3531796f2952511a117501d098fe2942a63820b3` 一致。暂存隐私检查通过，仅对历史 CHANGELOG 中未改动的 `...` 路径占位符重核精确内容例外，未放宽规则。
+- **五问预检：** 供真实用户使用：是；结构化 CHANGELOG：是；距上次 tag（2026-10-28 11:12:01，北京时间）至少 24 小时：是；有实质改进：是；若发行条件不满足能否等待：可以，额度与发行授权未明确前不推 tag。
+- **发行边界：** GitHub 用量 API 返回 HTTP 404 并提示缺少 `user` scope，本轮不扩权；Actions/月度 macOS 额度为 UNKNOWN。新版本尚无三平台签名产物，未验安装/重启/恢复全链路；Windows 实机与 GitHub 登录后网页点击提交仍 NOT_VERIFIED。未把维护者 API/本机 Agent 测试说成应用内自动提交。
+- **失败回执：** 定版 PR #224 最终 head `49d69f45e6f681dde2f5fffc4e65ae5c34f796ca` 的 CI run `40892323648` 三项全绿，2026-10-29 22:35:50（北京时间）squash 合入 `main` 的 `6634ecff3f41b47e5ea97a9276e3ad4feb4a7ac5`。annotated tag `v0.8.7` 指向该提交并已推送；release run `40893161094` 的 Windows job `123515062531` 在 `Verify release candidate` 失败，日志确认实际 shell 为 PowerShell、`set -euo pipefail` 报参数错误。因 Windows 已失败且 publish 依赖全矩阵，主动取消两个 macOS job；最终 run `cancelled`，Draft Release 未创建。tag 保持公开且不移动，由 v0.8.8 恢复。
+
+### #219 后续：反馈与关于页的回退版本同步（2026-10-29）
+
+- **来源与范围：** 用户同意修复实测发现的旧回退版本并创建 PR。浏览器预览和 Tauri 版本 API 失败时仍显示硬编码 `0.3.7`，当前清单版本为 `0.8.6`；正常原生版本 API 已在上一轮实测显示 `0.8.6`，不更改该优先级。不涉及内置 Agent 启动、提交凭据、发布或新建测试 issue。
+- **执行：** Codex 复用干净的独立 `feedback-entry` worktree，从远端 `main` 的 `54036654773250d08c0a7836db4b516e8d1323e1` 新建 `fix/repo/fallback-version`，不在已合并的旧分支继续追加。
+- [x] 从构建清单读取回退版本，消除第二处手工版本维护。
+- [x] 验证浏览器与原生 API 失败时使用清单版本，原生 API 成功时仍优先使用真实版本；验证反馈导出与关于页。
+- [x] 记录实际验证、独立审查并创建修复 PR #223。
+- **交付状态：** PR #223 最终 head `17f3c29ae18acbccc3cd0ac1cbfbacb66545d659` 的 CI run `40885070163` 三项全绿；关键源码摘要与独立 APPROVE 候选一致。按用户既有核验后合并授权，经精确 head 门禁于 2026-10-29 21:55:27（北京时间）squash 合入 `main`，合并提交 `8e22622e9450940fe40d06f261ae98346c4f3088`；已 fetch 并确认合并树与受审候选无差异。未发布、未采用到本机主目录。
+- **验收：** 修改清单版本会同步改变浏览器及失败回退值；反馈文件、GitHub 预填和关于页不再携带旧常量；现有更新流程继续通过。
+- **前序实测边界：** 上一轮在 macOS Tauri 开发应用中实际填入 7 条日志，通过原生保存面板导出 1010 字节文件，版本为 `0.8.6`；系统 Chrome 收到原生 opener 的预填 URL。浏览器测试配置未登录 GitHub，未完成网页点击提交；#221 是维护者用预填内容经 API 创建，#222 是子 Agent 用导出全文经 `gh` 创建，两条均已回读并关闭，不能称为 Folia 已内置 Agent 提交功能。本轮不再创建测试 issue。
+- **验证证据：** 新增两项版本回退断言在修复前均失败（实际 `0.3.7`、期望清单版本 `0.8.6`），修复后全量 Vitest 85 文件 / 986 项通过；`npm run build`（含 typecheck）、严格 lint 零警告通过。生产 preview 下反馈页 5 项及关于页 1 项共 6/6 通过，实际下载文件和预填 URL 的版本均断言为清单版本；最小窗口与三语回归保留。初次测试用例读取清单时使用 jsdom 下的 `import.meta.url`，因非 file URL 在收集阶段失败，改用项目现有的工作目录读取方式后才取得上述红绿结果。构建仍有既有分包提示。
+- **独立审查：** 只读 reviewer 检查完整差异并 APPROVE，确认正常原生 API 优先级、JSON 导入所需 TS 配置与回归路径；测试和构建由 PM 实际执行。当前未重新启动原生应用，原生版本 API 成功/失败用 mock 验证；Windows 与新安装包仍 NOT_VERIFIED。另已撤销上轮测试临时添加的 Safari 远程自动化偏好覆盖，恢复原先未设置状态。
+
+### Issue #219：反馈入口独立与诊断日志一键填入（2026-10-29）
+
+- **来源：** 用户反馈“问题与反馈”藏在关于中，不易发现；附诊断日志还要导出并手动复制粘贴。
+- **状态：** 实现与验收完成，用户已授权合并 PR #220；最终交付状态以该 PR 的服务端回执为准。GitHub Issue #219，由 Codex 在独立 `feedback-entry` worktree 的 `feat/repo/feedback-entry` 分支推进；服务层 worker 使用独立 `feedback-service` worktree，指定的两份服务文件由 PM 审查后集成。关联 #187 / ISS-230，不以本项关闭 #187 的其他建议。未发布，未采用到本机主目录。
+- [x] 独立反馈页、三语入口与诊断快照预览；栏目间切换保留草稿。
+- [x] 完整 Markdown 包含所选日志；URL 预算内才带整段日志，超限整段省略并显示附件提示。
+- [x] 构建、严格 lint、单测、生产产物浏览器验证与独立审查。
+- [x] 创建唯一实现 PR #220，并回写候选与验证证据。
+- **提交回执：** 实现候选 `463d939ec637098be0ec6826cd12447b6d0d00fc`，完整范围身份与隐私门禁通过后推送，PR #220 的 base 为 `main`、head 为 `feat/repo/feedback-entry`；后续任务卡回执提交只改本文，不扩大产品验证结论。PR 最终 head 与 CI 状态以 GitHub 服务端为准。
+- **合并验收（2026-10-29）：** 用户明确授权核验后直接合并。已核产品文件 SHA-256 与独立 APPROVE 候选一致；原最终 head `f88adaa2915b06732177c4d123aa3466636a2bcd` 的 CI run `40850447432` 三项全绿（前端检查、Chromium E2E、Rust 测试），base `main` 未前进且可无冲突合并。本次只回写任务状态，最终文档提交亦须等待 CI 通过后再绑定精确 head 合并；PR #220 为合并回执权威来源。
+- **目标：** 设置导航增加独立的“问题与反馈”二级页面；在反馈页直接生成并填入本窗口已有的完整诊断日志，提交前可查看、移除和重新生成。
+- **范围：** 迁移关于中的反馈表单，保留环境信息、GitHub 入口与本地 Markdown 兜底；复用 `diagnosticLog.snapshot()` 的白名单结构与窗口内保留上限。问号快捷入口可作为同页直达方式，是否增加以界面评审为准。
+- **验收：** 无需进入关于即可发现反馈入口；无需先去通用导出或手动粘贴，即可把当前保留日志填入反馈页对应区域；导出的反馈 Markdown 包含用户选择保留的全部日志；不附日志、空日志、重新生成、移除、导出取消及失败有准确反馈；三语文案与现有设置设计一致。
+- **实施前需收敛：** 应用内自动填入与 GitHub 网页预填分别验收。当前反馈 URL 正文仅保留 650 个 UTF-16 code unit；长日志不能沿用截断后宣称完整传递。PR 须明确完整日志交付方式与长度边界，保留可见的完整本地导出；若要做到 GitHub 长日志全文免粘贴，需先验证支持的传递方式，不能用剪贴板成功替代。
+- **非目标：** 新增后端收件箱、客户端 GitHub 凭据、自动上传、截图上传、作者回复系统及发布新版本。
+- **验证计划：** 反馈组装与边界单测、设置页入口和日志交互的浏览器实操、原有关于/更新回归；原生 WebView 未实测时明确标记 NOT_VERIFIED。
+- **实际验证（2026-10-29）：** 最新候选 `npm run build`（含 typecheck）退出 0；`npm run lint -- --max-warnings=0` 退出 0；全量 Vitest 85 文件 / 984 项通过（`--maxWorkers=2`）。生产 preview 的新增反馈 5 项与既有设置导航、懒加载切换、固定尺寸、关于更新控件共 9/9 通过；开发入口的新反馈及延迟 chunk 用例 6/6 通过。另由 ego-browser 操作生产入口并实际下载 `folia-feedback.md`，核对描述及所选 2 条事件完整写入文件；已查看截图。
+- **首失败保留：** 最初把仅拦截 `/src/components/settings/EditorSection.tsx` 的开发懒加载用例运行在生产 preview，因生产使用 hash 资源、拦截永不发生而 30 秒超时；改用独立开发入口后通过，不把该失败计为生产通过。构建仍有既有的三类静态/动态 import 分包提示。
+- **独立审查：** 首轮发现两个 P2：栏目卸载导致异步锁与状态丢失、孤立 UTF-16 代理项导致 URL 编码抛错。保留首次审查，分别以访问后隐藏而不卸载反馈页、URL 编码替换孤立代理项并隔离预填失败修复，新增真实设置页跨栏目延迟保存、孤立高/低代理项、链接生成失败仍可导出的回归。同一 reviewer 定向复审 APPROVE；PM 实际重跑上述最新全量单测、构建、lint 与浏览器测试，未用 reviewer 自报代替执行。
+- **隐私预检：** 首轮命中旧布局测试夹具的本机用户名路径，以及历史文档中的占位符路径。夹具改为等长合成用户名后，受影响最近文件布局回归 2/2 通过；仅对实际核对为 `example`、`...` 占位符的来源与内容摘要登记本地精确例外，未放宽规则或跳过门禁。
+- **临时资源：** 服务 worker 已完成并交回文件，尝试归档 `feedback-service` worktree 时宿主返回 “protected by a pinned task or workspace”，记为 CLEANUP_PENDING；保留受保护现场，不强行移除。
+- **未验与交付边界：** 首次交付未改 Rust 或原生权限，未打包/安装新候选；后续 macOS Tauri 开发入口的保存与系统浏览器打开实测见上方“#219 后续”卡，Windows WebView2 与新安装包仍 NOT_VERIFIED。未发布。浏览器 fallback 的 `window.open` 无法确认浏览器阻止弹窗，与既有 opener 一致，不将“打开反馈页”当作 GitHub 已收到提交。
+
 ### GitHub Issue #211：标题起点编辑边界（2026-10-24 至 25，北京时间，dot 按用户要求）
 
 - [x] 真实 Lute / 组件重建红绿回归证明新增标题 class 漏口，保留原属性/行内定时/卸载路径。
 - [x] Chromium 基线复现 Range/Home/click 首字进入隐藏 marker 且光标错位；候选隔离矩阵覆盖首候选、更新、提交/取消与原文。
 - [x] 收敛为标题直属 marker inline 样式、局部组合编辑边界、组合前 Home 等价定位；不重写正文或全局输入法/Selection。
 - [x] 生产代码检查与无测试注入的 Chromium 回归已核：原生产 head `ff3f33a` CI 三项通过；维护者本地生产构建的专项回归 18 项正常通过、3 项预期失败。最终提交的 CI 与合并回执以 PR #212 为准。
+- [x] 标题起点选区归一化修复以 v0.8.6 安装包交付，报告者可直接升级复验，无需自行编译。
 - [ ] Windows WebView2 真实中文输入法复验：标题首部连续输入/删除、候选提交/取消、字序与字符偏移、撤销重做；CDP 不替代实机。
+- **报告者复验（2026-10-26）：** v0.8.5 中鼠标点击或 Home 进入标题最前方后，输入内容可正常落到最前方，但光标不可见。维护者 Chromium 复现：单击最终落在标题直属 marker 末端，Range 高度为 0；Home 修正到正文后，Chromium 约 200ms 又可能把首个正文 Text 拆出零高度空文本锚点并移入其中。
+- **选区归一化修复（2026-10-27）：** 仅处理普通主键单击最终得到的折叠选区、Home keyup 等价边界，以及“直属 heading marker 后紧跟空文本锚点”的 selectionchange 精确形态；且仅在直属 marker 后紧跟非空纯文本时移动，粗体、链接、图片、公式等结构化标题起点不擅自改写选区。组合期间不移动 Selection，不介入非折叠选区、修饰键/多击、ArrowLeft marker 内组合和 Backspace 标题降级。新增 click/Home 静置后 Chromium caret Range 高度、空文本锚点恢复、内联格式/图片/公式开头不越界、修饰/多击/拖选不接管、真实标题拖选不被折叠的回归。Windows WebView2 的实际插入符绘制仍 NOT_VERIFIED。
+- **合并回执（2026-10-28）：** PR #215 最终 head `51e35e1478b8d3fa16efb62d5d742bdcc520a710` 三项 CI 全绿后 squash 合入 `main`，合并提交 `191c550ef41a7ae8f3164a5e2f98ec1dddf3235d`；main CI run `40614268321` 成功。已在 #211 评论合并进展（`6458147675`），Issue 保持开放等待下一版发布后的 Windows 实机复验。
+- **发布回执（2026-10-28）：** 已随 v0.8.6 发布（tag `v0.8.6` → 定版提交 `50dca93b4b394a9da872fc51b95db688d6e6894c`，PR #217 的 head `fd03e1e128468c48c8ab8b9f7d6cdc36f68a1e7f` 三项 CI 全绿，run `40624742379`）。Release workflow run `40625330424` 的 macOS aarch64、macOS x64、Windows x64 与 publish 全绿；Release 已公开且非预发布，9 项资产齐全，无 .msi。下载首轮出现 HTTP/2 `PROTOCOL_ERROR`，仅 macOS x64 updater 包未完整，HTTP/1.1 续传后全部 9 项大小和 SHA-256 均与 GitHub 资产记录一致。以 v0.8.5 公钥运行标准 minisign，三平台原包退出 0、篡改 1 字节反例退出 1；manifest 签名与 `.sig` 完全一致，两架构 macOS 更新包内版本均为 0.8.6。Windows WebView2 / macOS WKWebView 原生插入符与真实输入法、应用内安装重启全链路仍 NOT_VERIFIED。
+- **发布后验与通知（2026-10-28）：** 未认证 `releases/latest` 返回 200 并指向 v0.8.6，公开 `latest.json` 为 0.8.6 且与 Release 资产逐字节一致；两种 DMG 校验和有效。发布说明已补齐并回读核对，9 项资产 ID 和摘要保持不变。#211 评论 `6460154342` 已给出 Windows x64 安装包直链、版本确认和点击 / Home / 真实中文输入法复验步骤，无需报告者自行编译；Issue 继续开放。
+- **发布文档验收（2026-10-28）：** 初次默认扫描退出 1，4 hard / 0 adaptive（缺项目配置、两处 CHANGELOG 坏链接、故意缺图夹具）；修正失效的历史 memory 引用和决策记录相对链接，保留用于 not-found 回归的缺图夹具。使用本次显式配置恢复默认计数规则、启用文档与 TASKS 同步检查，仅精确排除该夹具，复跑退出 0，0 hard / 0 adaptive / 8 soft / 5 ok；独立复核 APPROVE。配置与原始失败记录只保留在本地发布证据中，未宣称全项目文档协议均已验证。
+- **先前发布（2026-10-26）：** v0.8.5 的 tag、构建、资产、验签与报告者通知回执见下文；该版已解决标题首字输入路径，报告者随后反馈光标不可见，故由 v0.8.6 继续交付选区归一化修复。
+- **发布回执（2026-10-26）：** 已随 v0.8.5 发布（tag `v0.8.5` → 定版提交 `e183c8429ea230d98418605b162ce7b5b7c1480e`，PR #213 CI 三项全绿）。Release workflow run `40255131207` 三平台构建与 publish 全绿；9 项产物齐全（两架构 dmg、Windows exe、两个 updater tar.gz 与对应 .sig、exe.sig、latest.json）。三平台标准 minisign 验签正例通过、篡改 1 字节反例失败；`latest.json` 内三平台签名与上传 `.sig` 完全一致；`releases/latest` 指向 v0.8.5 且 manifest 版本为 0.8.5。已在 #211 通知报告者升级复验，Issue 保持开放。本机未安装该版本，Windows WebView2 与 macOS WKWebView 真实输入法仍未实机复验。
+- **最终候选验证（2026-10-27）：** typecheck、lint 0 warning、生产 build 通过；全量 Vitest 84 文件 / 969 项通过；#211 专项 Chromium 24/24、first-selection 回归 4/4、仓库 CI 实际 Playwright 子集 60/60、Rust 90/90 通过；生产 preview 中 click/Home 静置 600ms 后 Selection 均为正文 Text:0 且 caret Range 高度 26px。本地非 CI 全量 Playwright 曾以 5 workers 得 125/146，失败集中在任务源既有记录的旧布局/非法 Mermaid/本地并发时序，未作为本候选门禁。
 - **独立既存边界：** 空标题/marker 内预编辑不可见、初始化首次撤销快照窗口、失焦时延迟 input 保存门禁；记录对照，不顺带扩修。
 - **维护者验收接续：** 用户已明确要求验收并合并 PR #212、推进 #211 和同步本地。原 head `ff3f33a` 的三项 CI 通过（run `40115666269`）：单测 963 项，Chromium 54 项正常通过、3 项预期失败；3 项预期失败不作为功能通过。原生审查代理因 429 退出，本机 M Code 又因 Token Plan 上限（2067）退出，均未给出 verdict。原实现由 dot 完成，当前 Codex 维护者独立逐行审查原生产 diff 及输入边界单测，未发现新增阻塞缺陷；本轮未改产品代码，未把代理执行失败当作 APPROVE。
 - **本地对照：** 原候选全量 962/963，HTML 源码入口 1 项超时；干净 `main` 全量 922/924，同类 HTML 源码入口 2 项超时；候选与基线隔离重跑均 2/2 通过，保留全量失败事实。原候选的专项浏览器测试在 macOS 有 5 项额外失败，同一测试在基线有 18 项失败；固定 Control 快捷键在 macOS 不代表全选、标题层级切换和复制，本轮改用 ControlOrMeta 后重验。
 - **本轮修订与验证：** 仅将专项 E2E 的 5 处固定 Control 快捷键改为 ControlOrMeta，并同步任务状态。生产构建通过；在该 build 的 preview 上专项 21 项终态符合预期（18 项正常通过、3 项预期失败、0 跳过），完整源文、候选提交/取消、撤销/重做、标题降级、剪贴板与源码往返继续检查。旧的 962/963 全量失败记录保留，不扩大为本地全量通过。
-- **交付限制：** Refs #211，验收和最终 CI 满足后按用户授权转 Ready 合并；问题保持开放，等待发布后 Windows 真实输入法复验。本轮不发布新版本。
+- **原 PR #212 验收边界：** 该轮只验收和合并，未发布；后续 v0.8.5、v0.8.6 发布回执见上。Refs #211，问题保持开放，等待安装版的 Windows 真实输入法和插入符显示复验。
 
 ### Issue #202：中文标点粗体兼容（已随 v0.8.4 发布，报告者复验通过，Issue 已关闭）
 
@@ -49,7 +133,6 @@
 - **实现范围：** 仅对 Lute 已解析的同一普通文本片段扩展 CJK 标点闭合边界；不改原双星、冒号，不全局开启 Protyle，不扩展代码、链接、HTML、转义和既有嵌套结构。
 - **验证与状态：** 原 head `fe9dac0` CI 三项通过；同步 main 与独立复核后的候选另跑真实入口、源文往返、预览、编辑/撤销/重做、粘贴及合成 composition。本机开发入口 CJK/会话恢复 6/6；组合候选 `0843f17` 的生产 build preview 共 16/16，覆盖 CJK、行内 marker、块级源码保护、输入回归和会话恢复。lint / typecheck / build 通过；本地全量 922/924，两项 HTML 源码测试 5000ms 超时，隔离 2/2 通过；最终 CI 见下方合并回执，不覆盖本地失败记录。详见 [专项说明](./issue-202-cjk-strong.md)。
 - **合并回执（2026-10-23）：** 最终 head `0bd442b161f59da6c64be49a3ca7a0e91c255d54` 的 typecheck / lint / test、Chromium E2E、cargo test 三项 CI 全部通过（run `39937774264`）。独立审查对原实现 `fe9dac0` 及组合候选 `a65ca31` 均为 APPROVE；逐文件比对确认最终 head 与 `a65ca31` 仅 TASKS 记录有差异，产品代码与 CI 配置 blob 一致。北京时间 18:24 squash 合入 `main`，合并提交 `0ff139a793fa4c3ffb105377e53aa9a516f49336`；回读服务端为 MERGED，交付树与最终 head 完全一致。#203、#205、#206 的实现与有效记录均保留。
-- **发布回执（2026-10-26）：** 已随 v0.8.5 发布（tag `v0.8.5` → 定版提交 `e183c8429ea230d98418605b162ce7b5b7c1480e`，PR #213 CI 三项全绿）。Release workflow run `40255131207` 三平台构建与 publish 全绿；9 项产物齐全（两架构 dmg、Windows exe、两个 updater tar.gz 与对应 .sig、exe.sig、latest.json）。三平台标准 minisign 验签正例通过、篡改 1 字节反例失败；`latest.json` 内三平台签名与上传 `.sig` 完全一致；`releases/latest` 指向 v0.8.5 且 manifest 版本为 0.8.5。已在 #211 通知报告者升级复验，Issue 保持开放。本机未安装该版本，Windows WebView2 与 macOS WKWebView 真实输入法仍未实机复验。
 - **发布回执（2026-10-24）：** 已随 v0.8.4 发布（tag `v0.8.4` → 定版提交 `f7b39559788719938e796b8268c1950ab66b1984`）。Release 流水线 run `40055559431` 三平台构建与 publish 全绿；9 项产物齐全（两架构 dmg、Windows exe、两个 updater tar.gz 与对应 .sig、exe.sig、latest.json），无 .msi。三平台标准 minisign 验签正例通过、篡改 1 字节的反例失败；`releases/latest` 与 `releases/latest/download/latest.json` 未认证可达且版本为 0.8.4。定版 PR #209 独立审查 APPROVE。本机未安装该版本。
 - **反馈闭环：** 报告者 WHeathcliff 在 2026-10-24 确认首次打开粗体正常、行内标记自动收起、关闭恢复开关后重启不再恢复旧标签（评论 `6382607999`）。2026-10-25 按用户指令关闭 #202；相关输入位置新反馈由 #211 单独跟进。
 - **NOT_VERIFIED：** 维护者尚未在 Windows WebView2、macOS WKWebView、真实中文输入法与原生保存对话框下独立复验；报告者的使用确认不扩大为全平台认证。
@@ -607,6 +690,22 @@
 - **验证:** 见 CHANGELOG [Unreleased]；Rust `build_set_default_markdown_jxa` 纯函数断言 + 前端 `defaultAppService.test`（6 case）+ `GeneralSection.test`（5 case）。**NOT_VERIFIED**：osascript 经 `LSSetDefaultRoleHandlerForContentType` 真正改变系统默认应用须真机验证。详见 DEC-137。
 
 ## 进度日志
+
+### 动态 SVG 的公众号预览与导出（PR #226，2026-10-30）
+
+- **来源与范围：** 用户要求检查文稿中的动态 SVG，确认后授权公众号 HTML 预览、复制与导出适配，以及提交、PR、独立 review 和合并。主会话是当前 `svg-motion-audit` 工作树的 writer；Word/DOCX 不增加专门适配，不发布新版本。
+- [x] 复现透明度动画被过滤导致图示空白，建立公共合成 fixture。
+- [x] 提交首轮候选并创建 Draft PR #226，首轮三项 CI 通过。
+- [x] 完成独立首审，结论 `REQUEST_CHANGES`。
+- [x] 修复动画值的外部资源引用、危险引用被剥除后的目标变化，以及 `keyPoints` 丢失。
+- [x] 补回归、接入 CI 的动画用例并验证本地候选。
+- [x] 同一 reviewer 对返修候选复审通过，关闭首轮三项 finding。
+- **首审记录：** head `8a19c2b723cc1a2af790a7cf968799f9e552e962`。P1：`set`/`animate` 可通过 `filter` 等目标的动画值发起外部 SVG 请求；P2：公众号白名单丢失 `keyPoints`，路径中点从 20 变成 50；P2：DOMPurify 先清除危险 `href`，剩余动画可能改为作用于父节点。三项需修复后重新验收。
+- **已有证据与边界：** 首轮 CI run `40924583626` 的前端、Chromium 和 Rust 三项通过，但当时 Chromium job 未纳入新增动画用例；本地新增用例通过。真实文稿在 Folia 的 Chromium 预览中保留 34 个 `animate`、7 个 `animateTransform` 并播放。此前两条 `illegal-mermaid` 用例在基线同样失败；macOS WKWebView、Windows WebView2 和公众号平台粘贴后的二次清洗仍未验，不把 Folia HTML 产物通过称为平台验收通过。
+- **返修验收：** 改用独立 DOMPurify 实例的元素钩子，在属性被剥除前拒绝危险节点；绘图目标白名单和资源值逐项检查覆盖 `set`/`animate`、单值/多值及命名空间引用。补齐 `keyPoints`，新增动画文件加入 CI 的显式清单。严格 lint、typecheck、build、全量 Vitest 85 文件 / 1010 项通过；两个服务的 73 项单测通过。生产 `vite preview` 上动画 3 项与 Mermaid 保真 3 项共 6/6 通过，实际读取复制完成后的原始 HTML 剪贴板和下载文件，路径中点均为 20，危险动画无外部请求。首次生产探针的剪贴板读取早于异步写入终态，保留其 `InvalidStateError` 失败记录；用例改为等待复制成功并读取原始 HTML 后通过，未放宽动画断言。
+- **独立复审：** 原生 `code-reviewer`（Ohm）对代码候选 `875873bedc67a05a31d56d2ed06bbc949a398a64` 给出 `APPROVE`；独立重跑三个首审探针及生产六项 E2E，确认外部请求为 0、路径中点为 20、危险引用不再隐式转嫁父节点；并核全量 1010 项测试通过。未以作者自审或 GitHub 自 approve 代替独审。
+- **集成交付：** 用户已明确授权合并；[PR #226](https://github.com/cat-xierluo/Folia/pull/226) 是唯一集成入口，最终 head 的 checks、`MERGED`、`mergedAt` 和合并 OID 以该 PR 服务端回执为权威，不在多个文档复制维护。复审后的收口提交仅补任务状态和 P3 登记，代码候选保持不变；本机主目录、已安装应用与版本发布分别结算。
+
 
 - **2026-08-16** ISS-194 PR #131 独立 review 回合（首轮 REQUEST_CHANGES → 修复后复审 APPROVE）：**M-1 已修**——CRLF 文档 `split('\n')` 残留 `\r` 让 `FENCE_CLOSE_PATTERN` 永不命中，首个围栏后整篇被当代码块、图片全部不归一化（node 实测复现）；修复为剥离 `\r` 参与判定、输出原样回接（换行风格逐字节保留），+4 项 CRLF 守卫测试，单文件 25/25、全量 749/749、lint/build 0 error。**M-2 复现成立但降级 MINOR 不改**——作者首轮复跑被 shell 转义吃掉反斜杠、误判为「不复现」（已勘正）；字符码构造（零转义歧义）复测确认：目标含未转义空格且 title 含 `\"` 后跟 `)` 的构造，归一化时 title 被并入目标编码。但该输入本身即非法 CommonMark（目标含未转义空格，归一化前后都不渲染为图片，无渲染回归），三个合法 title 转义变体实测全部正确；reviewer 复审主动降级 MINOR。**m-1（HTML 属性内字面文本被归一化）、M-2、`\r\r\n` 双 CR 行尾（无现实工具产出）登记进 DEC-140 已知边界**；m-2~m-5、n-1~n-7 为次要 / 已登记边界 / 验证性确认，不改。复审核实：M-1 逐字节实测 + 6 项回归探针全过。issue #130 / PR #131。
 - **2026-08-16** 完成 ISS-194（L1 直接修复，用户会话报告）：修复转录工具生成的「目标含空格」Markdown 图片不渲染。根因：CommonMark 禁止非 `<>` 包裹的行内图片目标含空格，Lute 严格遵循、整段按普通文本输出（用户文档 94 张幻灯片归一化前 `<img>` 渲染数为 0），`localImageResolver` 无 `<img>` 可处理。修法：新增 `markdownImagePathNormalizer`（未转义空格/Tab → %20/%09，围栏与行内代码逐字节保留、幂等）接入 `fileService.openPath` markdown 分支（三条读盘路径唯一收口），`content`/`lastSavedContent` 同步归一化不误标 dirty。验证：新增 24 项单测（21 归一化 = 17 主用例 + 4 项回归守卫 + 2 fileService + 1 解析链路守卫）；`npm test` 745/745、typecheck / lint 0 error、`npm run build` 0 error；用户原文件 node + vendored Lute 端到端 94/94 渲染为 `<img>`。真机 WKWebView 显示移交用户确认。详见 CHANGELOG [Unreleased] / DEC-140。
